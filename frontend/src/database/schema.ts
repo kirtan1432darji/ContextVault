@@ -1,7 +1,7 @@
 import { DEFAULT_CATEGORIES } from '../models/category.model';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 3;
 
 export const SCHEMA_SQL = [
   // 1. Categories
@@ -73,15 +73,21 @@ export const SCHEMA_SQL = [
     FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
   );`,
 
-  // 6. OCR Cache
+  // 6. OCRCache (Sprint RN-04 Table)
   `CREATE TABLE IF NOT EXISTS ocr_cache (
-    screenshot_id TEXT PRIMARY KEY,
-    raw_text TEXT NOT NULL,
+    id TEXT PRIMARY KEY,
+    screenshot_id TEXT NOT NULL,
+    extracted_text TEXT NOT NULL,
+    normalized_text TEXT,
+    processing_time INTEGER NOT NULL DEFAULT 0,
     language TEXT NOT NULL DEFAULT 'en',
+    ocr_version TEXT NOT NULL DEFAULT 'MLKit-Text-16.0.0',
     confidence REAL NOT NULL DEFAULT 1.0,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (screenshot_id) REFERENCES screenshots (id) ON DELETE CASCADE
+    blocks_json TEXT,
+    created_on TEXT NOT NULL
   );`,
+  `CREATE INDEX IF NOT EXISTS idx_ocr_screenshot ON ocr_cache(screenshot_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_ocr_created ON ocr_cache(created_on);`,
 
   // 7. Sync Queue
   `CREATE TABLE IF NOT EXISTS sync_queue (
@@ -120,7 +126,7 @@ export const SCHEMA_SQL = [
     created_at TEXT NOT NULL
   );`,
 
-  // 10. Pending Screenshots Queue (Sprint RN-03 Detection Engine)
+  // 10. Pending Screenshots Queue (Sprint RN-03 / RN-04)
   `CREATE TABLE IF NOT EXISTS pending_screenshots (
     id TEXT PRIMARY KEY,
     device_asset_id TEXT,
@@ -132,10 +138,19 @@ export const SCHEMA_SQL = [
     status TEXT NOT NULL DEFAULT 'Pending',
     retry_count INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
+    device_folder TEXT,
+    mime_type TEXT,
+    resolution TEXT,
+    width INTEGER DEFAULT 1080,
+    height INTEGER DEFAULT 2400,
+    ocr_status TEXT DEFAULT 'Pending',
+    ocr_processing_time INTEGER DEFAULT 0,
+    extracted_text TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_screenshots(status);`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_ocr_status ON pending_screenshots(ocr_status);`,
   `CREATE INDEX IF NOT EXISTS idx_pending_hash ON pending_screenshots(file_hash);`,
   `CREATE INDEX IF NOT EXISTS idx_pending_asset ON pending_screenshots(device_asset_id);`,
 ];

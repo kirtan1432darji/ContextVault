@@ -17,6 +17,7 @@ public class MediaObserverPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(@NonNull ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new MediaObserverModule(reactContext));
+        modules.add(new OCRRecognitionModule(reactContext));
         return modules;
     }
 

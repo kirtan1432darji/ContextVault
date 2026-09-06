@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useScannerStore } from '../store/scanner.store';
 import { ModernCard } from '../components/ModernCard';
 import { PendingScreenshot } from '../models';
 import { pendingScreenshotRepository } from '../database/repositories/pendingScreenshotRepository';
+import { ocrCacheRepository } from '../database/repositories/ocrCacheRepository';
 import { permissionService } from '../services/permissionService';
 import { FileUtils } from '../utils/fileUtils';
 
@@ -25,21 +25,29 @@ export const ScannerStatusScreen: React.FC = () => {
   const theme = useAppTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+  // Sprint RN-03 / RN-04 Store Selectors
   const isListening = useScannerStore((s) => s.isListening);
   const scannedToday = useScannerStore((s) => s.scannedToday);
   const pendingProcessing = useScannerStore((s) => s.pendingProcessing);
   const lastScreenshot = useScannerStore((s) => s.lastScreenshot);
   const permissionStatus = useScannerStore((s) => s.permissionStatus);
+  const currentProcessingItem = useScannerStore((s) => s.currentProcessingItem);
+  const lastOCRResult = useScannerStore((s) => s.lastOCRResult);
+  const ocrCompletedToday = useScannerStore((s) => s.ocrCompletedToday);
+  const ocrPending = useScannerStore((s) => s.ocrPending);
+  const ocrFailed = useScannerStore((s) => s.ocrFailed);
+  const avgProcessingTimeMs = useScannerStore((s) => s.avgProcessingTimeMs);
 
   const startScanner = useScannerStore((s) => s.startScanner);
   const stopScanner = useScannerStore((s) => s.stopScanner);
   const requestPermissions = useScannerStore((s) => s.requestPermissions);
   const checkPermissions = useScannerStore((s) => s.checkPermissions);
-  const retryFailed = useScannerStore((s) => s.retryFailed);
+  const retryFailedOCR = useScannerStore((s) => s.retryFailedOCR);
+  const retrySingleOCR = useScannerStore((s) => s.retrySingleOCR);
   const simulateScreenshot = useScannerStore((s) => s.simulateScreenshot);
 
   const [recentScreenshots, setRecentScreenshots] = useState<PendingScreenshot[]>([]);
-  const [failedCount, setFailedCount] = useState(0);
+  const [failedList, setFailedList] = useState<PendingScreenshot[]>([]);
   const [isLoadingFeed, setIsLoadingFeed] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -47,30 +55,48 @@ export const ScannerStatusScreen: React.FC = () => {
   const loadFeed = useCallback(async () => {
     setIsLoadingFeed(true);
     try {
-      const [items, counts] = await Promise.all([
+      const [items, failedItems] = await Promise.all([
         pendingScreenshotRepository.getRecent(20),
-        pendingScreenshotRepository.getCounts(),
+        pendingScreenshotRepository.getFailedScreenshots(),
       ]);
       setRecentScreenshots(items);
-      setFailedCount(counts.failed);
+      setFailedList(failedItems);
+
+      // If store doesn't have last OCR result yet, try reading from DB
+      if (!lastOCRResult) {
+        const recentCache = await ocrCacheRepository.getRecent(1);
+        if (recentCache.length > 0) {
+          const rec = recentCache[0];
+          useScannerStore.getState().setLastOCRResult({
+            screenshotId: rec.screenshotId,
+            fileName: 'Cached Screenshot',
+            rawText: rec.extractedText,
+            confidence: rec.confidence,
+            processingTimeMs: rec.processingTime,
+            language: rec.language,
+            blocksCount: 1,
+            processedAt: rec.createdOn,
+          });
+        }
+      }
     } catch (err) {
       console.warn('[ScannerStatusScreen] Error loading feed:', err);
     } finally {
       setIsLoadingFeed(false);
     }
-  }, []);
+  }, [lastOCRResult]);
 
   useEffect(() => {
     checkPermissions();
     loadFeed();
   }, [checkPermissions, loadFeed]);
 
-  // Refresh feed whenever a new screenshot is detected in store
+  // Refresh feed whenever a new screenshot or OCR completes
   useEffect(() => {
-    if (lastScreenshot) {
+    if (lastScreenshot || lastOCRResult) {
       loadFeed();
     }
-  }, [lastScreenshot, loadFeed]);
+  }, [lastScreenshot, lastOCRResult, loadFeed]);
 
   const handleToggleScanner = async () => {
     if (isListening) {
@@ -90,20 +116,29 @@ export const ScannerStatusScreen: React.FC = () => {
     }
   };
 
-  const handleRetryFailed = async () => {
-    if (failedCount === 0) {
-      Alert.alert('No Failed Items', 'There are no failed screenshots in the queue.');
+  const handleRetryAllFailed = async () => {
+    if (failedList.length === 0) {
+      Alert.alert('No Failed Items', 'There are no failed OCR operations.');
       return;
     }
     setIsRetrying(true);
     try {
-      await retryFailed();
+      await retryFailedOCR();
       await loadFeed();
-      Alert.alert('Retry Finished', 'Failed screenshots have been re-queued for processing.');
+      Alert.alert('Retrying', `Re-queued ${failedList.length} failed screenshots for OCR.`);
     } catch (err: any) {
       Alert.alert('Retry Error', err?.message || 'Failed to retry items.');
     } finally {
       setIsRetrying(false);
+    }
+  };
+
+  const handleRetrySingle = async (id: string) => {
+    try {
+      await retrySingleOCR(id);
+      await loadFeed();
+    } catch (err: any) {
+      Alert.alert('Retry Error', err?.message || 'Failed to retry item.');
     }
   };
 
@@ -147,7 +182,7 @@ export const ScannerStatusScreen: React.FC = () => {
 
     return (
       <View style={[styles.statusChip, { backgroundColor: bg }]}>
-        <Icon name={icon} size={13} color={textColor} style={{ marginRight: 4 }} />
+        <Icon name={icon} size={12} color={textColor} style={{ marginRight: 4 }} />
         <Text style={[styles.statusChipText, { color: textColor }]}>{status}</Text>
       </View>
     );
@@ -165,10 +200,10 @@ export const ScannerStatusScreen: React.FC = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleBox}>
           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
-            Screenshot Engine
+            OCR & Detection Engine
           </Text>
           <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-            Background Observer & Pipeline Status
+            Google ML Kit Pipeline Diagnostics
           </Text>
         </View>
         <TouchableOpacity
@@ -184,7 +219,7 @@ export const ScannerStatusScreen: React.FC = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* 2. Listener State Hero Card */}
+        {/* 2. Listener State Card */}
         <ModernCard style={styles.card}>
           <View style={styles.cardRow}>
             <View style={styles.stateIndicatorBox}>
@@ -195,7 +230,7 @@ export const ScannerStatusScreen: React.FC = () => {
                 ]}
               />
               <Text style={[styles.stateTitle, { color: theme.colors.textPrimary }]}>
-                {isListening ? 'Observer Active' : 'Observer Paused'}
+                {isListening ? 'MediaStore Observer Active' : 'Observer Paused'}
               </Text>
             </View>
             <TouchableOpacity
@@ -215,52 +250,119 @@ export const ScannerStatusScreen: React.FC = () => {
                   { color: isListening ? theme.colors.warning : '#FFFFFF' },
                 ]}
               >
-                {isListening ? 'Stop Observer' : 'Start Observer'}
+                {isListening ? 'Stop' : 'Start'}
               </Text>
             </TouchableOpacity>
           </View>
           <Text style={[styles.cardDescription, { color: theme.colors.textSecondary }]}>
-            {isListening
-              ? 'Watching Android MediaStore ContentObserver for Samsung, Xiaomi, OnePlus, Oppo, Vivo, Realme, and Pixel screenshot directories.'
-              : 'Detection paused. App will not automatically import new screenshots until resumed.'}
+            ContentObserver watches OEM screenshot directories (Samsung, Xiaomi, OnePlus, Oppo, Vivo, Realme).
           </Text>
         </ModernCard>
 
-        {/* 3. Permissions Card */}
+        {/* 3. OCR Queue & Current Processing Status Card (Sprint RN-04) */}
         <ModernCard style={styles.card}>
           <View style={styles.cardRow}>
-            <View style={styles.permissionInfoBox}>
-              <Icon
-                name={permissionStatus === 'granted' ? 'shield-checkmark' : 'shield-outline'}
-                size={22}
-                color={
-                  permissionStatus === 'granted'
-                    ? theme.colors.success
-                    : theme.colors.warning
-                }
-              />
-              <View style={{ marginLeft: 10 }}>
+            <View style={styles.queueTitleBox}>
+              <View style={[styles.ocrQueueIcon, { backgroundColor: `${theme.colors.primary}15` }]}>
+                <Icon name="layers-outline" size={18} color={theme.colors.primary} />
+              </View>
+              <View>
                 <Text style={[styles.cardSubheading, { color: theme.colors.textPrimary }]}>
-                  Media Permissions
+                  OCR Processing Queue
                 </Text>
                 <Text style={[styles.permissionLabel, { color: theme.colors.textSecondary }]}>
-                  {permissionService.getPermissionDescription()}
+                  Sequential background processing (Google ML Kit)
                 </Text>
               </View>
             </View>
 
-            {permissionStatus !== 'granted' && (
-              <TouchableOpacity
-                onPress={() => requestPermissions()}
-                style={[styles.smallActionBtn, { backgroundColor: theme.colors.primary }]}
+            <View
+              style={[
+                styles.queueStatusBadge,
+                {
+                  backgroundColor: currentProcessingItem
+                    ? `${theme.colors.accent}20`
+                    : '#10B98120',
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.queueStatusBadgeText,
+                  {
+                    color: currentProcessingItem
+                      ? theme.colors.accent
+                      : theme.colors.success,
+                  },
+                ]}
               >
-                <Text style={styles.smallActionBtnText}>Grant</Text>
-              </TouchableOpacity>
-            )}
+                {currentProcessingItem ? 'Processing' : 'Idle'}
+              </Text>
+            </View>
           </View>
+
+          {currentProcessingItem ? (
+            <View style={[styles.currentProcessingBox, { backgroundColor: theme.isDark ? '#0F172A' : '#F8FAFC' }]}>
+              <View style={styles.processingRow}>
+                <ActivityIndicator size="small" color={theme.colors.accent} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={[styles.currentFileName, { color: theme.colors.textPrimary }]}>
+                    {currentProcessingItem.fileName}
+                  </Text>
+                  <Text style={[styles.currentMeta, { color: theme.colors.textSecondary }]}>
+                    {currentProcessingItem.width || 1080}×{currentProcessingItem.height || 2400} • Extracting ML Kit text blocks...
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.currentProcessingBox, { backgroundColor: theme.isDark ? '#1E293B30' : '#F8FAFC' }]}>
+              <Text style={[styles.queueIdleText, { color: theme.colors.textSecondary }]}>
+                Queue is clear. New screenshots will be processed automatically on detection.
+              </Text>
+            </View>
+          )}
         </ModernCard>
 
-        {/* 4. Queue Metrics Grid */}
+        {/* 4. Last OCR Result Card */}
+        {lastOCRResult && (
+          <ModernCard style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.rowCenter}>
+                <Icon name="document-text-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>
+                  Last OCR Result
+                </Text>
+              </View>
+              <View style={[styles.durationPill, { backgroundColor: `${theme.colors.accent}15` }]}>
+                <Icon name="flash" size={11} color={theme.colors.accent} style={{ marginRight: 3 }} />
+                <Text style={[styles.durationText, { color: theme.colors.accent }]}>
+                  {lastOCRResult.processingTimeMs}ms
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.lastOCRContent, { backgroundColor: theme.isDark ? '#0F172A' : '#F8FAFC' }]}>
+              <Text numberOfLines={3} style={[styles.lastOCRText, { color: theme.colors.textPrimary }]}>
+                "{lastOCRResult.rawText}"
+              </Text>
+            </View>
+
+            <View style={styles.lastOCRMetaRow}>
+              <Text style={[styles.lastOCRMetaText, { color: theme.colors.textSecondary }]}>
+                Confidence: {Math.round(lastOCRResult.confidence * 100)}%
+              </Text>
+              <Text style={[styles.lastOCRMetaText, { color: theme.colors.textSecondary }]}>
+                Blocks: {lastOCRResult.blocksCount}
+              </Text>
+              <Text style={[styles.lastOCRMetaText, { color: theme.colors.textSecondary }]}>
+                Lang: {lastOCRResult.language}
+              </Text>
+            </View>
+          </ModernCard>
+        )}
+
+        {/* 5. Metrics Grid */}
         <View style={styles.metricsGrid}>
           <ModernCard style={styles.metricCard}>
             <Text style={[styles.metricNumber, { color: theme.colors.primary }]}>
@@ -272,11 +374,20 @@ export const ScannerStatusScreen: React.FC = () => {
           </ModernCard>
 
           <ModernCard style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: theme.colors.accent }]}>
-              {pendingProcessing}
+            <Text style={[styles.metricNumber, { color: theme.colors.success }]}>
+              {ocrCompletedToday}
             </Text>
             <Text style={[styles.metricLabel, { color: theme.colors.textSecondary }]}>
-              In Queue
+              OCR Completed
+            </Text>
+          </ModernCard>
+
+          <ModernCard style={styles.metricCard}>
+            <Text style={[styles.metricNumber, { color: theme.colors.accent }]}>
+              {ocrPending}
+            </Text>
+            <Text style={[styles.metricLabel, { color: theme.colors.textSecondary }]}>
+              OCR Pending
             </Text>
           </ModernCard>
 
@@ -284,10 +395,10 @@ export const ScannerStatusScreen: React.FC = () => {
             <Text
               style={[
                 styles.metricNumber,
-                { color: failedCount > 0 ? theme.colors.error : theme.colors.textSecondary },
+                { color: failedList.length > 0 ? theme.colors.error : theme.colors.textSecondary },
               ]}
             >
-              {failedCount}
+              {failedList.length}
             </Text>
             <Text style={[styles.metricLabel, { color: theme.colors.textSecondary }]}>
               Failed
@@ -295,7 +406,7 @@ export const ScannerStatusScreen: React.FC = () => {
           </ModernCard>
         </View>
 
-        {/* 5. Testing & Debug Actions */}
+        {/* 6. Testing & Action Bar */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
             onPress={handleSimulate}
@@ -313,13 +424,13 @@ export const ScannerStatusScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={handleRetryFailed}
-            disabled={isRetrying || failedCount === 0}
+            onPress={handleRetryAllFailed}
+            disabled={isRetrying || failedList.length === 0}
             style={[
               styles.actionBtn,
               {
                 backgroundColor:
-                  failedCount > 0 ? theme.colors.warning : theme.colors.border,
+                  failedList.length > 0 ? theme.colors.warning : theme.colors.border,
               },
             ]}
           >
@@ -328,23 +439,58 @@ export const ScannerStatusScreen: React.FC = () => {
             ) : (
               <>
                 <Icon name="reload-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.actionBtnText}>Retry Failed ({failedCount})</Text>
+                <Text style={styles.actionBtnText}>Retry All Failed ({failedList.length})</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* 6. Feed Title */}
+        {/* 7. Failed OCR Items Section */}
+        {failedList.length > 0 && (
+          <View style={styles.failedSection}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.rowCenter}>
+                <Icon name="alert-circle" size={18} color={theme.colors.error} style={{ marginRight: 6 }} />
+                <Text style={[styles.sectionTitle, { color: theme.colors.error }]}>
+                  Failed OCR Items ({failedList.length})
+                </Text>
+              </View>
+            </View>
+
+            {failedList.map((failedItem) => (
+              <ModernCard key={failedItem.id} style={styles.failedItemCard}>
+                <View style={styles.cardRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={[styles.itemFileName, { color: theme.colors.textPrimary }]}>
+                      {failedItem.fileName}
+                    </Text>
+                    <Text style={[styles.errorDetailText, { color: theme.colors.error }]}>
+                      {failedItem.errorMessage || 'Unknown error'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleRetrySingle(failedItem.id)}
+                    style={[styles.singleRetryBtn, { borderColor: theme.colors.error }]}
+                  >
+                    <Icon name="refresh" size={14} color={theme.colors.error} />
+                    <Text style={[styles.singleRetryBtnText, { color: theme.colors.error }]}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              </ModernCard>
+            ))}
+          </View>
+        )}
+
+        {/* 8. Recent Detected Feed */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
             Last 20 Detected Screenshots
           </Text>
           <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
-            Stored in SQLite PendingScreenshots
+            Stored in SQLite PendingScreenshots & OCRCache
           </Text>
         </View>
 
-        {/* 7. Detected Screenshots List */}
         {recentScreenshots.length === 0 ? (
           <ModernCard style={styles.emptyCard}>
             <Icon name="image-outline" size={40} color={theme.colors.textSecondary} />
@@ -373,7 +519,7 @@ export const ScannerStatusScreen: React.FC = () => {
                     {item.fileName}
                   </Text>
                 </View>
-                {renderStatusBadge(item.status)}
+                {renderStatusBadge(item.ocrStatus || item.status)}
               </View>
 
               <Text
@@ -383,16 +529,15 @@ export const ScannerStatusScreen: React.FC = () => {
                 {item.filePath}
               </Text>
 
-              <View style={styles.itemMetaRow}>
-                <View style={styles.metaCol}>
-                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>
-                    Asset ID:
-                  </Text>
-                  <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
-                    {item.deviceAssetId}
+              {item.extractedText ? (
+                <View style={[styles.extractedPreviewBox, { backgroundColor: theme.isDark ? '#0F172A' : '#F8FAFC' }]}>
+                  <Text numberOfLines={2} style={[styles.extractedPreviewText, { color: theme.colors.textPrimary }]}>
+                    "{item.extractedText}"
                   </Text>
                 </View>
+              ) : null}
 
+              <View style={styles.itemMetaRow}>
                 <View style={styles.metaCol}>
                   <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>
                     Size:
@@ -404,15 +549,23 @@ export const ScannerStatusScreen: React.FC = () => {
 
                 <View style={styles.metaCol}>
                   <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>
-                    Hash:
+                    Folder:
                   </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.metaVal, { color: theme.colors.textPrimary, maxWidth: 90 }]}
-                  >
-                    {item.fileHash ? item.fileHash.substring(0, 10) + '...' : 'N/A'}
+                  <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
+                    {item.deviceFolder || 'Screenshots'}
                   </Text>
                 </View>
+
+                {item.ocrProcessingTime && item.ocrProcessingTime > 0 ? (
+                  <View style={styles.metaCol}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>
+                      OCR:
+                    </Text>
+                    <Text style={[styles.metaVal, { color: theme.colors.accent }]}>
+                      {item.ocrProcessingTime}ms
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               {item.errorMessage && (
@@ -493,45 +646,113 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   stateTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   toggleButton: {
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   toggleButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   cardDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
   },
-  permissionInfoBox: {
+  queueTitleBox: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
+  ocrQueueIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
   cardSubheading: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   permissionLabel: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11,
+    marginTop: 1,
   },
-  smallActionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  queueStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
   },
-  smallActionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
+  queueStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  currentProcessingBox: {
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  processingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currentFileName: {
+    fontSize: 13,
     fontWeight: '600',
+  },
+  currentMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  queueIdleText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  durationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  durationText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  lastOCRContent: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  lastOCRText: {
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: 17,
+  },
+  lastOCRMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  lastOCRMetaText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   metricsGrid: {
     flexDirection: 'row',
@@ -540,24 +761,24 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    marginHorizontal: 3,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
+    marginHorizontal: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
     alignItems: 'center',
   },
   metricNumber: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
   },
   metricLabel: {
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: 10,
+    marginTop: 3,
     textAlign: 'center',
   },
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   actionBtn: {
     flex: 1,
@@ -570,18 +791,45 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  failedSection: {
+    marginBottom: 16,
+  },
+  failedItemCard: {
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#EF4444',
+  },
+  errorDetailText: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  singleRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginLeft: 8,
+  },
+  singleRetryBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   sectionHeader: {
     marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   sectionSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
   },
   screenshotItemCard: {
@@ -600,15 +848,15 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   itemFileName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     flex: 1,
   },
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   statusChipText: {
@@ -616,14 +864,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   itemFilePath: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: 'monospace',
-    marginTop: 6,
+    marginTop: 4,
+  },
+  extractedPreviewBox: {
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  extractedPreviewText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    lineHeight: 16,
   },
   itemMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 10,
+    marginTop: 8,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E2E8F030',
@@ -658,13 +916,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     marginTop: 12,
   },
   emptySubtext: {
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 4,
     textAlign: 'center',
+  },
+  rowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

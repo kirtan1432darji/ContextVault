@@ -14,3 +14,5 @@ export * from './permissionService';
 export * from './ScreenshotListenerService';
 export * from './backgroundDetection/mediaObserver';
 export * from './backgroundDetection/headlessTask';
+export * from './searchIndexService';
+export * from './OCRQueueService';

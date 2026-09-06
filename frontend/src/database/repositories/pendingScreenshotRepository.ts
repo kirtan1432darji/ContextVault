@@ -7,8 +7,10 @@ export class PendingScreenshotRepository {
       INSERT OR REPLACE INTO pending_screenshots (
         id, device_asset_id, file_path, file_name, file_size,
         file_hash, captured_at, status, retry_count,
-        error_message, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        error_message, device_folder, mime_type, resolution,
+        width, height, ocr_status, ocr_processing_time, extracted_text,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
@@ -22,6 +24,14 @@ export class PendingScreenshotRepository {
       screenshot.status,
       screenshot.retryCount || 0,
       screenshot.errorMessage || null,
+      screenshot.deviceFolder || '',
+      screenshot.mimeType || 'image/png',
+      screenshot.resolution || `${screenshot.width || 1080}x${screenshot.height || 2400}`,
+      screenshot.width || 1080,
+      screenshot.height || 2400,
+      screenshot.ocrStatus || 'Pending',
+      screenshot.ocrProcessingTime || 0,
+      screenshot.extractedText || null,
       screenshot.createdAt || new Date().toISOString(),
       screenshot.updatedAt || new Date().toISOString(),
     ]);
@@ -32,6 +42,16 @@ export class PendingScreenshotRepository {
     const rows = await databaseService.executeQuery(
       'SELECT * FROM pending_screenshots WHERE file_hash = ? LIMIT 1',
       [hash]
+    );
+    if (rows.length === 0) return null;
+    return this.mapRowToModel(rows[0]);
+  }
+
+  async getById(id: string): Promise<PendingScreenshot | null> {
+    if (!id) return null;
+    const rows = await databaseService.executeQuery(
+      'SELECT * FROM pending_screenshots WHERE id = ? LIMIT 1',
+      [id]
     );
     if (rows.length === 0) return null;
     return this.mapRowToModel(rows[0]);
@@ -58,7 +78,6 @@ export class PendingScreenshotRepository {
   }
 
   async isDuplicate(assetId?: string, fileHash?: string, filePath?: string): Promise<boolean> {
-    // 1. Check in pending_screenshots
     if (fileHash) {
       const pendingHashRows = await databaseService.executeQuery(
         'SELECT id FROM pending_screenshots WHERE file_hash = ? LIMIT 1',
@@ -75,7 +94,6 @@ export class PendingScreenshotRepository {
       if (pendingAssetRows.length > 0) return true;
     }
 
-    // 2. Check in main screenshots table
     if (assetId) {
       const screenshotAssetRows = await databaseService.executeQuery(
         'SELECT id FROM screenshots WHERE device_asset_id = ? LIMIT 1',
@@ -114,12 +132,42 @@ export class PendingScreenshotRepository {
     ]);
   }
 
+  async updateOCRResult(
+    id: string,
+    ocrStatus: PendingScreenshotStatus,
+    extractedText?: string,
+    processingTimeMs?: number,
+    errorMessage?: string
+  ): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    const sql = `
+      UPDATE pending_screenshots
+      SET ocr_status = ?,
+          status = ?,
+          extracted_text = coalesce(?, extracted_text),
+          ocr_processing_time = coalesce(?, ocr_processing_time),
+          error_message = ?,
+          updated_at = ?
+      WHERE id = ?
+    `;
+    await databaseService.executeCommand(sql, [
+      ocrStatus,
+      ocrStatus,
+      extractedText || null,
+      processingTimeMs || null,
+      errorMessage || null,
+      updatedAt,
+      id,
+    ]);
+  }
+
   async incrementRetry(id: string, errorMessage?: string): Promise<void> {
     const updatedAt = new Date().toISOString();
     const sql = `
       UPDATE pending_screenshots
       SET retry_count = retry_count + 1,
           status = 'Pending',
+          ocr_status = 'Pending',
           error_message = ?,
           updated_at = ?
       WHERE id = ?
@@ -129,14 +177,14 @@ export class PendingScreenshotRepository {
 
   async getPendingScreenshots(): Promise<PendingScreenshot[]> {
     const rows = await databaseService.executeQuery(
-      "SELECT * FROM pending_screenshots WHERE status = 'Pending' ORDER BY created_at ASC"
+      "SELECT * FROM pending_screenshots WHERE status = 'Pending' OR ocr_status = 'Pending' ORDER BY created_at ASC"
     );
     return rows.map(this.mapRowToModel);
   }
 
   async getFailedScreenshots(): Promise<PendingScreenshot[]> {
     const rows = await databaseService.executeQuery(
-      "SELECT * FROM pending_screenshots WHERE status = 'Failed' ORDER BY updated_at DESC"
+      "SELECT * FROM pending_screenshots WHERE status = 'Failed' OR ocr_status = 'Failed' ORDER BY updated_at DESC"
     );
     return rows.map(this.mapRowToModel);
   }
@@ -222,6 +270,14 @@ export class PendingScreenshotRepository {
       status: row.status as PendingScreenshotStatus,
       retryCount: row.retry_count || 0,
       errorMessage: row.error_message || undefined,
+      deviceFolder: row.device_folder || undefined,
+      mimeType: row.mime_type || undefined,
+      resolution: row.resolution || undefined,
+      width: row.width || 1080,
+      height: row.height || 2400,
+      ocrStatus: (row.ocr_status || row.status) as PendingScreenshotStatus,
+      ocrProcessingTime: row.ocr_processing_time || 0,
+      extractedText: row.extracted_text || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

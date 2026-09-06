@@ -13,6 +13,16 @@ export interface PendingScreenshot {
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;
+
+  // Sprint RN-04 Metadata & OCR Extraction Fields
+  deviceFolder?: string;
+  mimeType?: string;
+  resolution?: string;
+  width?: number;
+  height?: number;
+  ocrStatus?: PendingScreenshotStatus;
+  ocrProcessingTime?: number;
+  extractedText?: string;
 }
 
 export interface DetectedScreenshotEvent {
@@ -25,4 +35,6 @@ export interface DetectedScreenshotEvent {
   height?: number;
   timestamp?: number;
   uri?: string;
+  deviceFolder?: string;
+  mimeType?: string;
 }

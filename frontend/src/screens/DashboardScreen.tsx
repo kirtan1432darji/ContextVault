@@ -39,6 +39,12 @@ export const DashboardScreen: React.FC = () => {
   const stopScanner = useScannerStore((s) => s.stopScanner);
   const simulateScreenshot = useScannerStore((s) => s.simulateScreenshot);
 
+  // Sprint RN-04 OCR Pipeline State
+  const ocrCompletedToday = useScannerStore((s) => s.ocrCompletedToday);
+  const ocrPending = useScannerStore((s) => s.ocrPending);
+  const ocrFailed = useScannerStore((s) => s.ocrFailed);
+  const avgProcessingTimeMs = useScannerStore((s) => s.avgProcessingTimeMs);
+
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId !== 'unsorted').length;
   const matchRate = totalCount > 0 ? Math.round((organizedCount / totalCount) * 100) : 0;
@@ -300,7 +306,66 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 4. Recent Screenshots Carousel */}
+      {/* 4. Sprint RN-04: Google ML Kit OCR Processing Engine Card */}
+      <ModernCard style={styles.ocrStatsCard}>
+        <View style={styles.ocrTitleRow}>
+          <View style={styles.ocrTitleLeft}>
+            <View style={[styles.ocrBadgeIcon, { backgroundColor: `${theme.colors.primary}18` }]}>
+              <Icon name="scan-outline" size={18} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={[styles.ocrSectionTitle, { color: theme.colors.textPrimary }]}>
+                Google ML Kit OCR Engine
+              </Text>
+              <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
+                On-device privacy-first text extraction
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.avgTimePill, { backgroundColor: `${theme.colors.accent}15` }]}>
+            <Icon name="flash" size={12} color={theme.colors.accent} style={{ marginRight: 3 }} />
+            <Text style={[styles.avgTimeText, { color: theme.colors.accent }]}>
+              {avgProcessingTimeMs > 0 ? `${avgProcessingTimeMs}ms avg` : 'Fast ~180ms'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.ocrMetricsGrid}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
+              <AnimatedCounter value={ocrCompletedToday} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              OCR Completed
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.accent }]}>
+              <AnimatedCounter value={ocrPending} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              OCR Pending
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text
+              style={[
+                styles.ocrMetricValue,
+                { color: ocrFailed > 0 ? theme.colors.error : theme.colors.textSecondary },
+              ]}
+            >
+              <AnimatedCounter value={ocrFailed} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              OCR Failed
+            </Text>
+          </View>
+        </View>
+      </ModernCard>
+
+      {/* 5. Recent Screenshots Carousel */}
       {screenshots.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -338,7 +403,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
       )}
 
-      {/* 5. Needs Review Strip */}
+      {/* 6. Needs Review Strip */}
       {needsReviewList.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -375,7 +440,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
       )}
 
-      {/* 6. Smart Folders Grid */}
+      {/* 7. Smart Folders Grid */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
@@ -484,7 +549,7 @@ const styles = StyleSheet.create({
     height: 36,
   },
   heroEngineCard: {
-    marginBottom: 24,
+    marginBottom: 16,
     padding: 16,
   },
   engineHeaderRow: {
@@ -637,6 +702,69 @@ const styles = StyleSheet.create({
   engineSimulateBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  ocrStatsCard: {
+    marginBottom: 24,
+    padding: 16,
+  },
+  ocrTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  ocrTitleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ocrBadgeIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  ocrSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  ocrSectionSubtitle: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  avgTimePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  avgTimeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  ocrMetricsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  ocrMetricBox: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginHorizontal: 3,
+  },
+  ocrMetricValue: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  ocrMetricTitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
   },
   section: {
     marginBottom: 24,

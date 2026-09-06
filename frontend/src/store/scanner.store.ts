@@ -12,6 +12,19 @@ export interface DetectedScreenshotMetadata {
   status?: 'Pending' | 'Processing' | 'Completed' | 'Failed';
   width?: number;
   height?: number;
+  deviceFolder?: string;
+  mimeType?: string;
+}
+
+export interface LastOCRResultSummary {
+  screenshotId: string;
+  fileName: string;
+  rawText: string;
+  confidence: number;
+  processingTimeMs: number;
+  language: string;
+  blocksCount: number;
+  processedAt: string;
 }
 
 interface ScannerState {
@@ -21,6 +34,14 @@ interface ScannerState {
   pendingProcessing: number;
   lastScreenshot: DetectedScreenshotMetadata | null;
   permissionStatus: StoragePermissionStatus;
+
+  // Sprint RN-04 OCR Pipeline State
+  ocrCompletedToday: number;
+  ocrPending: number;
+  ocrFailed: number;
+  avgProcessingTimeMs: number;
+  currentProcessingItem: any | null;
+  lastOCRResult: LastOCRResultSummary | null;
 
   // Legacy & Progress state for backwards compatibility
   isScanning: boolean;
@@ -39,11 +60,21 @@ interface ScannerState {
   requestPermissions: () => Promise<boolean>;
   loadCounts: () => Promise<void>;
   retryFailed: () => Promise<void>;
+  retryFailedOCR: () => Promise<void>;
+  retrySingleOCR: (id: string) => Promise<void>;
   simulateScreenshot: (name?: string) => Promise<void>;
 
   // Internal state setters
   setIsListening: (isListening: boolean) => void;
   setCounts: (counts: { scannedToday: number; pendingProcessing: number }) => void;
+  setOCRMetrics: (metrics: {
+    ocrCompletedToday: number;
+    ocrPending: number;
+    ocrFailed: number;
+    avgProcessingTimeMs: number;
+  }) => void;
+  setCurrentProcessingItem: (item: any | null) => void;
+  setLastOCRResult: (result: LastOCRResultSummary | null) => void;
   setLastScreenshot: (screenshot: DetectedScreenshotMetadata | null) => void;
   updateItemStatus: (id: string, status: 'Pending' | 'Processing' | 'Completed' | 'Failed') => void;
   setPermissionStatus: (status: StoragePermissionStatus) => void;
@@ -63,6 +94,14 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   lastScreenshot: null,
   permissionStatus: 'unavailable',
 
+  // RN-04 OCR State
+  ocrCompletedToday: 0,
+  ocrPending: 0,
+  ocrFailed: 0,
+  avgProcessingTimeMs: 0,
+  currentProcessingItem: null,
+  lastOCRResult: null,
+
   isScanning: false,
   progress: 0,
   currentItem: '',
@@ -72,7 +111,6 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   error: null,
 
   startScanner: async () => {
-    // Dynamic import to avoid circular dependency
     const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
     const started = await screenshotListenerService.start();
     return started;
@@ -107,8 +145,18 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   },
 
   retryFailed: async () => {
-    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
-    await screenshotListenerService.retryFailed();
+    const { ocrQueueService } = await import('../services/OCRQueueService');
+    await ocrQueueService.retryAllFailed();
+  },
+
+  retryFailedOCR: async () => {
+    const { ocrQueueService } = await import('../services/OCRQueueService');
+    await ocrQueueService.retryAllFailed();
+  },
+
+  retrySingleOCR: async (id: string) => {
+    const { ocrQueueService } = await import('../services/OCRQueueService');
+    await ocrQueueService.retrySingle(id);
   },
 
   simulateScreenshot: async (name?: string) => {
@@ -120,6 +168,12 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
 
   setCounts: ({ scannedToday, pendingProcessing }) =>
     set({ scannedToday, pendingProcessing }),
+
+  setOCRMetrics: (metrics) => set({ ...metrics }),
+
+  setCurrentProcessingItem: (currentProcessingItem) => set({ currentProcessingItem }),
+
+  setLastOCRResult: (lastOCRResult) => set({ lastOCRResult }),
 
   setLastScreenshot: (lastScreenshot) => set({ lastScreenshot }),
 

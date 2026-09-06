@@ -1,12 +1,11 @@
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { v4 as uuidv4 } from 'uuid';
-import { DetectedScreenshotEvent, PendingScreenshot, PendingScreenshotStatus } from '../models';
+import { DetectedScreenshotEvent, PendingScreenshot } from '../models';
 import { pendingScreenshotRepository } from '../database/repositories/pendingScreenshotRepository';
-import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { mediaObserverService } from './backgroundDetection/mediaObserver';
 import { permissionService } from './permissionService';
-import { screenshotScannerService } from './screenshotScannerService';
+import { ocrQueueService } from './OCRQueueService';
 import { useScannerStore } from '../store/scanner.store';
 import { FileUtils } from '../utils/fileUtils';
 
@@ -18,7 +17,6 @@ export class ScreenshotListenerService {
   private observerUnsubscribe: (() => void) | null = null;
   private processedHashes: Set<string> = new Set();
   private processedAssetIds: Set<string> = new Set();
-  private isProcessingQueue = false;
 
   /**
    * Initializes the listener service on app launch.
@@ -28,7 +26,7 @@ export class ScreenshotListenerService {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    console.log('[ScreenshotListenerService] Initializing detection engine...');
+    console.log('[ScreenshotListenerService] Initializing detection engine & OCR queue...');
 
     // 1. Subscribe to AppState changes
     this.appStateSubscription = AppState.addEventListener(
@@ -36,12 +34,12 @@ export class ScreenshotListenerService {
       this.handleAppStateChange
     );
 
-    // 2. Load existing queue stats into store
+    // 2. Load existing queue stats and OCR metrics into store
     await this.refreshStoreCounts();
 
     // 3. Check if listener should automatically resume after app launch
     const savedState = await AsyncStorage.getItem(STORAGE_KEY_SCANNER_ENABLED);
-    const shouldAutoStart = savedState === null || savedState === 'true'; // Default enabled
+    const shouldAutoStart = savedState === null || savedState === 'true';
 
     if (shouldAutoStart) {
       const permStatus = await permissionService.checkStoragePermission();
@@ -69,7 +67,6 @@ export class ScreenshotListenerService {
       return false;
     }
 
-    // Subscribe to MediaStore observer events
     if (this.observerUnsubscribe) {
       this.observerUnsubscribe();
     }
@@ -90,7 +87,7 @@ export class ScreenshotListenerService {
   }
 
   /**
-   * Stops the screenshot listener when requested or app is teardown.
+   * Stops the screenshot listener when requested.
    */
   async stop(): Promise<void> {
     if (this.observerUnsubscribe) {
@@ -106,7 +103,8 @@ export class ScreenshotListenerService {
 
   /**
    * Core detection handler invoked whenever Android MediaStore fires an event.
-   * Performs deduplication, persists to PendingScreenshots in SQLite, and initiates processing.
+   * Extracts metadata, checks deduplication, saves to SQLite PendingScreenshots,
+   * and dispatches to background OCRQueueService.
    */
   handleDetectedScreenshot = async (event: DetectedScreenshotEvent): Promise<void> => {
     if (!event || !event.filePath) {
@@ -117,6 +115,9 @@ export class ScreenshotListenerService {
     const filePath = event.filePath;
     const fileName = event.fileName || FileUtils.getFileName(filePath);
     const fileSize = event.fileSize || 0;
+    const width = event.width || 1080;
+    const height = event.height || 2400;
+    const resolution = `${width}x${height}`;
     const capturedAt = event.timestamp
       ? new Date(event.timestamp).toISOString()
       : new Date().toISOString();
@@ -126,7 +127,17 @@ export class ScreenshotListenerService {
       event.fileHash ||
       FileUtils.generateFallbackSHA256(filePath, fileSize, timestampNum);
 
-    // 1. In-memory fast duplicate check
+    // Extract device folder
+    const pathParts = filePath.split(/[/\\]/);
+    const deviceFolder =
+      event.deviceFolder || (pathParts.length > 1 ? pathParts[pathParts.length - 2] : 'Screenshots');
+
+    // Extract MIME type
+    const ext = FileUtils.getFileExtension(filePath);
+    const mimeType =
+      event.mimeType || (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png');
+
+    // 1. Fast in-memory deduplication
     if (this.processedAssetIds.has(deviceAssetId) || this.processedHashes.has(fileHash)) {
       console.log('[ScreenshotListenerService] Duplicate ignored (in-memory):', fileName);
       return;
@@ -146,7 +157,6 @@ export class ScreenshotListenerService {
       return;
     }
 
-    // Record in memory to prevent rapid duplicate bursts
     this.processedAssetIds.add(deviceAssetId);
     this.processedHashes.add(fileHash);
 
@@ -161,16 +171,23 @@ export class ScreenshotListenerService {
       capturedAt,
       status: 'Pending',
       retryCount: 0,
+      deviceFolder,
+      mimeType,
+      resolution,
+      width,
+      height,
+      ocrStatus: 'Pending',
+      ocrProcessingTime: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // 3. Store in SQLite PendingScreenshots table BEFORE OCR/processing
+    // 3. Store in SQLite PendingScreenshots table BEFORE OCR processing
     try {
       await pendingScreenshotRepository.insertPending(pendingItem);
       console.log('[ScreenshotListenerService] Stored pending screenshot in SQLite:', fileName);
 
-      // 4. Update Zustand store real-time metrics
+      // 4. Update Zustand store with latest detected screenshot
       useScannerStore.getState().setLastScreenshot({
         id: pendingId,
         deviceAssetId,
@@ -180,115 +197,65 @@ export class ScreenshotListenerService {
         fileHash,
         capturedAt,
         status: 'Pending',
-        width: event.width || 1080,
-        height: event.height || 2400,
+        width,
+        height,
+        deviceFolder,
+        mimeType,
       });
 
       await this.refreshStoreCounts();
 
-      // 5. Trigger non-blocking async processing
-      this.processPendingItem(pendingItem, event.width, event.height);
+      // 5. Dispatch to background OCRQueueService for sequential ML Kit text recognition
+      ocrQueueService.enqueue({
+        id: pendingId,
+        deviceAssetId,
+        filePath,
+        fileName,
+        fileSize,
+        fileHash,
+        capturedAt,
+        width,
+        height,
+        deviceFolder,
+        mimeType,
+        retryCount: 0,
+      });
     } catch (err) {
-      console.error('[ScreenshotListenerService] Error inserting pending screenshot:', err);
+      console.error('[ScreenshotListenerService] Error saving pending screenshot:', err);
     }
   };
 
   /**
-   * Processes a pending screenshot through OCR, heuristic classification, and storage.
-   */
-  private async processPendingItem(
-    item: PendingScreenshot,
-    width = 1080,
-    height = 2400
-  ): Promise<void> {
-    try {
-      // Transition status to Processing
-      await pendingScreenshotRepository.updateStatus(item.id, 'Processing');
-      useScannerStore.getState().updateItemStatus(item.id, 'Processing');
-      await this.refreshStoreCounts();
-
-      // Process via Scanner Service (local OCR & rule classification)
-      const organized = await screenshotScannerService.processScreenshotAsset({
-        id: item.deviceAssetId,
-        filePath: item.filePath,
-        fileName: item.fileName,
-        fileSize: item.fileSize,
-        width,
-        height,
-        createdAt: item.capturedAt,
-      });
-
-      if (organized) {
-        // Transition status to Completed
-        await pendingScreenshotRepository.updateStatus(item.id, 'Completed');
-        useScannerStore.getState().updateItemStatus(item.id, 'Completed');
-        console.log('[ScreenshotListenerService] Screenshot processed successfully:', item.fileName);
-      } else {
-        await pendingScreenshotRepository.updateStatus(
-          item.id,
-          'Completed',
-          'Identified as already organized'
-        );
-      }
-    } catch (err: any) {
-      console.error('[ScreenshotListenerService] Failed to process screenshot:', err);
-      const errMsg = err?.message || 'Processing failed';
-      await pendingScreenshotRepository.updateStatus(item.id, 'Failed', errMsg);
-      useScannerStore.getState().updateItemStatus(item.id, 'Failed');
-    } finally {
-      await this.refreshStoreCounts();
-    }
-  }
-
-  /**
-   * Retries all failed screenshots in the queue.
-   */
-  async retryFailed(): Promise<void> {
-    if (this.isProcessingQueue) return;
-    this.isProcessingQueue = true;
-
-    try {
-      const failedItems = await pendingScreenshotRepository.getFailedScreenshots();
-      console.log(`[ScreenshotListenerService] Retrying ${failedItems.length} failed items...`);
-
-      for (const item of failedItems) {
-        await pendingScreenshotRepository.incrementRetry(item.id);
-        await this.processPendingItem(item);
-      }
-    } finally {
-      this.isProcessingQueue = false;
-      await this.refreshStoreCounts();
-    }
-  }
-
-  /**
-   * Simulates screenshot detection for testing and debug verification.
+   * Simulates screenshot detection for testing and verification.
    */
   async simulateScreenshot(customName?: string): Promise<void> {
     const timestamp = Date.now();
-    const name = customName || `Screenshot_${timestamp}_Test.png`;
-    const randomHash = FileUtils.generateFallbackSHA256(
-      `/storage/emulated/0/Pictures/Screenshots/${name}`,
-      350000,
-      timestamp
-    );
+    const types = ['Invoice_Google_Play', 'Chat_Receipt_Order', 'Code_Snippets_API', 'Flight_Ticket_Boarding'];
+    const selectedType = types[Math.floor(Math.random() * types.length)];
+    const name = customName || `Screenshot_${selectedType}_${timestamp}.png`;
+    const folder = 'Screenshots';
+    const filePath = `/storage/emulated/0/Pictures/Screenshots/${name}`;
+    const fileSize = 350000 + Math.floor(Math.random() * 50000);
+    const randomHash = FileUtils.generateFallbackSHA256(filePath, fileSize, timestamp);
 
     const simulatedEvent: DetectedScreenshotEvent = {
       deviceAssetId: `sim_${timestamp}`,
-      filePath: `/storage/emulated/0/Pictures/Screenshots/${name}`,
+      filePath,
       fileName: name,
-      fileSize: 350000 + Math.floor(Math.random() * 50000),
+      fileSize,
       fileHash: randomHash,
       width: 1080,
       height: 2400,
       timestamp,
+      deviceFolder: folder,
+      mimeType: 'image/png',
     };
 
     await this.handleDetectedScreenshot(simulatedEvent);
   }
 
   /**
-   * Refreshes real-time stats in Zustand store.
+   * Refreshes store counts and OCR metrics.
    */
   async refreshStoreCounts(): Promise<void> {
     try {
@@ -297,6 +264,7 @@ export class ScreenshotListenerService {
         scannedToday: counts.today,
         pendingProcessing: counts.pending + counts.processing,
       });
+      await ocrQueueService.updateStoreCounts();
     } catch (err) {
       console.warn('[ScreenshotListenerService] Could not refresh counts:', err);
     }
@@ -304,7 +272,6 @@ export class ScreenshotListenerService {
 
   private handleAppStateChange = (nextAppState: AppStateStatus) => {
     console.log('[ScreenshotListenerService] AppState transitioned to:', nextAppState);
-    // On Android, ContentObserver continues observing MediaStore in background
     if (nextAppState === 'active') {
       this.refreshStoreCounts();
     }
