@@ -6,8 +6,9 @@ import { categoryRepository } from '../database/repositories/categoryRepository'
 
 export class SearchService {
   /**
-   * Local offline multi-field search across screenshots and smart folder metadata.
-   * Matches OCR text, folder name, subcategory, tags, and file name.
+   * Local offline multi-field search across screenshots, smart folder metadata,
+   * AI classification cache (AI summary, AI tags, entities), and folder context summaries.
+   * Matches: OCR text, AI summary, AI tags, folder summaries, entities, file name, category, and subcategory.
    */
   async searchScreenshots(
     query: string,
@@ -23,45 +24,98 @@ export class SearchService {
     }
 
     try {
+      const wildcard = `%${q}%`;
+
       // 1. Check matching folder IDs by name or path
       let matchingCategoryIds: string[] = [];
-      const allCats = await categoryRepository.getAllCategories();
-      allCats.forEach((c) => {
-        if (
-          c.name.toLowerCase().includes(q) ||
-          (c.path && c.path.toLowerCase().includes(q))
-        ) {
-          matchingCategoryIds.push(c.id);
-        }
-      });
+      try {
+        const allCats = await categoryRepository.getAllCategories();
+        allCats.forEach((c) => {
+          if (
+            c.name.toLowerCase().includes(q) ||
+            (c.path && c.path.toLowerCase().includes(q))
+          ) {
+            matchingCategoryIds.push(c.id);
+          }
+        });
+      } catch (err) {
+        console.warn('[SearchService] Error searching categories:', err);
+      }
 
-      // 2. Query local SQLite database
-      const conditions: string[] = [
-        '(LOWER(file_name) LIKE ? OR LOWER(ocr_text) LIKE ? OR LOWER(category_name) LIKE ? OR LOWER(subcategory) LIKE ? OR LOWER(keywords_json) LIKE ?)',
+      // 2. Search folder_context table for matching summaries, key insights, and entities
+      try {
+        const folderContextRows = await databaseService.executeQuery(
+          `SELECT folder_id FROM folder_context 
+           WHERE LOWER(summary) LIKE ? OR LOWER(entities_json) LIKE ? OR LOWER(key_insights_json) LIKE ?`,
+          [wildcard, wildcard, wildcard]
+        );
+        folderContextRows.forEach((r: any) => {
+          if (r.folder_id && !matchingCategoryIds.includes(r.folder_id)) {
+            matchingCategoryIds.push(r.folder_id);
+          }
+        });
+      } catch (err) {
+        console.warn('[SearchService] Error searching folder_context:', err);
+      }
+
+      // 3. Search classification_cache table for matching AI summary, AI tags, and entities
+      let matchingScreenshotIds: string[] = [];
+      try {
+        const cacheRows = await databaseService.executeQuery(
+          `SELECT screenshot_id FROM classification_cache 
+           WHERE LOWER(summary) LIKE ? OR LOWER(tags_json) LIKE ? OR LOWER(entities_json) LIKE ?`,
+          [wildcard, wildcard, wildcard]
+        );
+        cacheRows.forEach((r: any) => {
+          if (r.screenshot_id) {
+            matchingScreenshotIds.push(r.screenshot_id);
+          }
+        });
+      } catch (err) {
+        console.warn('[SearchService] Error searching classification_cache:', err);
+      }
+
+      // 4. Query local SQLite database combining direct screenshot match, folder matches, and AI cache matches
+      const textConditions: string[] = [
+        'LOWER(file_name) LIKE ?',
+        'LOWER(ocr_text) LIKE ?',
+        'LOWER(category_name) LIKE ?',
+        'LOWER(subcategory) LIKE ?',
+        'LOWER(keywords_json) LIKE ?',
       ];
-      const wildcard = `%${q}%`;
       const params: any[] = [wildcard, wildcard, wildcard, wildcard, wildcard];
 
       if (matchingCategoryIds.length > 0) {
         const catPlaceholders = matchingCategoryIds.map(() => '?').join(',');
-        conditions.push(`category_id IN (${catPlaceholders})`);
+        textConditions.push(`category_id IN (${catPlaceholders})`);
         params.push(...matchingCategoryIds);
       }
 
+      if (matchingScreenshotIds.length > 0) {
+        const ssPlaceholders = matchingScreenshotIds.map(() => '?').join(',');
+        textConditions.push(`id IN (${ssPlaceholders})`);
+        params.push(...matchingScreenshotIds);
+      }
+
+      let whereClause = `(${textConditions.join(' OR ')})`;
+
       if (categoryId && categoryId !== 'all') {
-        conditions.push('category_id = ?');
+        whereClause += ' AND category_id = ?';
         params.push(categoryId);
       }
 
-      const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' OR ')}` : '';
-      const sql = `SELECT * FROM screenshots ${whereSql} ORDER BY created_at DESC LIMIT 100`;
-
+      const sql = `SELECT * FROM screenshots WHERE ${whereClause} ORDER BY created_at DESC LIMIT 100`;
       const rows = await databaseService.executeQuery(sql, params);
 
       const models: ScreenshotModel[] = rows.map((row: any) => {
         let keywords: string[] = [];
         try {
           if (row.keywords_json) keywords = JSON.parse(row.keywords_json);
+        } catch {}
+
+        let folderPath: string[] | undefined;
+        try {
+          if (row.folder_path) folderPath = JSON.parse(row.folder_path);
         } catch {}
 
         return {
@@ -76,20 +130,24 @@ export class SearchService {
           categoryId: row.category_id,
           categoryName: row.category_name,
           subcategory: row.subcategory || '',
+          folderPath,
           confidence: row.confidence,
+          sourceApp: row.source_app,
+          detectedApp: row.detected_app,
+          keywords,
           isAutoCategorized: Boolean(row.is_auto_categorized),
           isFavorite: Boolean(row.is_favorite),
           isReviewed: Boolean(row.is_reviewed),
           isSynced: Boolean(row.is_synced),
           ocrStatus: row.ocr_status,
           ocrText: row.ocr_text,
-          keywords,
-          tags: keywords.slice(0, 4).map((kw) => ({
+          lastScannedAt: row.last_scanned_at,
+          classificationSource: row.classification_source || (row.is_synced ? 'backend' : 'local'),
+          tags: keywords.slice(0, 5).map((kw) => ({
             id: `tag_${kw.toLowerCase().replace(/\s+/g, '_')}`,
             name: kw,
-            colorHex: '6366F1',
+            colorHex: '#6366F1',
           })),
-          lastScannedAt: row.last_scanned_at,
         };
       });
 
@@ -103,7 +161,8 @@ export class SearchService {
           (s.ocrText && s.ocrText.toLowerCase().includes(q)) ||
           s.categoryName.toLowerCase().includes(q) ||
           (s.subcategory && s.subcategory.toLowerCase().includes(q)) ||
-          (s.keywords && s.keywords.some((k) => k.toLowerCase().includes(q)));
+          (s.keywords && s.keywords.some((k) => k.toLowerCase().includes(q))) ||
+          (s.folderPath && s.folderPath.some((p) => p.toLowerCase().includes(q)));
 
         if (categoryId && categoryId !== 'all') {
           return matchesQuery && s.categoryId === categoryId;

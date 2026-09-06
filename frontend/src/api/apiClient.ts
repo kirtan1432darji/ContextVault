@@ -155,6 +155,24 @@ class ApiClient {
 
   // ==================== SCREENSHOTS ====================
 
+  async uploadScreenshotMetadata(payload: Record<string, any>): Promise<Result<any>> {
+    try {
+      const res = await this.axiosInstance.post(ApiConstants.uploadMetadata, payload);
+      return Result.success(this.unwrap(res.data));
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Upload metadata failed', e);
+    }
+  }
+
+  async fetchScreenshotById(id: string): Promise<Result<any>> {
+    try {
+      const res = await this.axiosInstance.get(`${ApiConstants.screenshots}/${id}`);
+      return Result.success(this.unwrap(res.data));
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Fetch screenshot failed', e);
+    }
+  }
+
   async scanScreenshot(payload: Record<string, any>): Promise<Result<any>> {
     try {
       const res = await this.axiosInstance.post(ApiConstants.scanScreenshot, payload);
@@ -264,6 +282,16 @@ class ApiClient {
       return Result.success(Array.isArray(data) ? data : []);
     } catch (e: any) {
       return Result.failure(e.response?.data?.message || e.message || 'Failed to fetch categories', e);
+    }
+  }
+
+  async fetchCategoriesTree(): Promise<Result<any[]>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.categories, { params: { tree: true } });
+      const data = this.unwrap<any[]>(res.data);
+      return Result.success(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Failed to fetch category tree', e);
     }
   }
 

@@ -66,6 +66,10 @@ class DatabaseService {
       'ALTER TABLE ocr_cache ADD COLUMN ocr_version TEXT DEFAULT "MLKit-Text-16.0.0"',
       'ALTER TABLE ocr_cache ADD COLUMN created_on TEXT',
       'ALTER TABLE ocr_cache ADD COLUMN blocks_json TEXT',
+
+      // Screenshot table migrations (Sprint RN-06)
+      'ALTER TABLE screenshots ADD COLUMN folder_path TEXT',
+      'ALTER TABLE screenshots ADD COLUMN classification_source TEXT DEFAULT "local"',
     ];
 
     for (const alterSql of alterStatements) {

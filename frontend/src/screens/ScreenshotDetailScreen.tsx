@@ -13,13 +13,12 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useScreenshotStore } from '../store/screenshot.store';
-import { useCategoryStore } from '../store/category.store';
 import { screenshotService } from '../services/screenshotService';
-import { classificationService } from '../services/classificationService';
+import { contextSyncService } from '../services/ContextSyncService';
 import { ocrCacheRepository } from '../database/repositories/ocrCacheRepository';
-import { OCRCacheRecord } from '../models';
+import { classificationCacheRepository } from '../database/repositories/classificationCacheRepository';
+import { OCRCacheRecord, ClassificationCacheRecord, ExtractedEntitiesDto } from '../models';
 import { ModernCard } from '../components/ModernCard';
-import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { TagChip } from '../components/TagChip';
 import { DateFormatter } from '../utils/dateFormatter';
 import { FileUtils } from '../utils/fileUtils';
@@ -31,11 +30,11 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const theme = useAppTheme();
 
   const screenshot = useScreenshotStore((s) => s.screenshots.find((item) => item.id === id));
-  const categories = useCategoryStore((s) => s.categories);
-  const [isReclassifying, setIsReclassifying] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sprint RN-04 OCR Preview State
+  // OCR and Backend AI Cache States
   const [ocrRecord, setOcrRecord] = useState<OCRCacheRecord | null>(null);
+  const [cacheRecord, setCacheRecord] = useState<ClassificationCacheRecord | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -44,6 +43,11 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
     ocrCacheRepository.getByScreenshotId(id).then((record) => {
       if (isMounted && record) {
         setOcrRecord(record);
+      }
+    });
+    classificationCacheRepository.getCacheByScreenshotId(id).then((cache) => {
+      if (isMounted && cache) {
+        setCacheRecord(cache);
       }
     });
     return () => {
@@ -76,25 +80,26 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
     Alert.alert('OCR Text Copied', 'The extracted text has been copied to your clipboard.');
   };
 
-  const handleReclassify = async () => {
-    setIsReclassifying(true);
-    const res = await classificationService.classifyScreenshot({
-      screenshotId: id,
-      fileName: screenshot.fileName,
-      filePath: screenshot.filePath,
-      ocrText: screenshot.ocrText || '',
-    });
+  const handleSyncWithBackendAI = async () => {
+    setIsSyncing(true);
+    const res = await contextSyncService.syncScreenshotMetadata(screenshot, ocrRecord);
 
     if (res.isSuccess && res.data) {
-      useScreenshotStore.getState().updateCategoryLocal(
-        id,
-        res.data.categoryId,
-        res.data.categoryName,
-        res.data.subcategory
+      const cache = await classificationCacheRepository.getCacheByScreenshotId(id);
+      setCacheRecord(cache);
+      Alert.alert(
+        'AI Sync Complete',
+        `Categorized as ${res.data.categoryName} (${res.data.subcategory}) with ${Math.round(
+          res.data.confidence * 100
+        )}% confidence.`
       );
-      Alert.alert('Reclassified', `Filed into ${res.data.categoryName} (${res.data.subcategory})`);
+    } else {
+      Alert.alert(
+        'Offline Queue Enqueued',
+        'Backend server unavailable. Screenshot metadata has been saved to the offline sync queue and will sync automatically when online.'
+      );
     }
-    setIsReclassifying(false);
+    setIsSyncing(false);
   };
 
   const uri = screenshot.filePath.startsWith('http') || screenshot.filePath.startsWith('file://')
@@ -104,6 +109,27 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const ocrText = screenshot.ocrText || ocrRecord?.extractedText || '';
   const processingDuration = ocrRecord?.processingTime || 0;
   const ocrConfidence = ocrRecord?.confidence || screenshot.confidence || 0.88;
+  const isBackendAI = (screenshot.classificationSource === 'backend') || (cacheRecord?.source === 'backend');
+
+  // Parse extracted entities from backend cache
+  let extractedEntities: ExtractedEntitiesDto = {
+    amounts: [],
+    urls: [],
+    emails: [],
+    phoneNumbers: [],
+    merchants: [],
+    projectNames: [],
+    dates: [],
+  };
+  if (cacheRecord?.entitiesJson) {
+    try {
+      extractedEntities = JSON.parse(cacheRecord.entitiesJson);
+    } catch {}
+  }
+
+  // Tags list
+  const displayTags = screenshot.tags.map((t) => t.name).concat(screenshot.keywords || []);
+  const uniqueTags = Array.from(new Set(displayTags)).filter(Boolean);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -142,10 +168,10 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           <Image source={{ uri }} style={styles.image} resizeMode="contain" />
         </View>
 
-        {/* Category & Status Card */}
+        {/* 1. Category, AI Source & Confidence Card */}
         <ModernCard style={styles.card}>
           <View style={styles.categoryRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={[styles.categoryName, { color: theme.colors.textPrimary }]}>
                 {screenshot.categoryName}
               </Text>
@@ -155,22 +181,144 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
                 </Text>
               ) : null}
             </View>
-            <ConfidenceBadge confidence={screenshot.confidence} />
+
+            {/* AI Confidence Badge */}
+            <View style={[styles.confidencePill, { backgroundColor: `${theme.colors.primary}18` }]}>
+              <Icon name="shield-checkmark-outline" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.confidencePillText, { color: theme.colors.primary }]}>
+                {Math.round(screenshot.confidence * 100)}% Confidence
+              </Text>
+            </View>
           </View>
 
+          {/* Folder Breadcrumb Path */}
+          <View style={[styles.breadcrumbBox, { backgroundColor: theme.isDark ? '#1E293B60' : '#F1F5F9' }]}>
+            <Icon name="folder-open-outline" size={14} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text numberOfLines={1} style={[styles.breadcrumbText, { color: theme.colors.textSecondary }]}>
+              {screenshot.folderPath ? screenshot.folderPath.join(' › ') : `${screenshot.categoryName} › ${screenshot.subcategory || 'General'}`}
+            </Text>
+          </View>
+
+          {/* Classification Source Badge */}
+          <View style={styles.sourceRow}>
+            <View
+              style={[
+                styles.sourceBadge,
+                { backgroundColor: isBackendAI ? `${theme.colors.success}18` : `${theme.colors.accent}18` },
+              ]}
+            >
+              <Icon
+                name={isBackendAI ? 'cloud-done-outline' : 'phone-portrait-outline'}
+                size={14}
+                color={isBackendAI ? theme.colors.success : theme.colors.accent}
+                style={{ marginRight: 5 }}
+              />
+              <Text
+                style={[
+                  styles.sourceBadgeText,
+                  { color: isBackendAI ? theme.colors.success : theme.colors.accent },
+                ]}
+              >
+                {isBackendAI ? 'Backend AI Synchronized' : 'On-Device Heuristic'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Sync / Re-analyze CTA */}
           <TouchableOpacity
-            onPress={handleReclassify}
-            disabled={isReclassifying}
+            onPress={handleSyncWithBackendAI}
+            disabled={isSyncing}
             style={[styles.reclassifyBtn, { borderColor: theme.colors.primary }]}
           >
             <Icon name="sync-outline" size={16} color={theme.colors.primary} />
             <Text style={[styles.reclassifyText, { color: theme.colors.primary }]}>
-              {isReclassifying ? 'Reclassifying...' : 'Re-analyze with AI'}
+              {isSyncing ? 'Synchronizing with AI Engine...' : 'Sync with Backend AI'}
             </Text>
           </TouchableOpacity>
         </ModernCard>
 
-        {/* Sprint RN-04: Upgraded OCR Result Preview Card */}
+        {/* 2. Extracted Entities Card */}
+        {(extractedEntities.amounts.length > 0 ||
+          extractedEntities.merchants.length > 0 ||
+          extractedEntities.urls.length > 0 ||
+          extractedEntities.dates.length > 0 ||
+          extractedEntities.emails.length > 0) && (
+          <ModernCard style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Icon name="cube-outline" size={18} color={theme.colors.primary} />
+              <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>
+                AI Extracted Entities
+              </Text>
+            </View>
+
+            {extractedEntities.merchants.length > 0 && (
+              <View style={styles.entitySection}>
+                <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
+                  Merchants & Organizations
+                </Text>
+                <View style={styles.tagsWrap}>
+                  {extractedEntities.merchants.map((m, idx) => (
+                    <TagChip key={idx} label={m} colorHex="#3B82F6" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {extractedEntities.amounts.length > 0 && (
+              <View style={styles.entitySection}>
+                <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
+                  Financial Amounts
+                </Text>
+                <View style={styles.tagsWrap}>
+                  {extractedEntities.amounts.map((a, idx) => (
+                    <TagChip key={idx} label={a} colorHex="#10B981" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {extractedEntities.dates.length > 0 && (
+              <View style={styles.entitySection}>
+                <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
+                  Dates
+                </Text>
+                <View style={styles.tagsWrap}>
+                  {extractedEntities.dates.map((d, idx) => (
+                    <TagChip key={idx} label={d} colorHex="#F59E0B" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {extractedEntities.urls.length > 0 && (
+              <View style={styles.entitySection}>
+                <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
+                  Web Links
+                </Text>
+                <View style={styles.tagsWrap}>
+                  {extractedEntities.urls.map((u, idx) => (
+                    <TagChip key={idx} label={u} colorHex="#6366F1" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {extractedEntities.emails.length > 0 && (
+              <View style={styles.entitySection}>
+                <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
+                  Emails
+                </Text>
+                <View style={styles.tagsWrap}>
+                  {extractedEntities.emails.map((e, idx) => (
+                    <TagChip key={idx} label={e} colorHex="#8B5CF6" />
+                  ))}
+                </View>
+              </View>
+            )}
+          </ModernCard>
+        )}
+
+        {/* 3. OCR Text Preview Card */}
         {ocrText ? (
           <ModernCard style={styles.card}>
             <View style={styles.ocrHeaderRow}>
@@ -219,7 +367,6 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             </View>
 
-            {/* Extracted Text Content with Expand/Collapse */}
             <View style={[styles.ocrTextBox, { backgroundColor: theme.isDark ? '#0F172A' : '#F8FAFC' }]}>
               <Text
                 selectable
@@ -247,58 +394,60 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </ModernCard>
         ) : null}
 
-        {/* Tags */}
-        {screenshot.tags.length > 0 && (
+        {/* 4. AI Tags */}
+        {uniqueTags.length > 0 && (
           <ModernCard style={styles.card}>
             <View style={styles.cardHeader}>
               <Icon name="pricetags-outline" size={18} color={theme.colors.secondary} />
               <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>
-                Search Index Keywords
+                AI Tags & Keywords
               </Text>
             </View>
             <View style={styles.tagsWrap}>
-              {screenshot.tags.map((t) => (
-                <TagChip key={t.id} label={t.name} colorHex={t.colorHex} />
+              {uniqueTags.map((t, i) => (
+                <TagChip key={i} label={t} colorHex={theme.colors.primary} />
               ))}
             </View>
           </ModernCard>
         )}
 
-        {/* Metadata Panel */}
+        {/* 5. Metadata Info */}
         <ModernCard style={styles.card}>
           <View style={styles.cardHeader}>
-            <Icon name="information-circle-outline" size={18} color={theme.colors.textMuted} />
+            <Icon name="information-circle-outline" size={18} color={theme.colors.textSecondary} />
             <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>
-              File Information
+              File & System Metadata
             </Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>File Name</Text>
-            <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>{screenshot.fileName}</Text>
+            <Text numberOfLines={1} style={[styles.metaVal, { color: theme.colors.textPrimary, maxWidth: '60%' }]}>
+              {screenshot.fileName}
+            </Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>Dimensions</Text>
             <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
-              {screenshot.width} × {screenshot.height}
+              {screenshot.width} x {screenshot.height} px
             </Text>
           </View>
           <View style={styles.metaRow}>
-            <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>File Size</Text>
+            <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>Size</Text>
             <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
               {FileUtils.formatBytes(screenshot.fileSize)}
             </Text>
           </View>
           <View style={styles.metaRow}>
-            <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>Captured</Text>
+            <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>Detected</Text>
             <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
               {DateFormatter.formatFullDateTime(screenshot.createdAt)}
             </Text>
           </View>
-          {ocrRecord?.ocrVersion ? (
+          {screenshot.detectedApp ? (
             <View style={styles.metaRow}>
-              <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>OCR Engine</Text>
+              <Text style={[styles.metaKey, { color: theme.colors.textSecondary }]}>App Detected</Text>
               <Text style={[styles.metaVal, { color: theme.colors.textPrimary }]}>
-                {ocrRecord.ocrVersion}
+                {screenshot.detectedApp}
               </Text>
             </View>
           ) : null}
@@ -313,21 +462,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   centered: {
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 10,
+    paddingBottom: 12,
   },
   actionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -335,12 +484,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   scrollContent: {
-    padding: 16,
+    padding: 20,
     paddingBottom: 40,
   },
   imageContainer: {
-    width: '100%',
-    height: 280,
+    height: 320,
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 16,
@@ -359,13 +507,51 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryName: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
   },
   subcategoryName: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 14,
     marginTop: 2,
+  },
+  confidencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  confidencePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  breadcrumbBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  breadcrumbText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  sourceBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   reclassifyBtn: {
     flexDirection: 'row',
@@ -374,43 +560,52 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
+    marginTop: 4,
   },
   reclassifyText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     marginLeft: 8,
+  },
+  entitySection: {
+    marginBottom: 10,
+  },
+  entitySectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
   },
   ocrHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   ocrHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   ocrIconBox: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 8,
   },
   ocrSubtext: {
     fontSize: 11,
-    marginLeft: 8,
-    marginTop: 2,
+    marginTop: 1,
   },
   ocrHeaderRight: {
     flexDirection: 'row',

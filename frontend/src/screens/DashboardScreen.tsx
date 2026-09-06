@@ -24,6 +24,7 @@ import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
 import { smartFolderService } from '../services/SmartFolderService';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { useFolderContextStore } from '../store/folderContext.store';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -34,6 +35,13 @@ export const DashboardScreen: React.FC = () => {
   const needsReviewList = useScreenshotStore((s) => s.needsReviewList);
   const categories = useCategoryStore((s) => s.categories);
   const loadCategories = useCategoryStore((s) => s.loadCategories);
+
+  // Sprint RN-06 Context Store State
+  const contextsGeneratedToday = useFolderContextStore((s) => s.contextsGeneratedToday);
+  const aiSyncedToday = useFolderContextStore((s) => s.aiSyncedToday);
+  const recentlyUpdatedContexts = useFolderContextStore((s) => s.recentlyUpdatedContexts);
+  const loadStatsAndRecents = useFolderContextStore((s) => s.loadStatsAndRecents);
+  const [needsReviewCount, setNeedsReviewCount] = useState(0);
 
   const [isOrganizing, setIsOrganizing] = useState(false);
 
@@ -52,15 +60,17 @@ export const DashboardScreen: React.FC = () => {
   const ocrFailed = useScannerStore((s) => s.ocrFailed);
   const avgProcessingTimeMs = useScannerStore((s) => s.avgProcessingTimeMs);
 
-  // Load fresh categories & screenshots on mount
+  // Load fresh categories & screenshots & context stats on mount
   useEffect(() => {
     loadCategories();
+    loadStatsAndRecents();
+    screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
       if (items && items.length > 0) {
         setScreenshots(items);
       }
     });
-  }, [loadCategories, setScreenshots]);
+  }, [loadCategories, setScreenshots, loadStatsAndRecents]);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
@@ -424,7 +434,114 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 5. Recent Screenshots Carousel */}
+      {/* 5. Sprint RN-06: Context Folders & Backend AI Sync Metrics */}
+      <ModernCard style={styles.ocrStatsCard}>
+        <View style={styles.ocrTitleRow}>
+          <View style={styles.ocrTitleLeft}>
+            <View style={[styles.ocrBadgeIcon, { backgroundColor: `${theme.colors.primary}18` }]}>
+              <Icon name="sparkles" size={18} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={[styles.ocrSectionTitle, { color: theme.colors.textPrimary }]}>
+                Folder Context & AI Sync
+              </Text>
+              <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
+                Living intelligence & backend classification
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.avgTimePill, { backgroundColor: `${theme.colors.success}15` }]}>
+            <Icon name="shield-checkmark" size={12} color={theme.colors.success} style={{ marginRight: 3 }} />
+            <Text style={[styles.avgTimeText, { color: theme.colors.success }]}>Active</Text>
+          </View>
+        </View>
+
+        <View style={styles.ocrMetricsGrid}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.primary }]}>
+              <AnimatedCounter value={contextsGeneratedToday} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Contexts Today
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
+              <AnimatedCounter value={aiSyncedToday} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              AI Synced Today
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+            <Text
+              style={[
+                styles.ocrMetricValue,
+                { color: needsReviewCount > 0 ? theme.colors.accent : theme.colors.textSecondary },
+              ]}
+            >
+              <AnimatedCounter value={needsReviewCount} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Needs Review
+            </Text>
+          </View>
+        </View>
+      </ModernCard>
+
+      {/* 6. Sprint RN-06: Recently Updated Contexts */}
+      {recentlyUpdatedContexts.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+              Recently Updated Contexts
+            </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'Folders' })}>
+              <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>All Folders</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={recentlyUpdatedContexts}
+            keyExtractor={(item) => item.categoryId}
+            renderItem={({ item }) => {
+              const cat = categories.find((c) => c.id === item.categoryId);
+              const catName = cat ? cat.name : item.categoryName;
+              return (
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('FolderContext', {
+                      categoryId: item.categoryId,
+                      categoryName: catName,
+                    })
+                  }
+                  style={[styles.recentContextCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+                >
+                  <View style={styles.recentContextTop}>
+                    <Icon name="folder-open" size={16} color={cat?.color || theme.colors.primary} />
+                    <Text numberOfLines={1} style={[styles.recentContextName, { color: theme.colors.textPrimary }]}>
+                      {catName}
+                    </Text>
+                  </View>
+                  <Text numberOfLines={2} style={[styles.recentContextSummary, { color: theme.colors.textSecondary }]}>
+                    {item.summary}
+                  </Text>
+                  {item.lastUpdatedAt && (
+                    <Text style={[styles.recentContextTime, { color: theme.colors.textMuted }]}>
+                      Updated {new Date(item.lastUpdatedAt).toLocaleDateString()}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      )}
+
+      {/* 7. Recent Screenshots Carousel */}
       {screenshots.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1209,5 +1326,32 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  recentContextCard: {
+    width: 220,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginRight: 12,
+  },
+  recentContextTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recentContextName: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+    flex: 1,
+  },
+  recentContextSummary: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  recentContextTime: {
+    fontSize: 10,
+    fontWeight: '500',
   },
 });

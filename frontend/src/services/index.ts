@@ -17,3 +17,5 @@ export * from './backgroundDetection/headlessTask';
 export * from './searchIndexService';
 export * from './OCRQueueService';
 export * from './SmartFolderService';
+export * from './ContextSyncService';
+export * from './FolderContextService';

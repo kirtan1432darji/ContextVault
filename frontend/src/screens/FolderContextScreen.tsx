@@ -6,13 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  FlatList,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useFolderContextStore } from '../store/folderContext.store';
-import { contextService } from '../services/contextService';
+import { folderContextService } from '../services/FolderContextService';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { ScreenshotModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
 
@@ -25,28 +29,32 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   const folderContext = useFolderContextStore((s) => s.getFolderContext(categoryId, categoryName));
   const isGenerating = useFolderContextStore((s) => s.isGenerating);
   const [loading, setLoading] = useState(false);
+  const [screenshots, setScreenshots] = useState<ScreenshotModel[]>([]);
 
   useEffect(() => {
     loadContext();
+    loadFolderScreenshots();
   }, [categoryId]);
+
+  const loadFolderScreenshots = async () => {
+    const items = await screenshotRepository.getScreenshotsByCategoryId(categoryId);
+    setScreenshots(items || []);
+  };
 
   const loadContext = async () => {
     setLoading(true);
-    const res = await contextService.getFolderContext(categoryId, categoryName);
-    if (res.isSuccess && res.data) {
-      useFolderContextStore.getState().setFolderContext(categoryId, res.data);
-    }
+    await folderContextService.getOrGenerateContext(categoryId, categoryName, false);
     setLoading(false);
   };
 
-  const handleGenerateOrRefresh = async () => {
+  const handleManualRefresh = async () => {
     useFolderContextStore.getState().setGenerating(true);
-    const res = await contextService.generateFolderContext(categoryId);
-    if (res.isSuccess && res.data) {
-      useFolderContextStore.getState().setFolderContext(categoryId, res.data);
-    }
+    await folderContextService.generateFolderContext(categoryId, categoryName);
+    await loadFolderScreenshots();
     useFolderContextStore.getState().setGenerating(false);
   };
+
+  const structured = folderContext.structuredEntities;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -60,14 +68,14 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
         </TouchableOpacity>
         <View style={styles.titleBox}>
           <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
-            {categoryName} Context
+            {categoryName}
           </Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            AI Executive Intelligence
+            Context Folder • Living Intelligence
           </Text>
         </View>
         <TouchableOpacity
-          onPress={handleGenerateOrRefresh}
+          onPress={handleManualRefresh}
           disabled={isGenerating}
           style={[styles.refreshBtn, { backgroundColor: `${theme.colors.primary}20` }]}
         >
@@ -87,20 +95,33 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
             <Text style={[styles.headingText, { color: theme.colors.textPrimary }]}>
               Executive Summary
             </Text>
+            {folderContext.confidence > 0 && (
+              <View style={[styles.confidenceBadge, { backgroundColor: `${theme.colors.success}18` }]}>
+                <Text style={[styles.confidenceText, { color: theme.colors.success }]}>
+                  {Math.round(folderContext.confidence * 100)}% AI Match
+                </Text>
+              </View>
+            )}
           </View>
           <Text style={[styles.summaryBody, { color: theme.colors.textPrimary }]}>
             {folderContext.summary ||
               `This folder contains structured records for ${categoryName}. Tap refresh to generate real-time AI contextual extraction from your saved screenshots.`}
           </Text>
+          {folderContext.lastUpdatedAt && (
+            <Text style={[styles.updatedAtText, { color: theme.colors.textSecondary }]}>
+              Updated {new Date(folderContext.lastUpdatedAt).toLocaleDateString()} at{' '}
+              {new Date(folderContext.lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          )}
         </ModernCard>
 
-        {/* 2. Key Topics & Entities */}
+        {/* 2. Key Insights & Topics */}
         {folderContext.keywords.length > 0 && (
           <ModernCard style={styles.card}>
             <View style={styles.sectionHeading}>
-              <Icon name="pricetags-outline" size={18} color={theme.colors.secondary} />
+              <Icon name="bulb-outline" size={18} color={theme.colors.secondary} />
               <Text style={[styles.headingText, { color: theme.colors.textPrimary }]}>
-                Extracted Topics & Entities
+                Key Insights & Topics
               </Text>
             </View>
             <View style={styles.chipsWrap}>
@@ -111,13 +132,109 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
           </ModernCard>
         )}
 
-        {/* 3. Action Items Checklist */}
+        {/* 3. Extracted Entities Breakdown */}
+        {structured && (
+          <ModernCard style={styles.card}>
+            <View style={styles.sectionHeading}>
+              <Icon name="cube-outline" size={18} color={theme.colors.accent} />
+              <Text style={[styles.headingText, { color: theme.colors.textPrimary }]}>
+                Extracted Entities
+              </Text>
+            </View>
+
+            {/* Organizations */}
+            {structured.organizations.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  Organizations & Merchants
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.organizations.map((org, i) => (
+                    <TagChip key={i} label={org} colorHex="#3B82F6" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Payments & Values */}
+            {structured.payments.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  Payments & Values
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.payments.map((pay, i) => (
+                    <TagChip key={i} label={pay} colorHex="#10B981" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Shopping Items */}
+            {structured.shopping.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  Shopping Items
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.shopping.map((item, i) => (
+                    <TagChip key={i} label={item} colorHex="#F97316" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Documents */}
+            {structured.documents.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  Documents & IDs
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.documents.map((doc, i) => (
+                    <TagChip key={i} label={doc} colorHex="#06B6D4" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* People */}
+            {structured.people.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  People & Contacts
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.people.map((p, i) => (
+                    <TagChip key={i} label={p} colorHex="#8B5CF6" />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* URLs */}
+            {structured.urls.length > 0 && (
+              <View style={styles.entityGroup}>
+                <Text style={[styles.entityLabel, { color: theme.colors.textSecondary }]}>
+                  Links & URLs
+                </Text>
+                <View style={styles.chipsWrap}>
+                  {structured.urls.map((u, i) => (
+                    <TagChip key={i} label={u} colorHex="#6366F1" />
+                  ))}
+                </View>
+              </View>
+            )}
+          </ModernCard>
+        )}
+
+        {/* 4. Action Items Checklist */}
         {folderContext.tasks.length > 0 && (
           <ModernCard style={styles.card}>
             <View style={styles.sectionHeading}>
               <Icon name="checkbox-outline" size={18} color={theme.colors.success} />
               <Text style={[styles.headingText, { color: theme.colors.textPrimary }]}>
-                Action Items
+                Action Items ({folderContext.tasks.filter((t) => !t.isCompleted).length} Pending)
               </Text>
             </View>
             {folderContext.tasks.map((task) => (
@@ -151,7 +268,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
           </ModernCard>
         )}
 
-        {/* 4. Timeline & Dates */}
+        {/* 5. Timeline */}
         {folderContext.timeline.length > 0 && (
           <ModernCard style={styles.card}>
             <View style={styles.sectionHeading}>
@@ -174,6 +291,43 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
               </View>
             ))}
           </ModernCard>
+        )}
+
+        {/* 6. Related Screenshots Carousel */}
+        {screenshots.length > 0 && (
+          <View style={styles.screenshotsSection}>
+            <View style={styles.sectionHeading}>
+              <Icon name="images-outline" size={18} color={theme.colors.primary} />
+              <Text style={[styles.headingText, { color: theme.colors.textPrimary }]}>
+                Related Screenshots ({screenshots.length})
+              </Text>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={screenshots}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.screenshotsList}
+              renderItem={({ item }) => {
+                const uri = item.filePath.startsWith('http') || item.filePath.startsWith('file://')
+                  ? item.filePath
+                  : `file://${item.filePath}`;
+                return (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+                    style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
+                  >
+                    <Image source={{ uri }} style={styles.screenshotThumb} resizeMode="cover" />
+                    <View style={styles.thumbLabelBox}>
+                      <Text numberOfLines={1} style={styles.thumbLabel}>
+                        {item.subcategory || item.fileName}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
         )}
       </ScrollView>
 
@@ -256,14 +410,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginLeft: 8,
+    flex: 1,
+  },
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  confidenceText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   summaryBody: {
     fontSize: 14,
     lineHeight: 22,
   },
+  updatedAtText: {
+    fontSize: 11,
+    marginTop: 8,
+  },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+  },
+  entityGroup: {
+    marginTop: 10,
+  },
+  entityLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   taskRow: {
     flexDirection: 'row',
@@ -273,6 +449,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 14,
     marginLeft: 10,
+    flex: 1,
   },
   timelineItem: {
     flexDirection: 'row',
@@ -296,6 +473,38 @@ const styles = StyleSheet.create({
   timelineDesc: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  screenshotsSection: {
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  screenshotsList: {
+    paddingVertical: 8,
+  },
+  screenshotThumbBox: {
+    width: 100,
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  screenshotThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbLabelBox: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  thumbLabel: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
   },
   bottomBar: {
     position: 'absolute',

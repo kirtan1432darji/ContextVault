@@ -1,4 +1,5 @@
 import { TagModel } from './tag.model';
+import { ExtractedEntitiesDto } from './classification.model';
 
 export type OCRStatus = 'none' | 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -14,6 +15,7 @@ export interface ScreenshotModel {
   categoryId: string;
   categoryName: string;
   subcategory: string;
+  folderPath?: string[];
   confidence: number;
   sourceApp?: string;
   detectedApp?: string;
@@ -27,6 +29,8 @@ export interface ScreenshotModel {
   tags: TagModel[];
   lastScannedAt?: string;
   isMock?: boolean;
+  classificationSource?: 'backend' | 'local';
+  entities?: ExtractedEntitiesDto;
 }
 
 export interface ScreenshotFilter {

@@ -24,6 +24,18 @@ export interface ContextTimelineItemModel {
   imagePath?: string;
 }
 
+export interface ContextEntitiesMap {
+  organizations: string[];
+  people: string[];
+  dates: string[];
+  urls: string[];
+  shopping: string[];
+  tasks: string[];
+  payments: string[];
+  documents: string[];
+  amounts: string[];
+}
+
 export interface FolderContextModel {
   categoryId: string;
   categoryName: string;
@@ -32,14 +44,28 @@ export interface FolderContextModel {
   confidence: number;
   screenshotCount: number;
   lastUpdatedAt?: string;
+  version?: number;
   tasks: ContextTaskModel[];
   entities: ContextEntityModel[];
+  structuredEntities?: ContextEntitiesMap;
   people: string[];
   links: string[];
   dates: ContextDateModel[];
   apps: string[];
   topics: string[];
   timeline: ContextTimelineItemModel[];
+  shopping?: string[];
+  payments?: string[];
+  documents?: string[];
+}
+
+export interface FolderContextEntity {
+  FolderId: string;
+  Summary: string;
+  EntitiesJson: string;
+  TasksJson: string;
+  UpdatedOn: string;
+  Version: number;
 }
 
 export const createEmptyFolderContext = (
@@ -54,12 +80,27 @@ export const createEmptyFolderContext = (
   confidence: 0,
   screenshotCount,
   lastUpdatedAt: undefined,
+  version: 1,
   tasks: [],
   entities: [],
+  structuredEntities: {
+    organizations: [],
+    people: [],
+    dates: [],
+    urls: [],
+    shopping: [],
+    tasks: [],
+    payments: [],
+    documents: [],
+    amounts: [],
+  },
   people: [],
   links: [],
   dates: [],
   apps: [],
   topics: [],
   timeline: [],
+  shopping: [],
+  payments: [],
+  documents: [],
 });

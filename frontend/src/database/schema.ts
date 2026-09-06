@@ -1,7 +1,7 @@
 import { DEFAULT_CATEGORIES } from '../models/category.model';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 4;
+export const DATABASE_VERSION = 5;
 
 export const SCHEMA_SQL = [
   // 1. Categories (Sprint RN-05 Dynamic Smart Folder Hierarchy)
@@ -162,4 +162,31 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_pending_ocr_status ON pending_screenshots(ocr_status);`,
   `CREATE INDEX IF NOT EXISTS idx_pending_hash ON pending_screenshots(file_hash);`,
   `CREATE INDEX IF NOT EXISTS idx_pending_asset ON pending_screenshots(device_asset_id);`,
+
+  // 11. FolderContext (Sprint RN-06)
+  `CREATE TABLE IF NOT EXISTS folder_context (
+    folder_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    entities_json TEXT,
+    tasks_json TEXT,
+    updated_on TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_folder_context_updated ON folder_context(updated_on);`,
+
+  // 12. ClassificationCache (Sprint RN-06)
+  `CREATE TABLE IF NOT EXISTS classification_cache (
+    id TEXT PRIMARY KEY,
+    screenshot_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    subcategory TEXT,
+    tags_json TEXT,
+    entities_json TEXT,
+    confidence REAL NOT NULL DEFAULT 0.0,
+    summary TEXT,
+    source TEXT NOT NULL DEFAULT 'backend',
+    cached_at TEXT NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_classification_cache_screenshot ON classification_cache(screenshot_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_classification_cache_cached ON classification_cache(cached_at);`,
 ];

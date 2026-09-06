@@ -16,6 +16,8 @@ export const ApiConstants = {
 
   // Screenshot Endpoints
   screenshots: '/screenshots',
+  uploadMetadata: '/screenshots/upload-metadata',
+  syncScreenshots: '/screenshots/sync',
   scanScreenshot: '/screenshots/scan',
   batchScan: '/screenshots/batch',
   classifyScreenshot: '/screenshots/classify',

@@ -44,6 +44,21 @@ export class ScreenshotRepository {
     return this.mapRowToModel(rows[0]);
   }
 
+  async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
+    const rows = await databaseService.executeQuery(
+      'SELECT * FROM screenshots WHERE category_id = ? ORDER BY created_at DESC',
+      [categoryId]
+    );
+    return rows.map(this.mapRowToModel);
+  }
+
+  async getNeedsReviewCount(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      `SELECT COUNT(*) as count FROM screenshots WHERE is_reviewed = 0 AND (confidence < 0.70 OR category_id = 'unsorted')`
+    );
+    return rows.length > 0 ? rows[0].count : 0;
+  }
+
   async hasScreenshot(deviceAssetId?: string, filePath?: string): Promise<boolean> {
     if (deviceAssetId) {
       const rows = await databaseService.executeQuery(
@@ -70,8 +85,8 @@ export class ScreenshotRepository {
         subcategory, confidence, source_app, detected_app,
         keywords_json, is_auto_categorized, is_favorite,
         is_reviewed, is_synced, ocr_status, ocr_text,
-        last_scanned_at, is_mock
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        last_scanned_at, is_mock, classification_source, folder_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
@@ -98,6 +113,8 @@ export class ScreenshotRepository {
       screenshot.ocrText || null,
       screenshot.lastScannedAt || null,
       screenshot.isMock ? 1 : 0,
+      screenshot.classificationSource || 'local',
+      screenshot.folderPath ? JSON.stringify(screenshot.folderPath) : null,
     ]);
   }
 
@@ -105,15 +122,56 @@ export class ScreenshotRepository {
     return this.insertScreenshot(screenshot);
   }
 
+  async updateClassification(
+    id: string,
+    categoryId: string,
+    categoryName: string,
+    subcategory: string,
+    confidence: number,
+    tags: string[],
+    source: 'backend' | 'local' = 'backend',
+    folderPath?: string[]
+  ): Promise<void> {
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET 
+        category_id = ?, 
+        category_name = ?, 
+        subcategory = ?, 
+        confidence = ?, 
+        keywords_json = ?, 
+        is_synced = 1, 
+        classification_source = ?,
+        folder_path = ?
+       WHERE id = ?`,
+      [
+        categoryId,
+        categoryName,
+        subcategory,
+        confidence,
+        JSON.stringify(tags),
+        source,
+        folderPath ? JSON.stringify(folderPath) : null,
+        id,
+      ]
+    );
+  }
+
   async deleteScreenshot(id: string): Promise<void> {
     await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
   }
 
-  private mapRowToModel(row: any): ScreenshotModel {
+  private mapRowToModel = (row: any): ScreenshotModel => {
     let keywords: string[] = [];
     try {
       if (row.keywords_json) {
         keywords = JSON.parse(row.keywords_json);
+      }
+    } catch {}
+
+    let folderPath: string[] | undefined;
+    try {
+      if (row.folder_path) {
+        folderPath = JSON.parse(row.folder_path);
       }
     } catch {}
 
@@ -129,6 +187,7 @@ export class ScreenshotRepository {
       categoryId: row.category_id,
       categoryName: row.category_name,
       subcategory: row.subcategory || '',
+      folderPath,
       confidence: row.confidence,
       sourceApp: row.source_app,
       detectedApp: row.detected_app,
@@ -140,9 +199,14 @@ export class ScreenshotRepository {
       ocrStatus: row.ocr_status,
       ocrText: row.ocr_text,
       lastScannedAt: row.last_scanned_at,
-      tags: [],
+      classificationSource: row.classification_source || (row.is_synced ? 'backend' : 'local'),
+      tags: keywords.slice(0, 5).map((kw) => ({
+        id: `tag_${kw.toLowerCase().replace(/\s+/g, '_')}`,
+        name: kw,
+        colorHex: '#6366F1',
+      })),
     };
-  }
+  };
 }
 
 export const screenshotRepository = new ScreenshotRepository();
