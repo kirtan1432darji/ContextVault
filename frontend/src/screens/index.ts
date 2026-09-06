@@ -13,3 +13,4 @@ export * from './SearchScreen';
 export * from './FavoritesScreen';
 export * from './SettingsScreen';
 export * from './PrivacyPolicyScreen';
+export * from './ScannerStatusScreen';

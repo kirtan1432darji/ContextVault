@@ -34,6 +34,7 @@ export type RootStackParamList = {
     id: string;
   };
   PrivacyPolicy: undefined;
+  ScannerStatus: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

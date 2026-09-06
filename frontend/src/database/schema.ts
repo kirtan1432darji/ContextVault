@@ -1,7 +1,7 @@
 import { DEFAULT_CATEGORIES } from '../models/category.model';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 
 export const SCHEMA_SQL = [
   // 1. Categories
@@ -119,4 +119,23 @@ export const SCHEMA_SQL = [
     citations_json TEXT,
     created_at TEXT NOT NULL
   );`,
+
+  // 10. Pending Screenshots Queue (Sprint RN-03 Detection Engine)
+  `CREATE TABLE IF NOT EXISTS pending_screenshots (
+    id TEXT PRIMARY KEY,
+    device_asset_id TEXT,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    file_hash TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_screenshots(status);`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_hash ON pending_screenshots(file_hash);`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_asset ON pending_screenshots(device_asset_id);`,
 ];

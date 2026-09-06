@@ -1,8 +1,30 @@
 import { create } from 'zustand';
+import { StoragePermissionStatus, permissionService } from '../services/permissionService';
+
+export interface DetectedScreenshotMetadata {
+  id: string;
+  deviceAssetId: string;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  fileHash: string;
+  capturedAt: string;
+  status?: 'Pending' | 'Processing' | 'Completed' | 'Failed';
+  width?: number;
+  height?: number;
+}
 
 interface ScannerState {
+  // Sprint RN-03 Detection Engine State
+  isListening: boolean;
+  scannedToday: number;
+  pendingProcessing: number;
+  lastScreenshot: DetectedScreenshotMetadata | null;
+  permissionStatus: StoragePermissionStatus;
+
+  // Legacy & Progress state for backwards compatibility
   isScanning: boolean;
-  progress: number; // 0 to 1
+  progress: number;
   currentItem: string;
   totalCount: number;
   processedCount: number;
@@ -10,14 +32,37 @@ interface ScannerState {
   error: string | null;
 
   // Actions
+  startScanner: () => Promise<boolean>;
+  stopScanner: () => Promise<void>;
+  processScreenshot: (event: any) => Promise<void>;
+  checkPermissions: () => Promise<StoragePermissionStatus>;
+  requestPermissions: () => Promise<boolean>;
+  loadCounts: () => Promise<void>;
+  retryFailed: () => Promise<void>;
+  simulateScreenshot: (name?: string) => Promise<void>;
+
+  // Internal state setters
+  setIsListening: (isListening: boolean) => void;
+  setCounts: (counts: { scannedToday: number; pendingProcessing: number }) => void;
+  setLastScreenshot: (screenshot: DetectedScreenshotMetadata | null) => void;
+  updateItemStatus: (id: string, status: 'Pending' | 'Processing' | 'Completed' | 'Failed') => void;
+  setPermissionStatus: (status: StoragePermissionStatus) => void;
+  setError: (error: string | null) => void;
+
+  // Legacy actions
   startScan: (total?: number) => void;
   updateProgress: (progress: number, currentItem: string, processed: number, total: number) => void;
   finishScan: (newlyOrganized: number) => void;
   cancelScan: () => void;
-  setError: (error: string | null) => void;
 }
 
-export const useScannerStore = create<ScannerState>((set) => ({
+export const useScannerStore = create<ScannerState>((set, get) => ({
+  isListening: false,
+  scannedToday: 0,
+  pendingProcessing: 0,
+  lastScreenshot: null,
+  permissionStatus: 'unavailable',
+
   isScanning: false,
   progress: 0,
   currentItem: '',
@@ -26,6 +71,70 @@ export const useScannerStore = create<ScannerState>((set) => ({
   newlyOrganizedCount: 0,
   error: null,
 
+  startScanner: async () => {
+    // Dynamic import to avoid circular dependency
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    const started = await screenshotListenerService.start();
+    return started;
+  },
+
+  stopScanner: async () => {
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    await screenshotListenerService.stop();
+  },
+
+  processScreenshot: async (event: any) => {
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    await screenshotListenerService.handleDetectedScreenshot(event);
+  },
+
+  checkPermissions: async () => {
+    const status = await permissionService.checkStoragePermission();
+    set({ permissionStatus: status });
+    return status;
+  },
+
+  requestPermissions: async () => {
+    const granted = await permissionService.requestStoragePermission();
+    const status = await permissionService.checkStoragePermission();
+    set({ permissionStatus: status });
+    return granted;
+  },
+
+  loadCounts: async () => {
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    await screenshotListenerService.refreshStoreCounts();
+  },
+
+  retryFailed: async () => {
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    await screenshotListenerService.retryFailed();
+  },
+
+  simulateScreenshot: async (name?: string) => {
+    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
+    await screenshotListenerService.simulateScreenshot(name);
+  },
+
+  setIsListening: (isListening: boolean) => set({ isListening }),
+
+  setCounts: ({ scannedToday, pendingProcessing }) =>
+    set({ scannedToday, pendingProcessing }),
+
+  setLastScreenshot: (lastScreenshot) => set({ lastScreenshot }),
+
+  updateItemStatus: (id, status) => {
+    const current = get().lastScreenshot;
+    if (current && current.id === id) {
+      set({ lastScreenshot: { ...current, status } });
+    }
+  },
+
+  setPermissionStatus: (permissionStatus) => set({ permissionStatus }),
+
+  setError: (error: string | null) => set({ error }),
+
+  // Legacy actions
   startScan: (total = 0) =>
     set({
       isScanning: true,
@@ -57,11 +166,5 @@ export const useScannerStore = create<ScannerState>((set) => ({
     set({
       isScanning: false,
       currentItem: 'Scan cancelled',
-    }),
-
-  setError: (error: string | null) =>
-    set({
-      isScanning: false,
-      error,
     }),
 }));

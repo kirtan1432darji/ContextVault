@@ -13,6 +13,7 @@ import {
   ContextAIChatScreen,
   ScreenshotDetailScreen,
   PrivacyPolicyScreen,
+  ScannerStatusScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 
@@ -36,7 +37,7 @@ export const RootNavigator: React.FC = () => {
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
 
-      {/* 2. Protected Routes: Unauthenticated users cannot navigate to protected screens */}
+      {/* 2. Protected Routes */}
       {isAuthenticated ? (
         <>
           <Stack.Screen name="MainTabs" component={MainTabNavigator} />
@@ -63,6 +64,11 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="PrivacyPolicy"
             component={PrivacyPolicyScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="ScannerStatus"
+            component={ScannerStatusScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>

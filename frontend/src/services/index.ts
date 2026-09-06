@@ -10,3 +10,7 @@ export * from './screenshotScannerService';
 export * from './notificationService';
 export * from './ocrService';
 export * from './authService';
+export * from './permissionService';
+export * from './ScreenshotListenerService';
+export * from './backgroundDetection/mediaObserver';
+export * from './backgroundDetection/headlessTask';

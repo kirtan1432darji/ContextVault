@@ -1,6 +1,7 @@
 export * from './auth.model';
 export * from './category.model';
 export * from './screenshot.model';
+export * from './pendingScreenshot.model';
 export * from './folderContext.model';
 export * from './tag.model';
 export * from './classification.model';

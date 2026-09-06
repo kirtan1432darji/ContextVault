@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -19,7 +20,7 @@ import { ModernCard } from '../components/ModernCard';
 import { AnimatedCounter } from '../components/AnimatedCounter';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
-import { screenshotScannerService } from '../services/screenshotScannerService';
+import { FileUtils } from '../utils/fileUtils';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -28,28 +29,57 @@ export const DashboardScreen: React.FC = () => {
   const screenshots = useScreenshotStore((s) => s.screenshots);
   const needsReviewList = useScreenshotStore((s) => s.needsReviewList);
   const categories = useCategoryStore((s) => s.categories);
-  const isScanning = useScannerStore((s) => s.isScanning);
-  const progress = useScannerStore((s) => s.progress);
+
+  // Sprint RN-03 Scanner Store State
+  const isListening = useScannerStore((s) => s.isListening);
+  const scannedToday = useScannerStore((s) => s.scannedToday);
+  const pendingProcessing = useScannerStore((s) => s.pendingProcessing);
+  const lastScreenshot = useScannerStore((s) => s.lastScreenshot);
+  const startScanner = useScannerStore((s) => s.startScanner);
+  const stopScanner = useScannerStore((s) => s.stopScanner);
+  const simulateScreenshot = useScannerStore((s) => s.simulateScreenshot);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId !== 'unsorted').length;
   const matchRate = totalCount > 0 ? Math.round((organizedCount / totalCount) * 100) : 0;
 
-  const handleSimulateScan = async () => {
-    useScannerStore.getState().startScan(5);
-    // Simulate finding a media screenshot
-    setTimeout(async () => {
-      await screenshotScannerService.processScreenshotAsset({
-        id: `asset_${Date.now()}`,
-        filePath: '/storage/emulated/0/Pictures/Screenshots/Screenshot_Invoice_Sample.png',
-        fileName: 'Screenshot_Invoice_Sample.png',
-        fileSize: 245000,
-        width: 1080,
-        height: 2400,
-        createdAt: new Date().toISOString(),
-      });
-      useScannerStore.getState().finishScan(1);
-    }, 1200);
+  const handleToggleScanner = async () => {
+    if (isListening) {
+      await stopScanner();
+    } else {
+      await startScanner();
+    }
+  };
+
+  const renderLastScreenshotStatus = (status?: string) => {
+    if (!status) return null;
+    let bg = '#64748B20';
+    let textColor = '#64748B';
+
+    switch (status) {
+      case 'Pending':
+        bg = '#F59E0B20';
+        textColor = '#F59E0B';
+        break;
+      case 'Processing':
+        bg = '#3B82F620';
+        textColor = '#3B82F6';
+        break;
+      case 'Completed':
+        bg = '#10B98120';
+        textColor = '#10B981';
+        break;
+      case 'Failed':
+        bg = '#EF444420';
+        textColor = '#EF4444';
+        break;
+    }
+
+    return (
+      <View style={[styles.statusMiniChip, { backgroundColor: bg }]}>
+        <Text style={[styles.statusMiniText, { color: textColor }]}>{status}</Text>
+      </View>
+    );
   };
 
   return (
@@ -64,7 +94,7 @@ export const DashboardScreen: React.FC = () => {
             ContextVault
           </Text>
           <Text style={[styles.brandSubtitle, { color: theme.colors.textSecondary }]}>
-            Intelligent Screenshot Intelligence
+            Automatic Screenshot Intelligence
           </Text>
         </View>
         <TouchableOpacity
@@ -105,39 +135,169 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 3. Hero Scan Trigger Card */}
-      <ModernCard style={styles.heroScanCard}>
-        <View style={styles.heroRow}>
-          <View style={[styles.heroIconBox, { backgroundColor: `${theme.colors.primary}20` }]}>
-            <Icon
-              name={isScanning ? 'sync-outline' : 'sparkles-outline'}
-              size={28}
-              color={theme.colors.primary}
+      {/* 3. Automatic Screenshot Detection Engine Hero Card (Sprint RN-03) */}
+      <ModernCard style={styles.heroEngineCard}>
+        {/* Top Header: Title, Status Indicator, and Diagnostics button */}
+        <View style={styles.engineHeaderRow}>
+          <View style={styles.engineStatusBadge}>
+            <View
+              style={[
+                styles.livePulseDot,
+                { backgroundColor: isListening ? theme.colors.success : theme.colors.warning },
+              ]}
             />
-          </View>
-          <View style={styles.heroText}>
-            <Text style={[styles.heroTitle, { color: theme.colors.textPrimary }]}>
-              {isScanning ? 'Scanning Screenshots...' : 'Auto-Organize Gallery'}
+            <Text style={[styles.engineStatusText, { color: theme.colors.textPrimary }]}>
+              {isListening ? 'Scanner Running' : 'Scanner Paused'}
             </Text>
-            <Text style={[styles.heroDesc, { color: theme.colors.textSecondary }]}>
-              {isScanning
-                ? `Analyzing OCR text (${Math.round(progress * 100)}%)`
-                : 'Extract OCR & categorize screenshots with AI'}
+          </View>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ScannerStatus')}
+            style={[styles.engineDetailsBtn, { borderColor: theme.colors.border }]}
+          >
+            <Icon
+              name="pulse-outline"
+              size={14}
+              color={theme.colors.primary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.engineDetailsBtnText, { color: theme.colors.primary }]}>
+              Diagnostics
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Real-time metrics strip */}
+        <View style={styles.engineMetricsRow}>
+          <View style={styles.engineMetricItem}>
+            <Text style={[styles.engineMetricNum, { color: theme.colors.primary }]}>
+              <AnimatedCounter value={scannedToday} />
+            </Text>
+            <Text style={[styles.engineMetricLabel, { color: theme.colors.textSecondary }]}>
+              Today's Screenshots
+            </Text>
+          </View>
+
+          <View style={[styles.engineMetricDivider, { backgroundColor: theme.colors.border }]} />
+
+          <View style={styles.engineMetricItem}>
+            <View style={styles.rowCenter}>
+              <Text style={[styles.engineMetricNum, { color: theme.colors.accent }]}>
+                <AnimatedCounter value={pendingProcessing} />
+              </Text>
+              {pendingProcessing > 0 && (
+                <View
+                  style={[
+                    styles.processingIndicator,
+                    { backgroundColor: theme.colors.accent + '20' },
+                  ]}
+                >
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.accent}
+                    style={{ transform: [{ scale: 0.6 }] }}
+                  />
+                </View>
+              )}
+            </View>
+            <Text style={[styles.engineMetricLabel, { color: theme.colors.textSecondary }]}>
+              Pending Processing
             </Text>
           </View>
         </View>
-        <TouchableOpacity
-          onPress={handleSimulateScan}
-          disabled={isScanning}
+
+        {/* Last Detected Screenshot */}
+        <View
           style={[
-            styles.heroButton,
-            { backgroundColor: isScanning ? theme.colors.border : theme.colors.primary },
+            styles.lastDetectedContainer,
+            { backgroundColor: theme.isDark ? '#1E293B60' : '#F8FAFC' },
           ]}
         >
-          <Text style={styles.heroButtonText}>
-            {isScanning ? 'Scanning...' : 'Scan Gallery Now'}
-          </Text>
-        </TouchableOpacity>
+          <View style={styles.lastDetectedHeader}>
+            <Text style={[styles.lastDetectedTitle, { color: theme.colors.textSecondary }]}>
+              LAST DETECTED SCREENSHOT
+            </Text>
+            {renderLastScreenshotStatus(lastScreenshot?.status)}
+          </View>
+
+          {lastScreenshot ? (
+            <View style={styles.lastItemRow}>
+              <View style={[styles.fileIconBox, { backgroundColor: theme.colors.primary + '15' }]}>
+                <Icon name="image-outline" size={20} color={theme.colors.primary} />
+              </View>
+              <View style={styles.lastItemDetails}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.lastItemName, { color: theme.colors.textPrimary }]}
+                >
+                  {lastScreenshot.fileName}
+                </Text>
+                <Text style={[styles.lastItemTime, { color: theme.colors.textSecondary }]}>
+                  {FileUtils.formatBytes(lastScreenshot.fileSize)} • Detected automatically
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.lastItemEmptyRow}>
+              <Icon
+                name="radio-outline"
+                size={16}
+                color={theme.colors.textSecondary}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.lastItemEmptyText, { color: theme.colors.textSecondary }]}>
+                Waiting for screenshots from device MediaStore...
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Action buttons */}
+        <View style={styles.engineActionsRow}>
+          <TouchableOpacity
+            onPress={handleToggleScanner}
+            style={[
+              styles.engineToggleBtn,
+              {
+                backgroundColor: isListening
+                  ? theme.isDark
+                    ? '#334155'
+                    : '#E2E8F0'
+                  : theme.colors.primary,
+              },
+            ]}
+          >
+            <Icon
+              name={isListening ? 'pause-outline' : 'play-outline'}
+              size={15}
+              color={isListening ? theme.colors.textPrimary : '#FFFFFF'}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.engineToggleBtnText,
+                { color: isListening ? theme.colors.textPrimary : '#FFFFFF' },
+              ]}
+            >
+              {isListening ? 'Pause Scanner' : 'Resume Scanner'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => simulateScreenshot()}
+            style={[styles.engineSimulateBtn, { borderColor: theme.colors.border }]}
+          >
+            <Icon
+              name="camera-outline"
+              size={15}
+              color={theme.colors.primary}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[styles.engineSimulateBtnText, { color: theme.colors.primary }]}>
+              Simulate Capture
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ModernCard>
 
       {/* 4. Recent Screenshots Carousel */}
@@ -203,7 +363,10 @@ export const DashboardScreen: React.FC = () => {
                   filePath={item.filePath}
                   style={styles.reviewThumb}
                 />
-                <Text numberOfLines={1} style={[styles.reviewText, { color: theme.colors.textPrimary }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.reviewText, { color: theme.colors.textSecondary }]}
+                >
                   {item.fileName}
                 </Text>
               </TouchableOpacity>
@@ -218,39 +381,51 @@ export const DashboardScreen: React.FC = () => {
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
             Smart Folders
           </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'Folders' })}>
+            <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>All Folders</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.foldersGrid}>
-          {categories.slice(0, 6).map((cat) => {
-            const hex = cat.colorHex.startsWith('#') ? cat.colorHex : `#${cat.colorHex}`;
-            return (
-              <TouchableOpacity
-                key={cat.id}
-                onPress={() =>
-                  navigation.navigate('FolderDetail', {
-                    categoryId: cat.id,
-                    categoryName: cat.name,
-                  })
-                }
+          {categories.slice(0, 4).map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              onPress={() =>
+                navigation.navigate('FolderDetail', {
+                  categoryId: cat.id,
+                  categoryName: cat.name,
+                })
+              }
+              style={[
+                styles.folderCard,
+                {
+                  backgroundColor: theme.colors.card,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <View
                 style={[
-                  styles.folderCard,
-                  {
-                    backgroundColor: theme.colors.card,
-                    borderColor: theme.colors.border,
-                  },
+                  styles.folderIconBox,
+                  { backgroundColor: `${cat.colorHex || theme.colors.primary}15` },
                 ]}
               >
-                <View style={[styles.folderIconBox, { backgroundColor: `${hex}20` }]}>
-                  <Icon name={cat.iconName || 'folder-outline'} size={24} color={hex} />
-                </View>
-                <Text numberOfLines={1} style={[styles.folderName, { color: theme.colors.textPrimary }]}>
-                  {cat.name}
-                </Text>
-                <Text style={[styles.folderCount, { color: theme.colors.textSecondary }]}>
-                  {cat.screenshotCount || 0} items
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                <Icon
+                  name={cat.iconName || 'folder-outline'}
+                  size={22}
+                  color={cat.colorHex || theme.colors.primary}
+                />
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[styles.folderName, { color: theme.colors.textPrimary }]}
+              >
+                {cat.name}
+              </Text>
+              <Text style={[styles.folderCount, { color: theme.colors.textSecondary }]}>
+                {cat.screenshotCount || 0} items
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     </ScrollView>
@@ -259,8 +434,8 @@ export const DashboardScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 32,
   },
   header: {
     flexDirection: 'row',
@@ -275,12 +450,12 @@ const styles = StyleSheet.create({
   },
   brandSubtitle: {
     fontSize: 13,
-    fontWeight: '500',
+    marginTop: 2,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -289,10 +464,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingVertical: 18,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   statCol: {
     alignItems: 'center',
+    flex: 1,
   },
   statValue: {
     fontSize: 22,
@@ -307,43 +483,160 @@ const styles = StyleSheet.create({
     width: 1,
     height: 36,
   },
-  heroScanCard: {
+  heroEngineCard: {
     marginBottom: 24,
+    padding: 16,
   },
-  heroRow: {
+  engineHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
   },
-  heroIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  engineStatusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
   },
-  heroText: {
-    flex: 1,
+  livePulseDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
   },
-  heroTitle: {
+  engineStatusText: {
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 2,
   },
-  heroDesc: {
+  engineDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  engineDetailsBtnText: {
     fontSize: 12,
-    lineHeight: 16,
+    fontWeight: '600',
   },
-  heroButton: {
+  engineMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
     paddingVertical: 12,
-    borderRadius: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F030',
+    marginBottom: 14,
+  },
+  engineMetricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  engineMetricNum: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  engineMetricLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  engineMetricDivider: {
+    width: 1,
+    height: 28,
+  },
+  processingIndicator: {
+    marginLeft: 6,
+    borderRadius: 8,
+    padding: 2,
+  },
+  lastDetectedContainer: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 14,
+  },
+  lastDetectedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  lastDetectedTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  statusMiniChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusMiniText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  lastItemRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  heroButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
+  fileIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  lastItemDetails: {
+    flex: 1,
+  },
+  lastItemName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  lastItemTime: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  lastItemEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  lastItemEmptyText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  engineActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  engineToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  engineToggleBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  engineSimulateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginLeft: 8,
+  },
+  engineSimulateBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   section: {
     marginBottom: 24,
