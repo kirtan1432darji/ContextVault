@@ -1,5 +1,5 @@
 import pytest
-from typing import Generator
+from typing import Generator, Dict
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -8,8 +8,18 @@ from sqlalchemy.pool import StaticPool
 from app.database.base import Base
 from app.dependencies.database import get_db
 from app.main import app
-# Import models to ensure tables are registered
-from app.models import User, RefreshToken, AppSetting
+# Import all models to ensure all tables are registered with Base.metadata
+from app.models import (
+    User,
+    RefreshToken,
+    AppSetting,
+    Category,
+    Screenshot,
+    Tag,
+    ScreenshotTag,
+    ClassificationHistory,
+    SearchIndex,
+)
 
 # Use in-memory SQLite database with StaticPool for thread-safe test isolation
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -57,3 +67,18 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_headers(client: TestClient) -> Dict[str, str]:
+    """Registers a test user and returns Authorization Bearer headers."""
+    resp = client.post(
+        "/api/auth/register",
+        json={
+            "username": "tester",
+            "email": "tester@contextvault.com",
+            "password": "StrongPassword123!",
+        },
+    )
+    token = resp.json()["data"]["accessToken"]
+    return {"Authorization": f"Bearer {token}"}
