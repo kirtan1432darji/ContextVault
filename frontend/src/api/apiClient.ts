@@ -11,6 +11,7 @@ import {
 } from '../models';
 import { useAuthStore } from '../store/auth.store';
 import { useSettingsStore } from '../store/settings.store';
+import { StorageService } from '../utils/storage';
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
@@ -30,6 +31,10 @@ class ApiClient {
     });
 
     this.setupInterceptors();
+  }
+
+  public getAxiosInstance(): AxiosInstance {
+    return this.axiosInstance;
   }
 
   private processQueue(error: any, token: string | null = null) {
@@ -52,7 +57,7 @@ class ApiClient {
           config.baseURL = dynamicUrl;
         }
 
-        const token = useAuthStore.getState().accessToken;
+        const token = useAuthStore.getState().accessToken || StorageService.getAccessToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -85,11 +90,11 @@ class ApiClient {
           originalRequest._retry = true;
           this.isRefreshing = true;
 
-          const refreshToken = useAuthStore.getState().refreshToken;
-          const accessToken = useAuthStore.getState().accessToken;
+          const refreshToken =
+            useAuthStore.getState().refreshToken || StorageService.getRefreshToken();
 
-          if (!refreshToken || !accessToken) {
-            useAuthStore.getState().clearAuth();
+          if (!refreshToken) {
+            useAuthStore.getState().clearSession();
             this.isRefreshing = false;
             return Promise.reject(error);
           }
@@ -97,10 +102,14 @@ class ApiClient {
           try {
             const refreshRes = await axios.post(
               `${this.getBaseUrl()}${ApiConstants.authRefresh}`,
-              { accessToken, refreshToken }
+              { refreshToken },
+              {
+                timeout: ApiConstants.connectTimeout,
+                headers: { 'Content-Type': 'application/json' },
+              }
             );
 
-            const unwrapped = this.unwrap(refreshRes.data);
+            const unwrapped = this.unwrap<any>(refreshRes.data);
             const newAccessToken = unwrapped?.accessToken;
             const newRefreshToken = unwrapped?.refreshToken || refreshToken;
 
@@ -113,12 +122,12 @@ class ApiClient {
               }
               return this.axiosInstance(originalRequest);
             } else {
-              useAuthStore.getState().clearAuth();
+              useAuthStore.getState().clearSession();
               this.processQueue(error, null);
               return Promise.reject(error);
             }
           } catch (refreshErr) {
-            useAuthStore.getState().clearAuth();
+            useAuthStore.getState().clearSession();
             this.processQueue(refreshErr, null);
             return Promise.reject(refreshErr);
           } finally {

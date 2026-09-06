@@ -15,9 +15,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useSettingsStore } from '../store/settings.store';
+import { useAuthStore } from '../store/auth.store';
 import { ModernCard } from '../components/ModernCard';
 import { AppInfo } from '../utils/appConstants';
 import { apiClient } from '../api/apiClient';
+import { StorageService } from '../utils/storage';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -32,9 +34,25 @@ export const SettingsScreen: React.FC = () => {
   const [urlInput, setUrlInput] = useState(backendUrl);
   const [testingHealth, setTestingHealth] = useState(false);
 
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const logout = useAuthStore((s) => s.logout);
+
   const handleSaveUrl = () => {
     useSettingsStore.getState().setBackendUrl(urlInput);
     Alert.alert('Settings Saved', `Backend URL updated to ${urlInput}`);
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out of ContextVault?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+        },
+      },
+    ]);
   };
 
   const handleTestHealth = async () => {
@@ -61,6 +79,35 @@ export const SettingsScreen: React.FC = () => {
           Preferences, API connections & diagnostics
         </Text>
       </View>
+
+      {/* Account Section */}
+      <ModernCard style={styles.card}>
+        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+          Account & Session
+        </Text>
+        <View style={styles.row}>
+          <View style={styles.rowLabelGroup}>
+            <Icon name="person-circle-outline" size={32} color={theme.colors.primary} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary }}>
+                {currentUser?.username || 'Active User'}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                {currentUser?.email || 'Logged in via JWT'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.logoutButton, { borderColor: theme.colors.error }]}
+            onPress={handleLogout}
+          >
+            <Icon name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 4 }} />
+            <Text style={{ color: theme.colors.error, fontSize: 13, fontWeight: '700' }}>
+              Sign Out
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ModernCard>
 
       {/* Theme Section */}
       <ModernCard style={styles.card}>
@@ -311,5 +358,13 @@ const styles = StyleSheet.create({
   versionValue: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });

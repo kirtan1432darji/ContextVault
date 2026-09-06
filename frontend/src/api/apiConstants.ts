@@ -1,15 +1,16 @@
 export const ApiConstants = {
-  // Default base URL for physical device / emulator
-  defaultBaseUrl: 'http://127.0.0.1:5000/api',
+  // Default base URL for physical device / emulator (FastAPI default port 8000)
+  defaultBaseUrl: 'http://10.0.2.2:8000/api',
 
   // Timeout settings
   connectTimeout: 15000,
   receiveTimeout: 25000,
   sendTimeout: 20000,
 
-  // Auth Endpoints
+  // Auth Endpoints (Frozen Backend Contract)
   authRegister: '/auth/register',
   authLogin: '/auth/login',
+  authProfile: '/auth/profile',
   authRefresh: '/auth/refresh',
   authLogout: '/auth/logout',
 
@@ -20,7 +21,7 @@ export const ApiConstants = {
   classifyScreenshot: '/screenshots/classify',
   batchClassify: '/screenshots/batch-classify',
 
-  // AI Classification Engine Endpoints (Sprint 1.3)
+  // AI Classification Engine Endpoints
   classificationClassify: '/classification/classify',
   classificationReclassify: '/classification/reclassify',
   classificationHistory: '/classification/history',
@@ -31,7 +32,7 @@ export const ApiConstants = {
   folders: '/folders',
   syncFolders: '/folders/sync',
 
-  // Folder Context & AI Chat Endpoints (Sprint 1.4)
+  // Folder Context & AI Chat Endpoints
   context: '/context',
   folderContext: (categoryId: string) => `/context/${categoryId}`,
   generateFolderContext: (categoryId: string) => `/context/generate/${categoryId}`,

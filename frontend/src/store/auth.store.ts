@@ -1,135 +1,270 @@
 import { create } from 'zustand';
-import { UserModel, AuthResponseModel, LoginPayload, RegisterPayload } from '../models';
-import { ApiConstants } from '../api/apiConstants';
-import axios from 'axios';
+import { UserModel, LoginPayload, RegisterPayload } from '../models/auth.model';
+import { authService } from '../services/authService';
+import { StorageService } from '../utils/storage';
 
-interface AuthState {
-  user: UserModel | null;
+export interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
+  currentUser: UserModel | null;
+  user: UserModel | null; // Alias for backward compatibility
   isAuthenticated: boolean;
-  isLoading: boolean;
+  loading: boolean;
+  isInitializing: boolean;
   error: string | null;
 
-  // Actions
-  login: (payload: LoginPayload, baseUrl?: string) => Promise<boolean>;
-  register: (payload: RegisterPayload, baseUrl?: string) => Promise<boolean>;
+  // Actions required by sprint specification
+  login: (payload: LoginPayload) => Promise<boolean>;
+  register: (payload: RegisterPayload) => Promise<boolean>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
+  loadSession: () => Promise<boolean>;
+  clearSession: () => void;
+
+  // Compatibility helpers
   setTokens: (accessToken: string, refreshToken: string, user?: UserModel) => void;
   clearAuth: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
   accessToken: null,
   refreshToken: null,
+  currentUser: null,
+  user: null,
   isAuthenticated: false,
-  isLoading: false,
+  loading: false,
+  isInitializing: true,
   error: null,
 
   setTokens: (accessToken: string, refreshToken: string, user?: UserModel) => {
+    StorageService.setAccessToken(accessToken);
+    StorageService.setRefreshToken(refreshToken);
+    if (user) {
+      StorageService.setUserProfile(user);
+    }
+    const resolvedUser = user ?? get().currentUser;
     set({
       accessToken,
       refreshToken,
-      user: user ?? get().user,
+      currentUser: resolvedUser,
+      user: resolvedUser,
       isAuthenticated: true,
       error: null,
     });
   },
 
-  clearAuth: () => {
+  clearSession: () => {
+    StorageService.clearAuthSession();
     set({
-      user: null,
       accessToken: null,
       refreshToken: null,
+      currentUser: null,
+      user: null,
       isAuthenticated: false,
+      loading: false,
       error: null,
     });
   },
 
-  login: async (payload: LoginPayload, baseUrl = ApiConstants.defaultBaseUrl) => {
-    set({ isLoading: true, error: null });
+  clearAuth: () => {
+    get().clearSession();
+  },
+
+  loadSession: async () => {
+    set({ isInitializing: true, error: null });
     try {
-      const response = await axios.post(`${baseUrl}${ApiConstants.authLogin}`, payload, {
-        timeout: ApiConstants.connectTimeout,
+      const storedAccessToken = StorageService.getAccessToken();
+      const storedRefreshToken = StorageService.getRefreshToken();
+      const storedUser = StorageService.getUserProfile();
+
+      if (!storedAccessToken || !storedRefreshToken) {
+        set({
+          accessToken: null,
+          refreshToken: null,
+          currentUser: null,
+          user: null,
+          isAuthenticated: false,
+          isInitializing: false,
+        });
+        return false;
+      }
+
+      // Populate state with cached credentials so API interceptor can attach token
+      set({
+        accessToken: storedAccessToken,
+        refreshToken: storedRefreshToken,
+        currentUser: storedUser,
+        user: storedUser,
+        isAuthenticated: true,
       });
 
-      const resData = response.data?.data || response.data;
-      if (resData && (resData.accessToken || resData.token)) {
-        const token = resData.accessToken || resData.token;
-        const rToken = resData.refreshToken || '';
-        const user = resData.user || {
-          id: resData.userId || 'user_default',
-          username: resData.username || payload.emailOrUsername,
-          email: resData.email || payload.emailOrUsername,
-          createdAt: new Date().toISOString(),
-        };
-
+      // 1. Validate session against backend profile endpoint
+      const profileRes = await authService.profile(storedAccessToken);
+      if (profileRes.isSuccess && profileRes.data) {
+        const liveUser = profileRes.data;
+        StorageService.setUserProfile(liveUser);
         set({
-          accessToken: token,
-          refreshToken: rToken,
-          user,
+          currentUser: liveUser,
+          user: liveUser,
           isAuthenticated: true,
-          isLoading: false,
+          isInitializing: false,
           error: null,
         });
         return true;
       }
-      set({ isLoading: false, error: 'Invalid server response' });
+
+      // 2. If profile validation failed, attempt to refresh token
+      const refreshRes = await authService.refreshToken(storedRefreshToken);
+      if (refreshRes.isSuccess && refreshRes.data) {
+        const { accessToken, refreshToken, user } = refreshRes.data;
+        const newRefresh = refreshToken || storedRefreshToken;
+        const finalUser = user || storedUser;
+
+        StorageService.setAccessToken(accessToken);
+        StorageService.setRefreshToken(newRefresh);
+        if (finalUser) {
+          StorageService.setUserProfile(finalUser);
+        }
+
+        set({
+          accessToken,
+          refreshToken: newRefresh,
+          currentUser: finalUser,
+          user: finalUser,
+          isAuthenticated: true,
+          isInitializing: false,
+          error: null,
+        });
+        return true;
+      }
+
+      // 3. Both profile check and refresh failed -> expired session
+      StorageService.clearAuthSession();
+      set({
+        accessToken: null,
+        refreshToken: null,
+        currentUser: null,
+        user: null,
+        isAuthenticated: false,
+        isInitializing: false,
+        error: 'Session expired. Please sign in again.',
+      });
       return false;
     } catch (err: any) {
-      const message =
-        err.response?.data?.message || err.message || 'Login failed. Check credentials.';
-      set({ isLoading: false, error: message });
+      StorageService.clearAuthSession();
+      set({
+        accessToken: null,
+        refreshToken: null,
+        currentUser: null,
+        user: null,
+        isAuthenticated: false,
+        isInitializing: false,
+      });
       return false;
     }
   },
 
-  register: async (payload: RegisterPayload, baseUrl = ApiConstants.defaultBaseUrl) => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await axios.post(`${baseUrl}${ApiConstants.authRegister}`, payload, {
-        timeout: ApiConstants.connectTimeout,
-      });
+  login: async (payload: LoginPayload) => {
+    set({ loading: true, error: null });
+    const result = await authService.login(payload);
 
-      const resData = response.data?.data || response.data;
-      if (resData && (resData.accessToken || resData.token)) {
-        const token = resData.accessToken || resData.token;
-        const rToken = resData.refreshToken || '';
-        const user = resData.user || {
-          id: resData.userId || 'user_default',
-          username: payload.username,
-          email: payload.email,
-          createdAt: new Date().toISOString(),
-        };
-
-        set({
-          accessToken: token,
-          refreshToken: rToken,
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null,
-        });
-        return true;
+    if (result.isSuccess && result.data) {
+      const { accessToken, refreshToken, user } = result.data;
+      StorageService.setAccessToken(accessToken);
+      StorageService.setRefreshToken(refreshToken);
+      if (user) {
+        StorageService.setUserProfile(user);
       }
-      set({ isLoading: false, error: 'Registration succeeded without token' });
-      return false;
-    } catch (err: any) {
-      const message =
-        err.response?.data?.message || err.message || 'Registration failed.';
-      set({ isLoading: false, error: message });
+
+      set({
+        accessToken,
+        refreshToken,
+        currentUser: user ?? null,
+        user: user ?? null,
+        isAuthenticated: true,
+        loading: false,
+        error: null,
+      });
+      return true;
+    }
+
+    set({
+      loading: false,
+      error: result.error || 'Authentication failed. Please check your credentials.',
+    });
+    return false;
+  },
+
+  register: async (payload: RegisterPayload) => {
+    set({ loading: true, error: null });
+    const result = await authService.register(payload);
+
+    if (result.isSuccess && result.data) {
+      const { accessToken, refreshToken, user } = result.data;
+      StorageService.setAccessToken(accessToken);
+      StorageService.setRefreshToken(refreshToken);
+      if (user) {
+        StorageService.setUserProfile(user);
+      }
+
+      set({
+        accessToken,
+        refreshToken,
+        currentUser: user ?? null,
+        user: user ?? null,
+        isAuthenticated: true,
+        loading: false,
+        error: null,
+      });
+      return true;
+    }
+
+    set({
+      loading: false,
+      error: result.error || 'Registration failed. Please try again.',
+    });
+    return false;
+  },
+
+  refreshSession: async () => {
+    const currentRefreshToken = get().refreshToken || StorageService.getRefreshToken();
+    if (!currentRefreshToken) {
+      get().clearSession();
       return false;
     }
+
+    const result = await authService.refreshToken(currentRefreshToken);
+    if (result.isSuccess && result.data) {
+      const { accessToken, refreshToken, user } = result.data;
+      const finalRefresh = refreshToken || currentRefreshToken;
+
+      StorageService.setAccessToken(accessToken);
+      StorageService.setRefreshToken(finalRefresh);
+      if (user) {
+        StorageService.setUserProfile(user);
+      }
+
+      set({
+        accessToken,
+        refreshToken: finalRefresh,
+        currentUser: user ?? get().currentUser,
+        user: user ?? get().user,
+        isAuthenticated: true,
+        error: null,
+      });
+      return true;
+    }
+
+    get().clearSession();
+    return false;
   },
 
   logout: async () => {
-    set({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
-      error: null,
-    });
+    set({ loading: true });
+    const rToken = get().refreshToken || StorageService.getRefreshToken();
+    if (rToken) {
+      await authService.logout(rToken);
+    }
+    get().clearSession();
   },
 }));

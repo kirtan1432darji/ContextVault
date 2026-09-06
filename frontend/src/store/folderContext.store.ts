@@ -12,7 +12,7 @@ interface FolderContextState {
   setGenerating: (isGenerating: boolean) => void;
   setLoading: (isLoading: boolean) => void;
   setError: (error: string | null) => void;
-  getFolderContext: (categoryId: string, categoryName = 'Folder') => FolderContextModel;
+  getFolderContext: (categoryId: string, categoryName?: string) => FolderContextModel;
   toggleTaskCompleted: (categoryId: string, taskId: string) => void;
 }
 

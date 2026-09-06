@@ -13,6 +13,9 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
+  Login: undefined;
+  Register: undefined;
+  ForgotPassword: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   FolderDetail: {
     categoryId: string;
