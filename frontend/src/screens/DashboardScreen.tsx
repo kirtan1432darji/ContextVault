@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -21,14 +22,20 @@ import { AnimatedCounter } from '../components/AnimatedCounter';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
+import { smartFolderService } from '../services/SmartFolderService';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const screenshots = useScreenshotStore((s) => s.screenshots);
+  const setScreenshots = useScreenshotStore((s) => s.setScreenshots);
   const needsReviewList = useScreenshotStore((s) => s.needsReviewList);
   const categories = useCategoryStore((s) => s.categories);
+  const loadCategories = useCategoryStore((s) => s.loadCategories);
+
+  const [isOrganizing, setIsOrganizing] = useState(false);
 
   // Sprint RN-03 Scanner Store State
   const isListening = useScannerStore((s) => s.isListening);
@@ -45,9 +52,61 @@ export const DashboardScreen: React.FC = () => {
   const ocrFailed = useScannerStore((s) => s.ocrFailed);
   const avgProcessingTimeMs = useScannerStore((s) => s.avgProcessingTimeMs);
 
+  // Load fresh categories & screenshots on mount
+  useEffect(() => {
+    loadCategories();
+    screenshotRepository.getAllScreenshots().then((items) => {
+      if (items && items.length > 0) {
+        setScreenshots(items);
+      }
+    });
+  }, [loadCategories, setScreenshots]);
+
   const totalCount = screenshots.length;
-  const organizedCount = screenshots.filter((s) => s.categoryId !== 'unsorted').length;
+  const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
   const matchRate = totalCount > 0 ? Math.round((organizedCount / totalCount) * 100) : 0;
+
+  // Sprint RN-05 Smart Folder Metrics & Lists
+  const unsortedCount = useMemo(() => {
+    return screenshots.filter((s) => !s.categoryId || s.categoryId === 'unsorted').length;
+  }, [screenshots]);
+
+  const topFolders = useMemo(() => {
+    return [...categories]
+      .filter((c) => c.id !== 'unsorted')
+      .sort((a, b) => (b.screenshotCount || 0) - (a.screenshotCount || 0))
+      .slice(0, 6);
+  }, [categories]);
+
+  const recentFolders = useMemo(() => {
+    return [...categories]
+      .filter((c) => c.id !== 'unsorted' && c.createdOn)
+      .sort((a, b) => new Date(b.createdOn || 0).getTime() - new Date(a.createdOn || 0).getTime())
+      .slice(0, 6);
+  }, [categories]);
+
+  const classifiedToday = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const localClassified = screenshots.filter(
+      (s) => s.isAutoCategorized && s.createdAt && s.createdAt.startsWith(todayStr)
+    ).length;
+    return Math.max(localClassified, ocrCompletedToday);
+  }, [screenshots, ocrCompletedToday]);
+
+  const handleOrganizeUnsorted = async () => {
+    setIsOrganizing(true);
+    try {
+      const count = await smartFolderService.organizeAllUnsorted();
+      await loadCategories();
+      const updatedScreenshots = await screenshotRepository.getAllScreenshots();
+      setScreenshots(updatedScreenshots);
+      Alert.alert('Smart Folders', `Organized ${count} unsorted screenshots into smart folders.`);
+    } catch (err: any) {
+      Alert.alert('Organization Error', err?.message || 'Failed to auto-organize.');
+    } finally {
+      setIsOrganizing(false);
+    }
+  };
 
   const handleToggleScanner = async () => {
     if (isListening) {
@@ -440,7 +499,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
       )}
 
-      {/* 7. Smart Folders Grid */}
+      {/* 7. Smart Folders Engine Section (Sprint RN-05) */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
@@ -450,8 +509,102 @@ export const DashboardScreen: React.FC = () => {
             <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>All Folders</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Uncategorized quick-organize banner */}
+        {unsortedCount > 0 && (
+          <ModernCard style={[styles.uncategorizedCard, { borderColor: `${theme.colors.warning}50` }]}>
+            <View style={styles.uncategorizedContent}>
+              <View
+                style={[
+                  styles.uncategorizedIconBox,
+                  { backgroundColor: `${theme.colors.warning}18` },
+                ]}
+              >
+                <Icon name="file-tray-full-outline" size={24} color={theme.colors.warning} />
+              </View>
+              <View style={styles.uncategorizedTextContainer}>
+                <Text style={[styles.uncategorizedTitle, { color: theme.colors.textPrimary }]}>
+                  {unsortedCount} Uncategorized Screenshot{unsortedCount > 1 ? 's' : ''}
+                </Text>
+                <Text style={[styles.uncategorizedSubtitle, { color: theme.colors.textSecondary }]}>
+                  Auto-classify into dynamic smart folders & topics
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={handleOrganizeUnsorted}
+              disabled={isOrganizing}
+              style={[styles.organizeBtn, { backgroundColor: theme.colors.primary }]}
+            >
+              {isOrganizing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Icon name="sparkles" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.organizeBtnText}>Auto-Organize</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </ModernCard>
+        )}
+
+        {/* Smart Folder Engine Metrics Strip */}
+        <View
+          style={[
+            styles.sfEngineStatsRow,
+            {
+              backgroundColor: theme.isDark ? '#1E293B50' : '#F8FAFC',
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <View style={styles.sfEngineStatCol}>
+            <Text style={[styles.sfEngineStatValue, { color: theme.colors.success }]}>
+              <AnimatedCounter value={classifiedToday} />
+            </Text>
+            <Text style={[styles.sfEngineStatLabel, { color: theme.colors.textSecondary }]}>
+              Classified Today
+            </Text>
+          </View>
+          <View style={[styles.sfEngineStatDivider, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.sfEngineStatCol}>
+            <Text style={[styles.sfEngineStatValue, { color: theme.colors.primary }]}>
+              <AnimatedCounter value={categories.filter((c) => c.id !== 'unsorted').length} />
+            </Text>
+            <Text style={[styles.sfEngineStatLabel, { color: theme.colors.textSecondary }]}>
+              Smart Folders
+            </Text>
+          </View>
+          <View style={[styles.sfEngineStatDivider, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.sfEngineStatCol}>
+            <Text
+              style={[
+                styles.sfEngineStatValue,
+                {
+                  color: unsortedCount > 0 ? theme.colors.warning : theme.colors.textSecondary,
+                },
+              ]}
+            >
+              <AnimatedCounter value={unsortedCount} />
+            </Text>
+            <Text style={[styles.sfEngineStatLabel, { color: theme.colors.textSecondary }]}>
+              Uncategorized
+            </Text>
+          </View>
+        </View>
+
+        {/* Top Smart Folders Grid */}
+        <View style={styles.subSectionHeader}>
+          <Text style={[styles.subSectionTitle, { color: theme.colors.textPrimary }]}>
+            Top Smart Folders
+          </Text>
+          <Text style={[styles.subSectionBadge, { color: theme.colors.textSecondary }]}>
+            Ranked by items
+          </Text>
+        </View>
+
         <View style={styles.foldersGrid}>
-          {categories.slice(0, 4).map((cat) => (
+          {topFolders.map((cat) => (
             <TouchableOpacity
               key={cat.id}
               onPress={() =>
@@ -471,13 +624,13 @@ export const DashboardScreen: React.FC = () => {
               <View
                 style={[
                   styles.folderIconBox,
-                  { backgroundColor: `${cat.colorHex || theme.colors.primary}15` },
+                  { backgroundColor: `${cat.colorHex || cat.color || theme.colors.primary}18` },
                 ]}
               >
                 <Icon
-                  name={cat.iconName || 'folder-outline'}
+                  name={cat.iconName || cat.icon || 'folder-outline'}
                   size={22}
-                  color={cat.colorHex || theme.colors.primary}
+                  color={cat.colorHex || cat.color || theme.colors.primary}
                 />
               </View>
               <Text
@@ -486,12 +639,92 @@ export const DashboardScreen: React.FC = () => {
               >
                 {cat.name}
               </Text>
+              {cat.path && cat.path.includes('/') && (
+                <Text
+                  numberOfLines={1}
+                  style={[styles.folderPathText, { color: theme.colors.textSecondary }]}
+                >
+                  {cat.path}
+                </Text>
+              )}
               <Text style={[styles.folderCount, { color: theme.colors.textSecondary }]}>
                 {cat.screenshotCount || 0} items
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Recently Created Folders */}
+        {recentFolders.length > 0 && (
+          <View style={styles.recentFoldersSection}>
+            <View style={styles.subSectionHeader}>
+              <View style={styles.rowCenter}>
+                <Icon
+                  name="time-outline"
+                  size={15}
+                  color={theme.colors.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.subSectionTitle, { color: theme.colors.textPrimary }]}>
+                  Recently Created Folders
+                </Text>
+              </View>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={recentFolders}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('FolderDetail', {
+                      categoryId: item.id,
+                      categoryName: item.name,
+                    })
+                  }
+                  style={[
+                    styles.recentFolderCard,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.recentFolderIconBox,
+                      { backgroundColor: `${item.colorHex || item.color || theme.colors.primary}18` },
+                    ]}
+                  >
+                    <Icon
+                      name={item.iconName || item.icon || 'folder-outline'}
+                      size={18}
+                      color={item.colorHex || item.color || theme.colors.primary}
+                    />
+                  </View>
+                  <View style={styles.recentFolderInfo}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.recentFolderName, { color: theme.colors.textPrimary }]}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.recentFolderSub, { color: theme.colors.textSecondary }]}
+                    >
+                      {item.path || `${item.screenshotCount || 0} items`}
+                    </Text>
+                  </View>
+                  <View style={[styles.newBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
+                    <Text style={[styles.newBadgeText, { color: theme.colors.primary }]}>NEW</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -841,8 +1074,140 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 2,
   },
+  folderPathText: {
+    fontSize: 10,
+    marginBottom: 4,
+    fontFamily: 'monospace',
+  },
   folderCount: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  uncategorizedCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderWidth: 1.5,
+  },
+  uncategorizedContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  uncategorizedIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  uncategorizedTextContainer: {
+    flex: 1,
+  },
+  uncategorizedTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  uncategorizedSubtitle: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  organizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  organizeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sfEngineStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  sfEngineStatCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  sfEngineStatValue: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  sfEngineStatLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  sfEngineStatDivider: {
+    width: 1,
+    height: 28,
+  },
+  subSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  subSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  subSectionBadge: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  recentFoldersSection: {
+    marginTop: 10,
+  },
+  recentFolderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginRight: 10,
+    minWidth: 180,
+    maxWidth: 220,
+  },
+  recentFolderIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  recentFolderInfo: {
+    flex: 1,
+    marginRight: 6,
+  },
+  recentFolderName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recentFolderSub: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  newBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  newBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,46 +6,176 @@ import {
   TouchableOpacity,
   FlatList,
   Dimensions,
+  TextInput,
+  Modal,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useScreenshotStore } from '../store/screenshot.store';
+import { useCategoryStore } from '../store/category.store';
+import { smartFolderService } from '../services/SmartFolderService';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { EmptyStateView } from '../components/EmptyStateView';
+import { ModernCard } from '../components/ModernCard';
+import { ScreenshotModel } from '../models';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderDetail'>;
 
 const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 48) / 2;
+const COLUMN_WIDTH = (width - 44) / 2;
 
 export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const { categoryId, categoryName } = route.params;
   const theme = useAppTheme();
+
   const allScreenshots = useScreenshotStore((s) => s.screenshots);
+  const categories = useCategoryStore((s) => s.categories);
 
-  const folderScreenshots = allScreenshots.filter((s) => s.categoryId === categoryId);
-  const [selectedSubcat, setSelectedSubcat] = useState<string>('all');
-
-  // Derive subcategories
-  const subcategories = Array.from(
-    new Set(
-      folderScreenshots
-        .map((s) => s.subcategory)
-        .filter((sub) => sub && sub.trim().length > 0)
-    )
+  // Subfolders under this category
+  const subcategoriesFromStore = useCategoryStore((s) =>
+    s.getSubcategories(categoryId)
   );
 
-  const displayedScreenshots =
-    selectedSubcat === 'all'
-      ? folderScreenshots
-      : folderScreenshots.filter((s) => s.subcategory === selectedSubcat);
+  const [selectedSubcat, setSelectedSubcat] = useState<string>('all');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [searchInFolder, setSearchInFolder] = useState('');
+
+  // Move Modal State
+  const [moveModalVisible, setMoveModalVisible] = useState(false);
+  const [targetScreenshot, setTargetScreenshot] = useState<ScreenshotModel | null>(null);
+
+  // All screenshots that belong to this folder or its subcategories
+  const folderCategoryIds = useMemo(() => {
+    const childIds = categories
+      .filter((c) => c.parentId === categoryId || c.parentCategoryId === categoryId)
+      .map((c) => c.id);
+    return new Set([categoryId, ...childIds]);
+  }, [categoryId, categories]);
+
+  const folderScreenshots = useMemo(() => {
+    return allScreenshots.filter(
+      (s) =>
+        folderCategoryIds.has(s.categoryId) ||
+        s.categoryName.toLowerCase() === categoryName.toLowerCase()
+    );
+  }, [allScreenshots, folderCategoryIds, categoryName]);
+
+  // Distinct subcategory tags from screenshots
+  const distinctSubcategories = useMemo(() => {
+    const fromScreenshots = folderScreenshots
+      .map((s) => s.subcategory)
+      .filter((sub) => sub && sub.trim().length > 0);
+    const fromStore = subcategoriesFromStore.map((c) => c.name);
+    return Array.from(new Set([...fromScreenshots, ...fromStore]));
+  }, [folderScreenshots, subcategoriesFromStore]);
+
+  // Filtered and sorted screenshots
+  const displayedScreenshots = useMemo(() => {
+    let result = folderScreenshots;
+
+    // Filter by subfolder
+    if (selectedSubcat !== 'all') {
+      result = result.filter(
+        (s) =>
+          s.subcategory.toLowerCase() === selectedSubcat.toLowerCase() ||
+          s.categoryName.toLowerCase() === selectedSubcat.toLowerCase()
+      );
+    }
+
+    // Search inside folder
+    if (searchInFolder.trim().length > 0) {
+      const q = searchInFolder.toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.fileName.toLowerCase().includes(q) ||
+          (s.ocrText && s.ocrText.toLowerCase().includes(q)) ||
+          (s.keywords && s.keywords.some((k) => k.toLowerCase().includes(q)))
+      );
+    }
+
+    // Sort by date
+    return [...result].sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  }, [folderScreenshots, selectedSubcat, searchInFolder, sortOrder]);
+
+  const handleOpenMove = (item: ScreenshotModel) => {
+    setTargetScreenshot(item);
+    setMoveModalVisible(true);
+  };
+
+  const handleExecuteMove = async (targetCategoryId: string) => {
+    if (!targetScreenshot) return;
+    try {
+      await smartFolderService.moveScreenshot(targetScreenshot.id, targetCategoryId);
+      setMoveModalVisible(false);
+      Alert.alert('Moved', 'Screenshot moved to destination folder.');
+    } catch (err: any) {
+      Alert.alert('Move Error', err?.message || 'Failed to move screenshot.');
+    }
+  };
+
+  const renderScreenshotGridItem = ({ item }: { item: ScreenshotModel }) => (
+    <ModernCard style={styles.gridCard}>
+      <TouchableOpacity
+        onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+        style={styles.cardTouch}
+      >
+        <ScreenshotImageThumbnail
+          filePath={item.filePath}
+          style={styles.thumbnail}
+        />
+
+        {/* Visual Indicators (Feature 12) */}
+        <View style={styles.cardBadgesRow}>
+          {item.isAutoCategorized ? (
+            <View style={[styles.aiBadge, { backgroundColor: '#6366F120' }]}>
+              <Icon name="sparkles" size={10} color="#6366F1" style={{ marginRight: 2 }} />
+              <Text style={styles.aiBadgeText}>AI Filed</Text>
+            </View>
+          ) : (
+            <View style={[styles.aiBadge, { backgroundColor: '#64748B20' }]}>
+              <Text style={[styles.aiBadgeText, { color: '#64748B' }]}>Manual</Text>
+            </View>
+          )}
+
+          <ConfidenceBadge confidence={item.confidence} showPercent={false} />
+        </View>
+
+        <Text numberOfLines={1} style={[styles.itemFileName, { color: theme.colors.textPrimary }]}>
+          {item.fileName}
+        </Text>
+
+        {item.subcategory ? (
+          <View style={styles.subfolderBadge}>
+            <Icon name="folder-open-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
+            <Text numberOfLines={1} style={[styles.subfolderText, { color: theme.colors.primary }]}>
+              {item.subcategory}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Move button */}
+        <TouchableOpacity
+          onPress={() => handleOpenMove(item)}
+          style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+        >
+          <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </ModernCard>
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Top Bar */}
+      {/* 1. Top Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -53,80 +183,124 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
+
         <View style={styles.titleBox}>
           <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
             {categoryName}
           </Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {folderScreenshots.length} items
+            {folderScreenshots.length} screenshots
           </Text>
         </View>
+
         <TouchableOpacity
           onPress={() =>
             navigation.navigate('FolderContext', { categoryId, categoryName })
           }
           style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
         >
-          <Icon name="sparkles" size={18} color={theme.colors.primary} />
+          <Icon name="sparkles" size={16} color={theme.colors.primary} style={{ marginRight: 4 }} />
           <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Subcategory Filter Chips */}
-      {subcategories.length > 0 && (
+      {/* 2. Search & Sort Bar */}
+      <View style={styles.searchAndSortRow}>
+        <View
+          style={[
+            styles.inFolderSearchBar,
+            {
+              backgroundColor: theme.colors.card,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <Icon name="search-outline" size={16} color={theme.colors.textSecondary} />
+          <TextInput
+            placeholder={`Search in ${categoryName}...`}
+            placeholderTextColor={theme.colors.textSecondary}
+            value={searchInFolder}
+            onChangeText={setSearchInFolder}
+            style={[styles.inFolderSearchInput, { color: theme.colors.textPrimary }]}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')}
+          style={[
+            styles.sortBtn,
+            {
+              backgroundColor: theme.colors.card,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <Icon
+            name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'}
+            size={14}
+            color={theme.colors.primary}
+            style={{ marginRight: 4 }}
+          />
+          <Text style={[styles.sortBtnText, { color: theme.colors.textPrimary }]}>
+            {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 3. Subfolder Filter Chips */}
+      {distinctSubcategories.length > 0 && (
         <View style={styles.chipsContainer}>
-          <TouchableOpacity
-            onPress={() => setSelectedSubcat('all')}
-            style={[
-              styles.chip,
-              selectedSubcat === 'all'
-                ? { backgroundColor: theme.colors.primary }
-                : { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                { color: selectedSubcat === 'all' ? '#FFFFFF' : theme.colors.textSecondary },
-              ]}
-            >
-              All ({folderScreenshots.length})
-            </Text>
-          </TouchableOpacity>
-          {subcategories.map((sub) => {
-            const count = folderScreenshots.filter((s) => s.subcategory === sub).length;
-            const isSelected = selectedSubcat === sub;
-            return (
-              <TouchableOpacity
-                key={sub}
-                onPress={() => setSelectedSubcat(sub)}
-                style={[
-                  styles.chip,
-                  isSelected
-                    ? { backgroundColor: theme.colors.primary }
-                    : { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' },
-                ]}
-              >
-                <Text
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={['all', ...distinctSubcategories]}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => {
+              const isSelected = selectedSubcat === item;
+              const count =
+                item === 'all'
+                  ? folderScreenshots.length
+                  : folderScreenshots.filter(
+                      (s) =>
+                        s.subcategory.toLowerCase() === item.toLowerCase() ||
+                        s.categoryName.toLowerCase() === item.toLowerCase()
+                    ).length;
+
+              return (
+                <TouchableOpacity
+                  onPress={() => setSelectedSubcat(item)}
                   style={[
-                    styles.chipText,
-                    { color: isSelected ? '#FFFFFF' : theme.colors.textSecondary },
+                    styles.chip,
+                    isSelected
+                      ? { backgroundColor: theme.colors.primary }
+                      : { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' },
                   ]}
                 >
-                  {sub} ({count})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: isSelected ? '#FFFFFF' : theme.colors.textSecondary },
+                    ]}
+                  >
+                    {item === 'all' ? 'All' : item} ({count})
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
       )}
 
-      {/* Grid of Screenshots */}
+      {/* 4. Screenshots Grid */}
       {displayedScreenshots.length === 0 ? (
         <EmptyStateView
-          iconName="images-outline"
+          iconName="folder-open-outline"
           title="No Screenshots in Folder"
-          description={`Screenshots categorized as "${categoryName}" will automatically appear here.`}
+          description={
+            searchInFolder
+              ? 'No screenshots match your search query.'
+              : 'New detected screenshots will be filed here automatically by the Smart Folder Engine.'
+          }
         />
       ) : (
         <FlatList
@@ -134,25 +308,80 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           keyExtractor={(item) => item.id}
           numColumns={2}
           contentContainerStyle={styles.gridContent}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
-              style={[styles.gridItem, { width: COLUMN_WIDTH }]}
-            >
-              <ScreenshotImageThumbnail
-                filePath={item.filePath}
-                style={styles.gridThumb}
-              />
-              <View style={styles.itemMeta}>
-                <Text numberOfLines={1} style={[styles.itemName, { color: theme.colors.textPrimary }]}>
-                  {item.fileName}
-                </Text>
-                <ConfidenceBadge confidence={item.confidence} showPercent={false} />
-              </View>
-            </TouchableOpacity>
-          )}
+          renderItem={renderScreenshotGridItem}
         />
       )}
+
+      {/* 5. Move Screenshot Modal */}
+      <Modal
+        visible={moveModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoveModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+              Move Screenshot
+            </Text>
+            <Text numberOfLines={1} style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+              {targetScreenshot?.fileName}
+            </Text>
+
+            <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>
+              Select Destination Smart Folder:
+            </Text>
+
+            <ScrollView style={{ maxHeight: 260 }}>
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  onPress={() => handleExecuteMove(cat.id)}
+                  style={[
+                    styles.folderSelectRow,
+                    {
+                      borderColor: theme.colors.border,
+                      backgroundColor:
+                        cat.id === categoryId
+                          ? `${theme.colors.primary}15`
+                          : 'transparent',
+                    },
+                  ]}
+                >
+                  <Icon
+                    name={cat.iconName || 'folder'}
+                    size={20}
+                    color={cat.colorHex.startsWith('#') ? cat.colorHex : `#${cat.colorHex}`}
+                    style={{ marginRight: 10 }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.selectCatName, { color: theme.colors.textPrimary }]}>
+                      {cat.name}
+                    </Text>
+                    <Text style={[styles.selectCatPath, { color: theme.colors.textSecondary }]}>
+                      {cat.path || `/${cat.name}`}
+                    </Text>
+                  </View>
+                  {cat.id === categoryId && (
+                    <Text style={[styles.currentFolderText, { color: theme.colors.primary }]}>
+                      Current
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={() => setMoveModalVisible(false)}
+              style={[styles.closeModalBtn, { backgroundColor: theme.isDark ? '#334155' : '#E2E8F0' }]}
+            >
+              <Text style={[styles.closeModalBtnText, { color: theme.colors.textPrimary }]}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -164,9 +393,9 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 12,
+    paddingBottom: 10,
   },
   backBtn: {
     width: 38,
@@ -174,10 +403,10 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   titleBox: {
     flex: 1,
+    marginLeft: 12,
   },
   title: {
     fontSize: 20,
@@ -185,28 +414,60 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 12,
+    marginTop: 1,
   },
   aiContextBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
   aiBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  searchAndSortRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  inFolderSearchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  inFolderSearchInput: {
+    flex: 1,
     marginLeft: 6,
+    fontSize: 13,
+    padding: 0,
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  sortBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   chipsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 8,
     marginRight: 8,
   },
   chipText: {
@@ -214,23 +475,121 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   gridContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+    padding: 12,
+    paddingBottom: 40,
   },
-  gridItem: {
-    margin: 8,
+  gridCard: {
+    width: COLUMN_WIDTH,
+    margin: 5,
+    padding: 8,
+    borderRadius: 12,
   },
-  gridThumb: {
+  cardTouch: {
+    position: 'relative',
+  },
+  thumbnail: {
     width: '100%',
-    height: 200,
-    borderRadius: 14,
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 8,
   },
-  itemMeta: {
-    marginTop: 6,
+  cardBadgesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  itemName: {
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  aiBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#6366F1',
+  },
+  itemFileName: {
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  subfolderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  subfolderText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  moveIconBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#00000080',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  modalSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  folderSelectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  selectCatName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  selectCatPath: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  currentFolderText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  closeModalBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeModalBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

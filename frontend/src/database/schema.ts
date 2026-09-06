@@ -1,21 +1,30 @@
 import { DEFAULT_CATEGORIES } from '../models/category.model';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 3;
+export const DATABASE_VERSION = 4;
 
 export const SCHEMA_SQL = [
-  // 1. Categories
+  // 1. Categories (Sprint RN-05 Dynamic Smart Folder Hierarchy)
   `CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     parent_id TEXT,
+    parent_category_id TEXT,
     icon_name TEXT NOT NULL,
+    icon TEXT,
     color_hex TEXT NOT NULL,
+    color TEXT,
     description TEXT,
     is_system INTEGER NOT NULL DEFAULT 1,
-    order_index INTEGER NOT NULL DEFAULT 0
+    order_index INTEGER NOT NULL DEFAULT 0,
+    screenshot_count INTEGER NOT NULL DEFAULT 0,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    path TEXT,
+    created_on TEXT NOT NULL DEFAULT (datetime('now'))
   );`,
   `CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_categories_parent_cat ON categories(parent_category_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_categories_fav ON categories(is_favorite);`,
 
   // 2. Folders
   `CREATE TABLE IF NOT EXISTS folders (

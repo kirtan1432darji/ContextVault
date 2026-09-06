@@ -16,3 +16,4 @@ export * from './backgroundDetection/mediaObserver';
 export * from './backgroundDetection/headlessTask';
 export * from './searchIndexService';
 export * from './OCRQueueService';
+export * from './SmartFolderService';

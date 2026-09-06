@@ -128,38 +128,18 @@ export class OCRQueueService {
         );
         useScannerStore.getState().updateItemStatus(item.id, 'Completed');
 
-        // 5. Prepare Search Index and store in SQLite screenshots table
-        const searchIndex = searchIndexService.prepareIndex(result.rawText);
-
-        const screenshotModel: ScreenshotModel = {
-          id: item.id,
-          deviceAssetId: item.deviceAssetId,
-          filePath: item.filePath,
+        // 5. Automatic Smart Folder Assignment Pipeline (Sprint RN-05)
+        const { smartFolderService } = await import('./SmartFolderService');
+        await smartFolderService.assignScreenshotToSmartFolder({
+          screenshotId: item.id,
           fileName: item.fileName,
-          createdAt: item.capturedAt,
-          width: item.width || 1080,
-          height: item.height || 2400,
-          fileSize: item.fileSize,
-          categoryId: 'unsorted',
-          categoryName: 'Unsorted',
-          subcategory: 'Ready for AI Classification',
-          confidence: result.confidence,
-          keywords: searchIndex.keywords,
-          isFavorite: false,
-          isReviewed: false,
-          isSynced: false,
-          ocrStatus: 'completed',
+          filePath: item.filePath,
           ocrText: result.rawText,
-          tags: searchIndex.keywords.slice(0, 4).map((kw) => ({
-            id: `tag_${kw.toLowerCase().replace(/\s+/g, '_')}`,
-            name: kw,
-            colorHex: '6366F1',
-          })),
-          lastScannedAt: new Date().toISOString(),
-        };
-
-        await screenshotRepository.insertScreenshot(screenshotModel);
-        useScreenshotStore.getState().addOrUpdateScreenshot(screenshotModel);
+          deviceFolder: item.deviceFolder,
+          fileSize: item.fileSize,
+          width: item.width,
+          height: item.height,
+        });
 
         // 6. Update last OCR result in Zustand store
         useScannerStore.getState().setLastOCRResult({

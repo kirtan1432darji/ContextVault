@@ -41,6 +41,16 @@ class DatabaseService {
 
     // Safe column migrations for existing SQLite databases
     const alterStatements = [
+      // Categories table migrations (Sprint RN-05)
+      'ALTER TABLE categories ADD COLUMN parent_category_id TEXT',
+      'ALTER TABLE categories ADD COLUMN icon TEXT',
+      'ALTER TABLE categories ADD COLUMN color TEXT',
+      'ALTER TABLE categories ADD COLUMN screenshot_count INTEGER DEFAULT 0',
+      'ALTER TABLE categories ADD COLUMN is_favorite INTEGER DEFAULT 0',
+      'ALTER TABLE categories ADD COLUMN path TEXT',
+      'ALTER TABLE categories ADD COLUMN created_on TEXT',
+
+      // Pending screenshots migrations (Sprint RN-03 / RN-04)
       'ALTER TABLE pending_screenshots ADD COLUMN device_folder TEXT',
       'ALTER TABLE pending_screenshots ADD COLUMN mime_type TEXT',
       'ALTER TABLE pending_screenshots ADD COLUMN resolution TEXT',
@@ -49,6 +59,8 @@ class DatabaseService {
       'ALTER TABLE pending_screenshots ADD COLUMN ocr_status TEXT DEFAULT "Pending"',
       'ALTER TABLE pending_screenshots ADD COLUMN ocr_processing_time INTEGER DEFAULT 0',
       'ALTER TABLE pending_screenshots ADD COLUMN extracted_text TEXT',
+
+      // OCR cache migrations (Sprint RN-04)
       'ALTER TABLE ocr_cache ADD COLUMN normalized_text TEXT',
       'ALTER TABLE ocr_cache ADD COLUMN processing_time INTEGER DEFAULT 0',
       'ALTER TABLE ocr_cache ADD COLUMN ocr_version TEXT DEFAULT "MLKit-Text-16.0.0"',
@@ -64,28 +76,30 @@ class DatabaseService {
       }
     }
 
-    // Seed default categories if empty
-    const [res] = await db.executeSql('SELECT COUNT(*) as count FROM categories');
-    const count = res.rows.item(0).count;
-
-    if (count === 0) {
-      for (const cat of DEFAULT_CATEGORIES) {
-        await db.executeSql(
-          `INSERT OR REPLACE INTO categories 
-          (id, name, parent_id, icon_name, color_hex, description, is_system, order_index)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            cat.id,
-            cat.name,
-            cat.parentId || null,
-            cat.iconName,
-            cat.colorHex,
-            cat.description || '',
-            cat.isSystem ? 1 : 0,
-            cat.orderIndex,
-          ]
-        );
-      }
+    // Seed or update default smart categories
+    for (const cat of DEFAULT_CATEGORIES) {
+      await db.executeSql(
+        `INSERT OR REPLACE INTO categories 
+        (id, name, parent_id, parent_category_id, icon_name, icon, color_hex, color, description, is_system, order_index, is_favorite, path, created_on)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce((SELECT created_on FROM categories WHERE id = ?), ?))`,
+        [
+          cat.id,
+          cat.name,
+          cat.parentId || null,
+          cat.parentCategoryId || cat.parentId || null,
+          cat.iconName,
+          cat.icon || cat.iconName,
+          cat.colorHex,
+          cat.color || cat.colorHex,
+          cat.description || '',
+          cat.isSystem ? 1 : 0,
+          cat.orderIndex,
+          cat.isFavorite ? 1 : 0,
+          cat.path || `/${cat.name}`,
+          cat.id,
+          cat.createdOn || new Date().toISOString(),
+        ]
+      );
     }
   }
 
