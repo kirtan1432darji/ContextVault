@@ -155,3 +155,24 @@ class ScreenshotRepository(BaseRepository[Screenshot]):
         screenshot.tags = current_tags
         self.db.commit()
         self.db.refresh(screenshot)
+
+    def get_by_category_and_user(
+        self, category_id: uuid.UUID, user_id: uuid.UUID
+    ) -> List[Screenshot]:
+        """Fetches all non-deleted screenshots for a given category and user."""
+        stmt = (
+            select(Screenshot)
+            .where(
+                and_(
+                    Screenshot.CategoryId == category_id,
+                    Screenshot.UserId == user_id,
+                    Screenshot.IsDeleted == False,
+                )
+            )
+            .options(
+                selectinload(Screenshot.category),
+                selectinload(Screenshot.tags),
+            )
+            .order_by(Screenshot.CreatedOn.asc())
+        )
+        return list(self.db.scalars(stmt).all())

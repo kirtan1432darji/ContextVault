@@ -19,6 +19,9 @@ from app.models import (
     ScreenshotTag,
     ClassificationHistory,
     SearchIndex,
+    FolderContext,
+    ContextInsight,
+    EntityOccurrence,
 )
 
 # Use in-memory SQLite database with StaticPool for thread-safe test isolation

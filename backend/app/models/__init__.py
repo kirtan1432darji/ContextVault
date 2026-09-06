@@ -6,6 +6,7 @@ from app.models.screenshot import Screenshot
 from app.models.tag import Tag, ScreenshotTag
 from app.models.classification_history import ClassificationHistory
 from app.models.search_index import SearchIndex
+from app.models.folder_context import FolderContext, ContextInsight, EntityOccurrence
 
 __all__ = [
     "User",
@@ -17,4 +18,7 @@ __all__ = [
     "ScreenshotTag",
     "ClassificationHistory",
     "SearchIndex",
+    "FolderContext",
+    "ContextInsight",
+    "EntityOccurrence",
 ]

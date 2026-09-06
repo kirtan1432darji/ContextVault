@@ -30,6 +30,15 @@ from app.schemas.screenshot import (
     PagedScreenshotsDto,
     SyncBatchResponseDto,
 )
+from app.schemas.context import (
+    ContextTaskDto,
+    TimelineEventDto,
+    EntityItemDto,
+    FolderEntitiesDto,
+    FolderContextDto,
+    RecentContextDto,
+    ContextSearchResultDto,
+)
 
 __all__ = [
     "ApiResponse",
@@ -57,4 +66,11 @@ __all__ = [
     "ScreenshotUpdateDto",
     "PagedScreenshotsDto",
     "SyncBatchResponseDto",
+    "ContextTaskDto",
+    "TimelineEventDto",
+    "EntityItemDto",
+    "FolderEntitiesDto",
+    "FolderContextDto",
+    "RecentContextDto",
+    "ContextSearchResultDto",
 ]

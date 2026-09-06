@@ -59,7 +59,8 @@ class ScreenshotService:
             return detail
 
         # 2. Run Classification Engine
-        ocr_combined = (req.extractedText or "") + " " + (req.normalizedText or "")
+        raw_ocr = req.extractedText or req.ocrText or ""
+        ocr_combined = (raw_ocr + " " + (req.normalizedText or "")).strip()
         classification = self.classification_service.classify(
             ocr_text=ocr_combined,
             file_name=req.fileName,
@@ -82,7 +83,7 @@ class ScreenshotService:
             CategoryId=canonical_category.Id,
             SubCategory=classification.subCategory,
             FileName=req.fileName,
-            OCRText=req.extractedText,
+            OCRText=raw_ocr,
             NormalizedText=req.normalizedText,
             SHA256Hash=req.sha256Hash,
             DeviceFolder=req.deviceFolder,

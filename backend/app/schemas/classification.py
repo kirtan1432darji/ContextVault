@@ -12,6 +12,14 @@ class ExtractedEntitiesDto(BaseModel):
     merchants: List[str] = Field(default_factory=list, description="Identified companies, vendors, and merchants")
     projectNames: List[str] = Field(default_factory=list, description="Identified project, repo, or client names")
     dates: List[str] = Field(default_factory=list, description="Extracted calendar dates")
+    organizations: List[str] = Field(default_factory=list, description="Extracted company, platform, and organization names")
+    people: List[str] = Field(default_factory=list, description="Extracted names of persons")
+    upiIds: List[str] = Field(default_factory=list, description="Extracted UPI payment IDs")
+    bankAccounts: List[str] = Field(default_factory=list, description="Extracted bank account / IFSC references")
+    invoiceNumbers: List[str] = Field(default_factory=list, description="Extracted invoice, receipt, and bill numbers")
+    ticketNumbers: List[str] = Field(default_factory=list, description="Extracted ticket, PNR, and booking identifiers")
+    shoppingItems: List[str] = Field(default_factory=list, description="Extracted product names and line items")
+    documentIds: List[str] = Field(default_factory=list, description="Extracted passport, national ID, and driver license numbers")
 
 
 class ClassifyRequest(BaseModel):

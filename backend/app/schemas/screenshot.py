@@ -11,6 +11,7 @@ class ScreenshotUploadMetadataRequest(BaseModel):
     sha256Hash: str = Field(..., min_length=16, max_length=64, description="SHA-256 fingerprint for deduplication")
     timestamp: Optional[str] = Field(default=None, description="Creation timestamp on device")
     extractedText: Optional[str] = Field(default="", description="Raw OCR text extracted on-device via ML Kit")
+    ocrText: Optional[str] = Field(default=None, description="Alternative field for extracted OCR text")
     normalizedText: Optional[str] = Field(default="", description="Sanitized/normalized text token stream")
     width: int = Field(default=1080, ge=1, description="Pixel width")
     height: int = Field(default=2400, ge=1, description="Pixel height")
