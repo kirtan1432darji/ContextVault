@@ -8,9 +8,13 @@ npm-debug.log*
 .metro-health-check*
 
 # Android
+**/.gradle/
+frontend/android/.gradle/
 android/.gradle/
 android/build/
+frontend/android/build/
 android/app/build/
+frontend/android/app/build/
 android/.idea/
 *.apk
 *.aab
@@ -63,8 +67,15 @@ wheels/
 
 # Environment variables & secrets
 .env
+.env.*
 .env.local
 .env.*.local
+frontend/.env.development
+
+# Logs
+*.log
+logs/
+backend/logs/
 
 # IDE & OS
 .idea/
