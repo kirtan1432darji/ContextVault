@@ -195,7 +195,7 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Set local server address (e.g., http://localhost:8000/api or http://10.0.2.2:8000/api)
+          Set local server address (e.g., http://localhost:8000/api or http://10.158.37.96:8000/api)
         </Text>
         <TextInput
           value={urlInput}
