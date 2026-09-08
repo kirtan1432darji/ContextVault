@@ -7,7 +7,7 @@ from app.models.tag import Tag, ScreenshotTag
 from app.models.classification_history import ClassificationHistory
 from app.models.search_index import SearchIndex
 from app.models.folder_context import FolderContext, ContextInsight, EntityOccurrence
-from app.models.chat_history import ChatHistory
+from app.models.chat import ChatSession, ChatMessage, ChatHistory
 
 __all__ = [
     "User",
@@ -22,5 +22,7 @@ __all__ = [
     "FolderContext",
     "ContextInsight",
     "EntityOccurrence",
+    "ChatSession",
+    "ChatMessage",
     "ChatHistory",
 ]

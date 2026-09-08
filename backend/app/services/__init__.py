@@ -6,6 +6,8 @@ from app.services.screenshot_service import ScreenshotService
 from app.services.entity_extraction_service import EntityExtractionService
 from app.services.timeline_service import TimelineService
 from app.services.context_engine_service import ContextEngineService
+from app.services.prompt_builder_service import PromptBuilderService
+from app.services.citation_service import CitationService
 from app.services.chat_engine_service import ChatEngineService
 
 __all__ = [
@@ -17,5 +19,7 @@ __all__ = [
     "EntityExtractionService",
     "TimelineService",
     "ContextEngineService",
+    "PromptBuilderService",
+    "CitationService",
     "ChatEngineService",
 ]

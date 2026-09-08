@@ -1,11 +1,10 @@
 import uuid
 import json
-import re
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 
-from app.models.chat_history import ChatHistory
+from app.models.chat import ChatMessage, ChatSession
 from app.models.category import Category
 from app.models.screenshot import Screenshot
 from app.repositories.chat_repository import ChatRepository
@@ -13,6 +12,8 @@ from app.repositories.category_repository import CategoryRepository
 from app.repositories.screenshot_repository import ScreenshotRepository
 from app.repositories.folder_context_repository import FolderContextRepository
 from app.services.context_engine_service import ContextEngineService
+from app.services.prompt_builder_service import PromptBuilderService
+from app.services.citation_service import CitationService
 from app.schemas.chat import (
     ChatMessageCitationDto,
     ChatMessageDto,
@@ -26,13 +27,11 @@ from app.schemas.chat import (
 class ChatEngineService:
     """
     ContextVault Multi-Turn Context AI Chat Engine.
-    Executes grounded Retrieval-Augmented Generation (RAG) over:
-    - Synthesized Folder Knowledge Summaries
-    - 14 Structured Extracted Entity Categories (currencies, dates, urls, contacts, etc.)
-    - Actionable detected tasks and deadlines
-    - Chronological event timelines
-    - Cached on-device OCR text blocks and screenshot metadata
-    Zero image binaries leave device.
+    Orchestrates:
+    - PromptBuilderService: synthesizes folder context, timeline, entities, OCR snippets.
+    - CitationService: resolves, ranks, and formats grounded screenshot references.
+    - ChatRepository: persists conversation history, turns, and session records.
+    Enforces privacy-first zero image binary transmission.
     """
 
     DEFAULT_FOLLOW_UPS = [
@@ -103,6 +102,8 @@ class ChatEngineService:
         self.screenshot_repo = ScreenshotRepository(db)
         self.context_repo = FolderContextRepository(db)
         self.context_engine = ContextEngineService(db)
+        self.prompt_builder = PromptBuilderService()
+        self.citation_service = CitationService()
 
     def process_message(
         self, user_id: uuid.UUID, request: ChatRequestDto
@@ -123,7 +124,7 @@ class ChatEngineService:
             session_id=session_id,
             role="user",
             message=user_query,
-            category_id=request.folderId,
+            folder_id=request.folderId,
             screenshot_id=request.screenshotId,
             citations_json="[]",
             prompt_tokens=user_tokens,
@@ -148,9 +149,7 @@ class ChatEngineService:
         completion_tokens = max(1, len(answer.split()) * 2)
 
         # 6. Serialize citations for database persistence
-        citations_serialized = json.dumps(
-            [c.model_dump(mode="json") for c in citations]
-        )
+        citations_serialized = self.citation_service.serialize_citations(citations)
 
         # 7. Persist assistant response in history
         assistant_record = self.chat_repo.save_message(
@@ -158,7 +157,7 @@ class ChatEngineService:
             session_id=session_id,
             role="assistant",
             message=answer,
-            category_id=request.folderId,
+            folder_id=request.folderId,
             screenshot_id=request.screenshotId,
             citations_json=citations_serialized,
             prompt_tokens=user_tokens,
@@ -189,44 +188,29 @@ class ChatEngineService:
         offset: int = 0,
     ) -> ChatHistoryResponseDto:
         """Retrieves paginated conversation history with formatted citations."""
-        messages = self.chat_repo.get_history(
+        messages = self.chat_repo.get_chat_history(
             user_id=user_id,
-            category_id=folder_id,
+            folder_id=folder_id,
             session_id=session_id,
             limit=limit,
             offset=offset,
         )
-        total_count = self.chat_repo.count_history(
+        total_count = self.chat_repo.count_chat_history(
             user_id=user_id,
-            category_id=folder_id,
+            folder_id=folder_id,
             session_id=session_id,
         )
 
         dto_list: List[ChatMessageDto] = []
         for msg in messages:
-            citations_list: List[ChatMessageCitationDto] = []
-            if msg.ReferencedScreenshotIdsJson:
-                try:
-                    raw_cits = json.loads(msg.ReferencedScreenshotIdsJson)
-                    if isinstance(raw_cits, list):
-                        for c in raw_cits:
-                            if isinstance(c, dict) and "screenshotId" in c:
-                                citations_list.append(
-                                    ChatMessageCitationDto(
-                                        screenshotId=uuid.UUID(str(c["screenshotId"])),
-                                        fileName=c.get("fileName", "screenshot.png"),
-                                        snippet=c.get("snippet"),
-                                        thumbnailPath=c.get("thumbnailPath"),
-                                    )
-                                )
-                except Exception:
-                    pass
-
+            citations_list = self.citation_service.deserialize_citations(
+                msg.CitationsJson
+            )
             dto_list.append(
                 ChatMessageDto(
                     id=msg.Id,
                     sessionId=msg.SessionId,
-                    folderId=msg.CategoryId,
+                    folderId=msg.FolderId,
                     screenshotId=msg.ScreenshotId,
                     role=msg.Role.lower(),
                     content=msg.Message,
@@ -261,24 +245,19 @@ class ChatEngineService:
         # 2. Check if folder has context with tasks
         ctx = self.context_repo.get_by_folder_id(folder_id, user_id)
         if ctx:
-            try:
-                tasks = json.loads(ctx.TasksJson)
-                if tasks and len(tasks) > 0:
-                    suggestions.append(f"Show details for task: '{tasks[0].get('task', 'next action')}'")
-            except Exception:
-                pass
+            ctx_data = self.prompt_builder.parse_folder_context_block(ctx)
+            tasks = ctx_data["tasks"]
+            if tasks and len(tasks) > 0:
+                suggestions.append(f"Show details for task: '{tasks[0].get('task', 'next action')}'")
 
-            try:
-                entities = json.loads(ctx.EntitiesJson)
-                if isinstance(entities, dict):
-                    currencies = entities.get("currencies", [])
-                    if currencies and "What is the total amount spent across all receipts?" not in suggestions:
-                        suggestions.append("Summarize all payment amounts and expenses")
-                    dates = entities.get("dates", [])
-                    if dates:
-                        suggestions.append("What key dates or deadlines are recorded here?")
-            except Exception:
-                pass
+            entities = ctx_data["entities"]
+            if isinstance(entities, dict):
+                currencies = entities.get("currencies", [])
+                if currencies and "What is the total amount spent across all receipts?" not in suggestions:
+                    suggestions.append("Summarize all payment amounts and expenses")
+                dates = entities.get("dates", [])
+                if dates:
+                    suggestions.append("What key dates or deadlines are recorded here?")
 
         # Fallbacks if list is short
         if len(suggestions) < 3:
@@ -298,8 +277,8 @@ class ChatEngineService:
         self, user_id: uuid.UUID, folder_id: Optional[uuid.UUID] = None, limit: int = 20
     ) -> List[ChatSessionSummaryDto]:
         """Returns summarized active chat sessions for the user."""
-        raw_sessions = self.chat_repo.get_sessions(
-            user_id=user_id, category_id=folder_id, limit=limit
+        raw_sessions = self.chat_repo.get_recent_sessions(
+            user_id=user_id, folder_id=folder_id, limit=limit
         )
         results: List[ChatSessionSummaryDto] = []
         for s in raw_sessions:
@@ -316,8 +295,12 @@ class ChatEngineService:
         return results
 
     def delete_session(self, user_id: uuid.UUID, session_id: uuid.UUID) -> bool:
-        """Deletes a chat session."""
+        """Deletes a chat session and its messages."""
         return self.chat_repo.delete_session(user_id=user_id, session_id=session_id)
+
+    def delete_history(self, user_id: uuid.UUID, folder_id: uuid.UUID) -> int:
+        """Deletes all chat messages and sessions in a folder."""
+        return self.chat_repo.delete_chat_history(user_id=user_id, folder_id=folder_id)
 
     # --------------------------------------------------------------------------
     # Internal RAG & Grounded Synthesis Methods
@@ -329,7 +312,7 @@ class ChatEngineService:
         query: str,
         folder_id: Optional[uuid.UUID],
         screenshot_id: Optional[uuid.UUID],
-        history: List[ChatHistory],
+        history: List[ChatMessage],
     ) -> Tuple[List[ChatMessageCitationDto], str, List[str]]:
         """
         Analyzes query intent, searches folder screenshots and context, extracts citations,
@@ -342,16 +325,9 @@ class ChatEngineService:
         if screenshot_id:
             shot = self.screenshot_repo.get_by_id_and_user(screenshot_id, user_id)
             if shot:
+                citation = self.citation_service.find_citation_for_screenshot(shot)
+                citations.append(citation)
                 ocr_text = shot.OCRText or ""
-                snippet = ocr_text[:120].strip() if ocr_text else "No OCR text detected"
-                citations.append(
-                    ChatMessageCitationDto(
-                        screenshotId=shot.Id,
-                        fileName=shot.FileName,
-                        snippet=snippet,
-                        thumbnailPath=shot.DeviceFolder,
-                    )
-                )
                 answer = (
                     f"**Analysis of {shot.FileName}:**\n\n"
                     f"- **Category:** {shot.category.Name if shot.category else 'Unsorted'}\n"
@@ -377,64 +353,17 @@ class ChatEngineService:
                     folder_ctx = self.context_repo.get_by_folder_id(folder_id, user_id)
 
             # 2. Fetch screenshots in folder
-            screenshots, total_shots = self.screenshot_repo.list_paged(
+            screenshots, _ = self.screenshot_repo.list_paged(
                 user_id=user_id, category_id=folder_id, page=1, page_size=25
             )
 
-            # 3. Find keyword matches in screenshots for citations
-            query_words = [
-                w.lower() for w in re.findall(r"\w+", query)
-                if len(w) > 2 and w.lower() not in ContextEngineService.STOP_WORDS
-            ]
+            # 3. Find keyword matches in screenshots for citations using CitationService
+            citations = self.citation_service.find_citations_for_query(
+                query=query, screenshots=screenshots, max_citations=4
+            )
 
-            scored_shots: List[Tuple[Screenshot, int, str]] = []
-            for s in screenshots:
-                score = 0
-                snippet = ""
-                text = (s.OCRText or "") + " " + (s.FileName or "") + " " + (s.DetectedApp or "")
-                text_lower = text.lower()
-
-                for qw in query_words:
-                    if qw in text_lower:
-                        score += 2
-                        # Extract snippet window around match
-                        idx = text_lower.find(qw)
-                        start = max(0, idx - 40)
-                        end = min(len(text), idx + len(qw) + 60)
-                        snippet = text[start:end].replace("\n", " ").strip()
-
-                if score > 0:
-                    scored_shots.append((s, score, snippet or (s.OCRText[:100] if s.OCRText else "")))
-                elif not query_words and len(scored_shots) < 3:
-                    # Generic query -> take top screenshots
-                    scored_shots.append((s, 1, s.OCRText[:100] if s.OCRText else s.FileName))
-
-            scored_shots.sort(key=lambda x: x[1], reverse=True)
-
-            for s, score, snip in scored_shots[:4]:
-                citations.append(
-                    ChatMessageCitationDto(
-                        screenshotId=s.Id,
-                        fileName=s.FileName,
-                        snippet=snip[:150] if snip else "Matched screenshot context",
-                        thumbnailPath=s.DeviceFolder,
-                    )
-                )
-
-            # If no keyword matched but screenshots exist, cite the latest screenshot
-            if not citations and screenshots:
-                latest = screenshots[0]
-                citations.append(
-                    ChatMessageCitationDto(
-                        screenshotId=latest.Id,
-                        fileName=latest.FileName,
-                        snippet=(latest.OCRText[:120] if latest.OCRText else latest.FileName),
-                        thumbnailPath=latest.DeviceFolder,
-                    )
-                )
-
-            # 4. Generate Grounded Answer by analyzing user intent
-            answer = self._generate_answer_by_intent(
+            # 4. Generate Grounded Answer by analyzing user intent using PromptBuilderService
+            answer = self.prompt_builder.synthesize_grounded_answer(
                 query=query,
                 folder_name=folder_name,
                 folder_ctx=folder_ctx,
@@ -454,14 +383,7 @@ class ChatEngineService:
         )
         if screenshots:
             latest = screenshots[0]
-            citations.append(
-                ChatMessageCitationDto(
-                    screenshotId=latest.Id,
-                    fileName=latest.FileName,
-                    snippet=(latest.OCRText[:120] if latest.OCRText else latest.FileName),
-                    thumbnailPath=latest.DeviceFolder,
-                )
-            )
+            citations.append(self.citation_service.build_citation(latest))
 
         answer = (
             f"I searched across your ContextVault knowledge base.\n\n"
@@ -470,126 +392,3 @@ class ChatEngineService:
             f"(such as Receipts & Invoices, Finance, or Projects) to chat within that specific context."
         )
         return citations, answer, follow_ups
-
-    def _generate_answer_by_intent(
-        self,
-        query: str,
-        folder_name: str,
-        folder_ctx: Optional[Any],
-        screenshots: List[Screenshot],
-        citations: List[ChatMessageCitationDto],
-    ) -> str:
-        """Determines query intent and synthesizes a structured, factual answer."""
-        q_lower = query.lower()
-
-        # Parse context entities and tasks if available
-        summary = ""
-        tasks = []
-        entities = {}
-        if folder_ctx:
-            summary = folder_ctx.Summary or ""
-            try:
-                tasks = json.loads(folder_ctx.TasksJson or "[]")
-            except Exception:
-                tasks = []
-            try:
-                entities = json.loads(folder_ctx.EntitiesJson or "{}")
-            except Exception:
-                entities = {}
-
-        # 1. Intent: Expense / Money / Spending / Invoice amounts
-        if any(w in q_lower for w in ["spend", "total", "cost", "amount", "price", "expense", "bill", "invoice", "paid"]):
-            currencies = entities.get("currencies", [])
-            # Also extract monetary amounts from screenshot OCR text
-            ocr_amounts = []
-            for s in screenshots:
-                if s.OCRText:
-                    found = re.findall(r"[\$₹€£]\s*[\d,]+(?:\.\d{2})?|\b[\d,]+(?:\.\d{2})?\s*(?:USD|INR|EUR|GBP)\b", s.OCRText)
-                    ocr_amounts.extend(found)
-
-            all_amounts = list(dict.fromkeys(currencies + ocr_amounts))
-            if all_amounts:
-                amounts_str = ", ".join(all_amounts[:6])
-                return (
-                    f"**Financial Overview for {folder_name}:**\n\n"
-                    f"Detected monetary amounts in this folder: **{amounts_str}**.\n\n"
-                    f"Based on {len(citations)} cited screenshot(s), these items correspond to transactions, invoices, or receipts. "
-                    f"Check the citation cards below for the exact records."
-                )
-            else:
-                return (
-                    f"I analyzed {len(screenshots)} screenshot(s) in **{folder_name}**, but did not detect explicit currency amounts. "
-                    f"Make sure screenshots with financial figures have completed OCR processing."
-                )
-
-        # 2. Intent: Tasks / To-dos / Deadlines / Action items
-        if any(w in q_lower for w in ["task", "todo", "to-do", "deadline", "due", "action item", "meeting", "follow up"]):
-            if tasks:
-                tasks_bullets = "\n".join([f"- [ ] **{t.get('task')}** ({t.get('priority', 'Medium')} priority)" for t in tasks[:5]])
-                return (
-                    f"**Action Items & Deadlines in {folder_name}:**\n\n"
-                    f"{tasks_bullets}\n\n"
-                    f"These tasks were extracted from your screenshots and are ready for follow-up."
-                )
-            else:
-                return (
-                    f"No pending action items or deadlines were detected in **{folder_name}**. "
-                    f"All screenshots appear to be informational records."
-                )
-
-        # 3. Intent: Contacts / People / Names / Organizations / Accounts
-        if any(w in q_lower for w in ["who", "person", "people", "contact", "email", "phone", "merchant", "vendor", "company"]):
-            emails = entities.get("emails", [])
-            phones = entities.get("phones", [])
-            names = entities.get("names", [])
-            organizations = entities.get("organizations", [])
-
-            lines = []
-            if organizations:
-                lines.append(f"- **Organizations / Vendors:** {', '.join(organizations[:5])}")
-            if names:
-                lines.append(f"- **Key People:** {', '.join(names[:5])}")
-            if emails:
-                lines.append(f"- **Email Addresses:** {', '.join(emails[:3])}")
-            if phones:
-                lines.append(f"- **Phone Numbers:** {', '.join(phones[:3])}")
-
-            if lines:
-                return (
-                    f"**Entities & Contacts Detected in {folder_name}:**\n\n"
-                    + "\n".join(lines)
-                    + "\n\nReferenced from the cited screenshots below."
-                )
-            else:
-                return f"No specific contacts, emails, or vendor names were identified in **{folder_name}**."
-
-        # 4. Intent: Summary / Overview / What is in this folder
-        if any(w in q_lower for w in ["summar", "overview", "what is", "tell me about", "what's in", "explain"]):
-            if summary:
-                return (
-                    f"**Executive Summary for {folder_name}:**\n\n"
-                    f"{summary}\n\n"
-                    f"Analyzed **{len(screenshots)}** screenshot(s) categorized under this folder."
-                )
-            elif screenshots:
-                topics = [s.DetectedApp or s.FileName for s in screenshots[:5]]
-                return (
-                    f"**Summary of {folder_name}:**\n\n"
-                    f"This folder contains **{len(screenshots)}** screenshot(s), primarily involving: "
-                    f"{', '.join(topics)}.\n\n"
-                    f"You can ask me to extract expenses, action items, or look up specific details."
-                )
-
-        # 5. General / Specific Keyword Answer
-        if citations:
-            best_snippet = citations[0].snippet or ""
-            return (
-                f"Based on **{folder_name}**, here is the most relevant information found in **{citations[0].fileName}**:\n\n"
-                f"> \"{best_snippet}\"\n\n"
-                f"I referenced {len(citations)} screenshot(s) matching your inquiry."
-            )
-
-        return (
-            f"I reviewed **{folder_name}** ({len(screenshots)} screenshots total). "
-            f"Could you please specify whether you want to find expenses, deadlines, or specific text?"
-        )

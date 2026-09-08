@@ -22,6 +22,8 @@ from app.models import (
     FolderContext,
     ContextInsight,
     EntityOccurrence,
+    ChatSession,
+    ChatMessage,
     ChatHistory,
 )
 
