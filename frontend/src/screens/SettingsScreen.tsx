@@ -57,6 +57,9 @@ export const SettingsScreen: React.FC = () => {
 
   const handleTestHealth = async () => {
     setTestingHealth(true);
+    if (urlInput) {
+      useSettingsStore.getState().setBackendUrl(urlInput);
+    }
     const ok = await apiClient.checkHealth();
     setTestingHealth(false);
     if (ok) {
@@ -192,12 +195,12 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Set local server address (e.g., http://127.0.0.1:5000/api or http://10.0.2.2:5000/api)
+          Set local server address (e.g., http://localhost:8000/api or http://10.0.2.2:8000/api)
         </Text>
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}
-          placeholder="http://127.0.0.1:5000/api"
+          placeholder="http://localhost:8000/api"
           placeholderTextColor={theme.colors.textMuted}
           style={[
             styles.urlInput,

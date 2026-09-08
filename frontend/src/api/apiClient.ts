@@ -109,7 +109,7 @@ class ApiClient {
               }
             );
 
-            const unwrapped = this.unwrap<any>(refreshRes.data);
+            const unwrapped = this.unwrap<Partial<AuthResponseModel>>(refreshRes.data);
             const newAccessToken = unwrapped?.accessToken;
             const newRefreshToken = unwrapped?.refreshToken || refreshToken;
 

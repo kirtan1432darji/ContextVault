@@ -1,6 +1,6 @@
 export const ApiConstants = {
-  // Default base URL for physical device / emulator (FastAPI default port 8000)
-  defaultBaseUrl: 'http://10.0.2.2:8000/api',
+  // Default base URL for physical device with adb reverse / emulator (FastAPI default port 8000)
+  defaultBaseUrl: 'http://localhost:8000/api',
 
   // Timeout settings
   connectTimeout: 15000,
