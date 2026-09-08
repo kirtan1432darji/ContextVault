@@ -23,3 +23,6 @@ export * from './ContextChatService';
 export * from './GlobalSearchService';
 export * from './loggerService';
 export * from './storageManagerService';
+export * from './demoModeService';
+export * from './backupService';
+export * from './performanceAuditService';

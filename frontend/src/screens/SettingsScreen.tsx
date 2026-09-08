@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ import { apiClient } from '../api/apiClient';
 import { StorageService } from '../utils/storage';
 import { loggerService } from '../services/loggerService';
 import { storageManagerService } from '../services/storageManagerService';
+import { demoModeService } from '../services/demoModeService';
+import { backupService } from '../services/backupService';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -104,6 +106,59 @@ export const SettingsScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  useEffect(() => {
+    demoModeService.isDemoModeActive().then(setIsDemoMode);
+  }, []);
+
+  const handleToggleDemoMode = async (val: boolean) => {
+    try {
+      if (val) {
+        const count = await demoModeService.loadDemoData();
+        setIsDemoMode(true);
+        Alert.alert('Demo Mode Enabled', `Loaded ${count} offline sample screenshots, smart folders, and context chats.`);
+      } else {
+        await demoModeService.clearDemoData();
+        setIsDemoMode(false);
+        Alert.alert('Demo Mode Disabled', 'Sample screenshots and demo records removed.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update demo mode.');
+    }
+  };
+
+  const handleExportBackup = async () => {
+    try {
+      await backupService.shareBackup();
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message || 'Could not export backup.');
+    }
+  };
+
+  const handleImportBackup = () => {
+    if ((Alert as any).prompt) {
+      (Alert as any).prompt(
+        'Import Backup',
+        'Paste ContextVault backup JSON content:',
+        async (text: string) => {
+          if (!text) return;
+          try {
+            const res = await backupService.importBackup(text);
+            Alert.alert('Restored', `Restored ${res.counts.screenshots} screenshots, ${res.counts.categories} folders.`);
+          } catch (e: any) {
+            Alert.alert('Import Failed', e?.message || 'Invalid backup JSON.');
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        'Import Backup',
+        'To restore a backup, place ContextVault_Backup.json in device storage or trigger restoration via QA Debug Panel.'
+      );
+    }
   };
 
   return (
@@ -222,6 +277,25 @@ export const SettingsScreen: React.FC = () => {
               useSettingsStore.getState().setScreenshotNotifications(val)
             }
             trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+          />
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowLabelGroup}>
+            <Icon name="sparkles-outline" size={20} color="#10B981" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: theme.colors.textPrimary }}>
+                Hackathon Demo Mode
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Preload 12 sample screenshots &amp; offline chats
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={isDemoMode}
+            onValueChange={handleToggleDemoMode}
+            trackColor={{ false: theme.colors.border, true: '#10B981' }}
           />
         </View>
       </ModernCard>
@@ -353,6 +427,43 @@ export const SettingsScreen: React.FC = () => {
         </TouchableOpacity>
       </ModernCard>
 
+      {/* Local Backup & Restore (Sprint RN-11) */}
+      <ModernCard style={styles.card}>
+        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+          Local Backup &amp; Restore
+        </Text>
+        <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
+          Create full offline JSON backups of your SQLite database, folder hierarchies, extracted OCR cache, and AI chat logs.
+        </Text>
+
+        <View style={styles.apiBtnRow}>
+          <TouchableOpacity
+            onPress={handleExportBackup}
+            style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Export Backup JSON"
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="cloud-download-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.btnText}>Export Backup</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleImportBackup}
+            style={[styles.testBtn, { borderColor: theme.colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Import Backup JSON"
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="cloud-upload-outline" size={16} color={theme.colors.primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.testBtnText, { color: theme.colors.primary }]}>
+                Import Backup
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ModernCard>
+
       {/* Privacy & Legal */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
@@ -371,14 +482,20 @@ export const SettingsScreen: React.FC = () => {
           <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
         </TouchableOpacity>
 
-        <View style={styles.versionRow}>
+        <TouchableOpacity
+          onPress={() => {
+            navigation.navigate('QADebugPanel');
+          }}
+          style={styles.versionRow}
+          activeOpacity={0.7}
+        >
           <Text style={[styles.versionLabel, { color: theme.colors.textSecondary }]}>
             {AppInfo.appName} Version
           </Text>
           <Text style={[styles.versionValue, { color: theme.colors.textPrimary }]}>
             {AppInfo.appVersion} (Build {AppInfo.buildNumber})
           </Text>
-        </View>
+        </TouchableOpacity>
       </ModernCard>
     </ScrollView>
   );

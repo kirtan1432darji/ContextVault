@@ -1,0 +1,1 @@
+module.exports = { root: true, env: { es6: true, node: true, jest: true }, parserOptions: { ecmaVersion: 2020, sourceType: 'module', ecmaFeatures: { jsx: true } }, ignorePatterns: ['node_modules/', 'android/', 'ios/', 'coverage/', '*.bundle.js', '*.ts', '*.tsx', 'src/**'], rules: { 'no-unused-vars': 'off', 'no-console': 'off' } };

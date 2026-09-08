@@ -10,6 +10,7 @@ import { useScannerStore } from '../store/scanner.store';
 import { FileUtils } from '../utils/fileUtils';
 import { loggerService } from './loggerService';
 import { notificationService } from './notificationService';
+import { performanceAuditService } from './performanceAuditService';
 
 const STORAGE_KEY_SCANNER_ENABLED = '@contextvault_scanner_auto_enabled';
 
@@ -306,6 +307,7 @@ export class ScreenshotListenerService {
   private handleAppStateChange = async (nextAppState: AppStateStatus) => {
     loggerService.debug('Scanner', `AppState transitioned to: ${nextAppState}`);
     if (nextAppState === 'active') {
+      performanceAuditService.markWarmStartEnd();
       await this.refreshStoreCounts();
 
       // Check if scanner was expected to be running but stopped
@@ -314,6 +316,8 @@ export class ScreenshotListenerService {
         loggerService.info('Scanner', 'Resuming screenshot observer on app foreground.');
         await this.start();
       }
+    } else if (nextAppState === 'background') {
+      performanceAuditService.markWarmStartBegin();
     }
   };
 
