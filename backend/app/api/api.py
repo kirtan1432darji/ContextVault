@@ -5,6 +5,7 @@ from app.api.v1.categories import router as categories_router
 from app.api.v1.classification import router as classification_router
 from app.api.v1.screenshots import router as screenshots_router
 from app.api.v1.context import router as context_router
+from app.api.v1.chat import router as chat_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -13,5 +14,6 @@ api_router.include_router(categories_router)
 api_router.include_router(classification_router)
 api_router.include_router(screenshots_router)
 api_router.include_router(context_router)
+api_router.include_router(chat_router)
 
 __all__ = ["api_router"]

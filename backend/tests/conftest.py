@@ -22,6 +22,7 @@ from app.models import (
     FolderContext,
     ContextInsight,
     EntityOccurrence,
+    ChatHistory,
 )
 
 # Use in-memory SQLite database with StaticPool for thread-safe test isolation

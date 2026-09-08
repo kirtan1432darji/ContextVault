@@ -39,6 +39,14 @@ from app.schemas.context import (
     RecentContextDto,
     ContextSearchResultDto,
 )
+from app.schemas.chat import (
+    ChatMessageCitationDto,
+    ChatMessageDto,
+    ChatRequestDto,
+    ChatSuggestionsDto,
+    ChatSessionSummaryDto,
+    ChatHistoryResponseDto,
+)
 
 __all__ = [
     "ApiResponse",
@@ -73,4 +81,10 @@ __all__ = [
     "FolderContextDto",
     "RecentContextDto",
     "ContextSearchResultDto",
+    "ChatMessageCitationDto",
+    "ChatMessageDto",
+    "ChatRequestDto",
+    "ChatSuggestionsDto",
+    "ChatSessionSummaryDto",
+    "ChatHistoryResponseDto",
 ]

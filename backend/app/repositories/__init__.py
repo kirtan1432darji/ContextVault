@@ -7,6 +7,7 @@ from app.repositories.screenshot_repository import ScreenshotRepository
 from app.repositories.classification_repository import ClassificationRepository
 from app.repositories.search_repository import SearchRepository
 from app.repositories.folder_context_repository import FolderContextRepository
+from app.repositories.chat_repository import ChatRepository
 
 __all__ = [
     "BaseRepository",
@@ -19,4 +20,5 @@ __all__ = [
     "ClassificationRepository",
     "SearchRepository",
     "FolderContextRepository",
+    "ChatRepository",
 ]
