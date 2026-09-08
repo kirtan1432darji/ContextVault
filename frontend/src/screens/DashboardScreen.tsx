@@ -8,6 +8,7 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -23,6 +24,7 @@ import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
 import { smartFolderService } from '../services/SmartFolderService';
+import { screenshotListenerService } from '../services/ScreenshotListenerService';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
@@ -106,6 +108,31 @@ export const DashboardScreen: React.FC = () => {
       }
     });
   }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches]);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadCategories(),
+        loadStatsAndRecents(),
+        loadRecentChats(),
+        loadRecentSearches(),
+        screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount),
+        screenshotRepository.getAllScreenshots().then((items) => {
+          if (items && items.length > 0) {
+            setScreenshots(items);
+          }
+        }),
+        screenshotListenerService.refreshStoreCounts(),
+      ]);
+    } catch (err) {
+      console.warn('Dashboard refresh error:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadCategories, loadStatsAndRecents, loadRecentChats, loadRecentSearches, setScreenshots]);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
@@ -196,6 +223,14 @@ export const DashboardScreen: React.FC = () => {
     <ScrollView
       style={{ backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          colors={[theme.colors.primary]}
+          tintColor={theme.colors.primary}
+        />
+      }
     >
       {/* 1. Header & Title */}
       <View style={styles.header}>
@@ -210,6 +245,8 @@ export const DashboardScreen: React.FC = () => {
         <TouchableOpacity
           onPress={() => navigation.navigate('MainTabs', { screen: 'Settings' })}
           style={[styles.iconButton, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open ContextVault Settings"
         >
           <Icon name="cog-outline" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -227,6 +264,8 @@ export const DashboardScreen: React.FC = () => {
             },
           ]}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Ask ContextVault Global AI Search"
         >
           <View style={styles.heroSearchLeft}>
             <View style={[styles.heroSparkleBox, { backgroundColor: `${theme.colors.primary}20` }]}>
@@ -444,6 +483,8 @@ export const DashboardScreen: React.FC = () => {
                   : theme.colors.primary,
               },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={isListening ? 'Pause background screenshot scanner' : 'Resume background screenshot scanner'}
           >
             <Icon
               name={isListening ? 'pause-outline' : 'play-outline'}
@@ -464,6 +505,8 @@ export const DashboardScreen: React.FC = () => {
           <TouchableOpacity
             onPress={() => simulateScreenshot()}
             style={[styles.engineSimulateBtn, { borderColor: theme.colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Simulate synthetic screenshot capture"
           >
             <Icon
               name="camera-outline"

@@ -15,3 +15,5 @@ export * from './SettingsScreen';
 export * from './PrivacyPolicyScreen';
 export * from './ScannerStatusScreen';
 export * from './GlobalAISearchScreen';
+export * from './StorageScreen';
+export * from './QADebugPanelScreen';

@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Share,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -20,6 +21,8 @@ import { ModernCard } from '../components/ModernCard';
 import { AppInfo } from '../utils/appConstants';
 import { apiClient } from '../api/apiClient';
 import { StorageService } from '../utils/storage';
+import { loggerService } from '../services/loggerService';
+import { storageManagerService } from '../services/storageManagerService';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -67,6 +70,40 @@ export const SettingsScreen: React.FC = () => {
     } else {
       Alert.alert('Connection Failed', 'Could not connect. Verify server IP and network.');
     }
+  };
+
+  const handleExportLogs = async () => {
+    try {
+      const text = loggerService.exportLogsAsText();
+      await Share.share({
+        title: 'ContextVault Debug Logs',
+        message: text,
+      });
+    } catch (err) {
+      console.warn('Log export error:', err);
+    }
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Purge App Cache',
+      'This will clear OCR text caches, search history, and optimize the local database. Screenshots and folders are completely preserved.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Purge Cache',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await storageManagerService.clearAllCaches();
+              Alert.alert('Success', 'Application caches purged and SQLite database optimized.');
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to clear cache.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -228,6 +265,92 @@ export const SettingsScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
         </View>
+      </ModernCard>
+
+      {/* Storage & Data Management (Sprint RN-10) */}
+      <ModernCard style={styles.card}>
+        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+          Storage & Caches
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Storage')}
+          style={styles.legalRow}
+          accessibilityRole="button"
+          accessibilityLabel="Open Storage and Cache Manager"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="server-outline" size={20} color={theme.colors.primary} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Storage & Data Management
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Database size, OCR cache & memory breakdown
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <View style={styles.apiBtnRow}>
+          <TouchableOpacity
+            onPress={handleClearCache}
+            style={[styles.testBtn, { borderColor: theme.colors.error, marginTop: 8 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Purge App Cache"
+          >
+            <Icon name="trash-outline" size={16} color={theme.colors.error} style={{ marginRight: 6 }} />
+            <Text style={[styles.testBtnText, { color: theme.colors.error }]}>
+              Purge App Cache
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ModernCard>
+
+      {/* Developer & Diagnostics (Sprint RN-10) */}
+      <ModernCard style={styles.card}>
+        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+          Diagnostics & Demo QA
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('QADebugPanel')}
+          style={styles.legalRow}
+          accessibilityRole="button"
+          accessibilityLabel="Open QA Debug Panel"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="bug-outline" size={20} color="#10B981" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                QA Debug Panel
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Live pipeline monitors, simulations & metrics
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleExportLogs}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Export Diagnostics Logs"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="document-text-outline" size={20} color={theme.colors.secondary} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Export Diagnostics Logs
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Share diagnostic circular log buffer
+              </Text>
+            </View>
+          </View>
+          <Icon name="share-outline" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
       </ModernCard>
 
       {/* Privacy & Legal */}

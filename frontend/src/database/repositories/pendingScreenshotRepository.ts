@@ -252,6 +252,13 @@ export class PendingScreenshotRepository {
     );
   }
 
+  async resetStaleProcessingScreenshots(): Promise<number> {
+    const res = await databaseService.executeCommand(
+      "UPDATE pending_screenshots SET status = 'Pending', ocr_status = 'Pending' WHERE status = 'Processing' OR ocr_status = 'Processing'"
+    );
+    return res.rowsAffected || 0;
+  }
+
   async clearCompleted(): Promise<void> {
     await databaseService.executeCommand(
       "DELETE FROM pending_screenshots WHERE status = 'Completed'"

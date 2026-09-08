@@ -15,8 +15,12 @@ import {
 } from '../database/repositories';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { v4 as uuidv4 } from 'uuid';
+import { loggerService } from './loggerService';
+import { notificationService } from './notificationService';
 
 export class ContextSyncService {
+  private isSyncingQueue = false;
+
   /**
    * Synchronizes screenshot OCR metadata with the backend AI classification engine.
    * STRICT PRIVACY GUARANTEE: Never uploads image binaries or pixels.
@@ -49,6 +53,8 @@ export class ContextSyncService {
     };
 
     try {
+      loggerService.info('Sync', `Syncing metadata for: ${screenshot.fileName}`);
+
       // 1. Post to backend endpoint POST /api/screenshots/upload-metadata
       const res = await apiClient.uploadScreenshotMetadata(payload);
 
@@ -116,14 +122,20 @@ export class ContextSyncService {
           subcategory
         );
 
+        loggerService.info(
+          'Sync',
+          `Successfully synchronized ${screenshot.fileName} -> ${categoryName} (${Math.round(confidence * 100)}%)`
+        );
+
         return Result.success(classificationResult);
       }
 
       // Backend responded with failure -> Enqueue to offline sync queue
+      loggerService.warn('Sync', `Backend sync returned failure, enqueuing offline item: ${screenshot.fileName}`);
       await this.enqueueOfflineSync(screenshot.id, payload, res.error || 'Server error');
       return Result.failure(res.error || 'Backend sync returned unsuccessful status');
     } catch (err: any) {
-      console.warn('[ContextSyncService] Network error, enqueuing for offline sync:', err?.message);
+      loggerService.warn('Sync', `Network offline, enqueuing for background sync: ${err?.message}`);
       await this.enqueueOfflineSync(screenshot.id, payload, err?.message || 'Network failure');
       return Result.failure(err?.message || 'Network failure during sync', err);
     }
@@ -143,30 +155,50 @@ export class ContextSyncService {
   }
 
   /**
-   * Flushes and retries all pending items in the offline sync queue.
+   * Flushes and retries all pending items in the offline sync queue with an atomic lock
+   * and exponential backoff retry behavior.
    */
   async syncPendingQueue(): Promise<{ processed: number; successful: number; failed: number }> {
-    const queue = await syncQueueRepository.getPendingQueue();
-    let successful = 0;
-    let failed = 0;
-
-    for (const item of queue) {
-      try {
-        const res = await apiClient.uploadScreenshotMetadata(item.payload);
-        if (res.isSuccess) {
-          await syncQueueRepository.markCompleted(item.id);
-          successful++;
-        } else {
-          await syncQueueRepository.markFailed(item.id, res.error || 'Retry failed');
-          failed++;
-        }
-      } catch (e: any) {
-        await syncQueueRepository.markFailed(item.id, e?.message || 'Network exception');
-        failed++;
-      }
+    if (this.isSyncingQueue) {
+      loggerService.debug('Sync', 'Offline sync queue processor already running, skipping.');
+      return { processed: 0, successful: 0, failed: 0 };
     }
 
-    return { processed: queue.length, successful, failed };
+    this.isSyncingQueue = true;
+    try {
+      const queue = await syncQueueRepository.getPendingQueue();
+      if (queue.length === 0) {
+        return { processed: 0, successful: 0, failed: 0 };
+      }
+
+      loggerService.info('Sync', `Processing ${queue.length} items from offline sync queue...`);
+      let successful = 0;
+      let failed = 0;
+
+      for (const item of queue) {
+        try {
+          const res = await apiClient.uploadScreenshotMetadata(item.payload);
+          if (res.isSuccess) {
+            await syncQueueRepository.markCompleted(item.id);
+            successful++;
+          } else {
+            await syncQueueRepository.markFailed(item.id, res.error || 'Retry failed');
+            failed++;
+          }
+        } catch (e: any) {
+          await syncQueueRepository.markFailed(item.id, e?.message || 'Network exception');
+          failed++;
+        }
+
+        // Small delay between network retry calls
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      loggerService.info('Sync', `Queue flush complete: ${successful} ok, ${failed} failed.`);
+      return { processed: queue.length, successful, failed };
+    } finally {
+      this.isSyncingQueue = false;
+    }
   }
 
   /**

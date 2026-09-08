@@ -41,6 +41,8 @@ export type RootStackParamList = {
     | undefined;
   PrivacyPolicy: undefined;
   ScannerStatus: undefined;
+  Storage: undefined;
+  QADebugPanel: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

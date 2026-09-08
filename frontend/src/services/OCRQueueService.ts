@@ -6,6 +6,8 @@ import { useScannerStore } from '../store/scanner.store';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { ScreenshotModel } from '../models';
 import { searchIndexService } from './searchIndexService';
+import { loggerService } from './loggerService';
+import { notificationService } from './notificationService';
 
 export interface OCRQueueItem {
   id: string; // ID in pending_screenshots
@@ -26,10 +28,58 @@ export class OCRQueueService {
   private queue: OCRQueueItem[] = [];
   private isProcessing = false;
   private currentItem: OCRQueueItem | null = null;
-  private maxAutoRetries = 2;
+  private maxAutoRetries = 3;
+
+  /**
+   * Resumes pending and interrupted OCR items from SQLite database on application startup.
+   */
+  async resumePendingOnStartup(): Promise<number> {
+    try {
+      // 1. Reset any items stuck in 'Processing' from an abrupt previous app termination
+      const resetCount = await pendingScreenshotRepository.resetStaleProcessingScreenshots();
+      if (resetCount > 0) {
+        loggerService.info('OCR', `Reset ${resetCount} interrupted items to Pending status`);
+      }
+
+      // 2. Fetch all unfinished items from SQLite
+      const pendingItems = await pendingScreenshotRepository.getPendingScreenshots();
+      if (pendingItems.length === 0) {
+        loggerService.debug('OCR', 'No pending OCR items to resume on startup.');
+        return 0;
+      }
+
+      loggerService.info(
+        'OCR',
+        `Resuming ${pendingItems.length} pending screenshots from SQLite database...`
+      );
+
+      for (const item of pendingItems) {
+        this.enqueue({
+          id: item.id,
+          deviceAssetId: item.deviceAssetId,
+          filePath: item.filePath,
+          fileName: item.fileName,
+          fileSize: item.fileSize,
+          fileHash: item.fileHash,
+          capturedAt: item.capturedAt,
+          width: item.width,
+          height: item.height,
+          deviceFolder: item.deviceFolder,
+          mimeType: item.mimeType,
+          retryCount: item.retryCount || 0,
+        });
+      }
+
+      return pendingItems.length;
+    } catch (err: any) {
+      loggerService.error('OCR', 'Failed to resume pending OCR items on startup', err);
+      return 0;
+    }
+  }
 
   /**
    * Enqueues a screenshot for background OCR processing.
+   * Concurrency is strictly 1 (sequential).
    */
   enqueue(item: OCRQueueItem): void {
     // Avoid queueing duplicates currently in memory queue
@@ -39,7 +89,7 @@ export class OCRQueueService {
     }
 
     this.queue.push(item);
-    console.log(`[OCRQueueService] Enqueued: ${item.fileName}. Queue size: ${this.queue.length}`);
+    loggerService.debug('OCR', `Enqueued: ${item.fileName}. Queue size: ${this.queue.length}`);
     this.updateStoreCounts();
 
     // Start background processor if not active
@@ -54,6 +104,10 @@ export class OCRQueueService {
 
   getQueueLength(): number {
     return this.queue.length;
+  }
+
+  isCurrentlyProcessing(): boolean {
+    return this.isProcessing;
   }
 
   private async processQueue(): Promise<void> {
@@ -73,8 +127,8 @@ export class OCRQueueService {
         useScannerStore.getState().setCurrentProcessingItem(null);
         this.updateStoreCounts();
 
-        // Small yield to UI loop between OCR operations
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Yield to the JS thread / UI loop between intensive ML Kit OCR tasks
+        await new Promise((resolve) => setTimeout(resolve, 60));
       }
     } finally {
       this.isProcessing = false;
@@ -86,7 +140,7 @@ export class OCRQueueService {
 
   private async processItem(item: OCRQueueItem): Promise<void> {
     const startTime = Date.now();
-    console.log(`[OCRQueueService] Starting OCR for: ${item.fileName}`);
+    loggerService.info('OCR', `Starting text recognition for: ${item.fileName}`);
 
     try {
       // 1. Update SQLite pending status to Processing
@@ -119,7 +173,7 @@ export class OCRQueueService {
           createdOn: result.processedAt,
         });
 
-        // 4. Update PendingScreenshots with OCR result & mark Completed (ready for AI classification)
+        // 4. Update PendingScreenshots with OCR result & mark Completed
         await pendingScreenshotRepository.updateOCRResult(
           item.id,
           'Completed',
@@ -153,8 +207,13 @@ export class OCRQueueService {
           processedAt: result.processedAt,
         });
 
-        console.log(
-          `[OCRQueueService] Completed OCR for ${item.fileName} in ${processingTimeMs}ms (${result.blocks.length} blocks)`
+        // 7. Local Notification feedback
+        const wordCount = result.rawText ? result.rawText.trim().split(/\s+/).length : 0;
+        notificationService.notifyOCRCompleted(item.fileName, wordCount).catch(() => {});
+
+        loggerService.info(
+          'OCR',
+          `Completed OCR for ${item.fileName} in ${processingTimeMs}ms (${result.blocks.length} blocks, ${wordCount} words)`
         );
       } else {
         const errorMsg = ocrRes.error || 'OCR recognition returned no data';
@@ -162,7 +221,7 @@ export class OCRQueueService {
       }
     } catch (err: any) {
       const errorMsg = err?.message || 'OCR processing failed';
-      console.error(`[OCRQueueService] Error processing ${item.fileName}:`, errorMsg);
+      loggerService.error('OCR', `Error processing ${item.fileName}: ${errorMsg}`, err);
 
       await pendingScreenshotRepository.updateOCRResult(
         item.id,
@@ -173,18 +232,20 @@ export class OCRQueueService {
       );
       useScannerStore.getState().updateItemStatus(item.id, 'Failed');
 
-      // Check auto-retry with backoff
+      // Check auto-retry with exponential backoff
       const currentRetry = item.retryCount || 0;
       if (currentRetry < this.maxAutoRetries) {
-        console.log(
-          `[OCRQueueService] Scheduling auto-retry (${currentRetry + 1}/${this.maxAutoRetries}) for ${item.fileName}`
+        const backoffMs = Math.min(30000, 1500 * Math.pow(2, currentRetry));
+        loggerService.warn(
+          'OCR',
+          `Scheduling retry #${currentRetry + 1} for ${item.fileName} in ${backoffMs}ms`
         );
         setTimeout(() => {
           this.enqueue({
             ...item,
             retryCount: currentRetry + 1,
           });
-        }, (currentRetry + 1) * 2000);
+        }, backoffMs);
       }
     }
   }
@@ -194,7 +255,7 @@ export class OCRQueueService {
    */
   async retryAllFailed(): Promise<void> {
     const failed = await pendingScreenshotRepository.getFailedScreenshots();
-    console.log(`[OCRQueueService] Retrying ${failed.length} failed screenshots...`);
+    loggerService.info('OCR', `Retrying ${failed.length} failed screenshots...`);
 
     for (const f of failed) {
       await pendingScreenshotRepository.incrementRetry(f.id);
@@ -256,7 +317,7 @@ export class OCRQueueService {
         avgProcessingTimeMs: ocrStats.avgProcessingTimeMs,
       });
     } catch (err) {
-      console.warn('[OCRQueueService] Error updating OCR store counts:', err);
+      loggerService.warn('OCR', 'Error updating OCR store counts', err);
     }
   }
 }

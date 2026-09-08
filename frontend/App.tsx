@@ -6,6 +6,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { useAppTheme } from './src/theme';
 import { useSettingsStore } from './src/store/settings.store';
 import { screenshotListenerService } from './src/services/ScreenshotListenerService';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 export const App: React.FC = () => {
   const themeMode = useSettingsStore((s) => s.themeMode);
@@ -23,15 +24,17 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar
-        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.background}
-      />
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <StatusBar
+          barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={theme.colors.background}
+        />
+        <NavigationContainer>
+          <RootNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 };
 

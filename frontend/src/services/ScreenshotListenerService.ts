@@ -8,11 +8,14 @@ import { permissionService } from './permissionService';
 import { ocrQueueService } from './OCRQueueService';
 import { useScannerStore } from '../store/scanner.store';
 import { FileUtils } from '../utils/fileUtils';
+import { loggerService } from './loggerService';
+import { notificationService } from './notificationService';
 
 const STORAGE_KEY_SCANNER_ENABLED = '@contextvault_scanner_auto_enabled';
 
 export class ScreenshotListenerService {
   private isInitialized = false;
+  private isListeningActive = false;
   private appStateSubscription: any = null;
   private observerUnsubscribe: (() => void) | null = null;
   private processedHashes: Set<string> = new Set();
@@ -20,13 +23,14 @@ export class ScreenshotListenerService {
 
   /**
    * Initializes the listener service on app launch.
-   * Restores scanner state if previously enabled and registers AppState listeners.
+   * Restores scanner state if previously enabled, resumes pending OCR queue,
+   * and registers AppState listeners.
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    console.log('[ScreenshotListenerService] Initializing detection engine & OCR queue...');
+    loggerService.info('Scanner', 'Initializing automatic detection engine & OCR queue...');
 
     // 1. Subscribe to AppState changes
     this.appStateSubscription = AppState.addEventListener(
@@ -34,10 +38,16 @@ export class ScreenshotListenerService {
       this.handleAppStateChange
     );
 
-    // 2. Load existing queue stats and OCR metrics into store
+    // 2. Initialize Android notification channels
+    await notificationService.createNotificationChannels();
+
+    // 3. Load existing queue stats and OCR metrics into store
     await this.refreshStoreCounts();
 
-    // 3. Check if listener should automatically resume after app launch
+    // 4. Resume any interrupted or pending OCR jobs from SQLite database
+    await ocrQueueService.resumePendingOnStartup();
+
+    // 5. Check if listener should automatically resume after app launch
     const savedState = await AsyncStorage.getItem(STORAGE_KEY_SCANNER_ENABLED);
     const shouldAutoStart = savedState === null || savedState === 'true';
 
@@ -48,46 +58,55 @@ export class ScreenshotListenerService {
       if (permStatus === 'granted') {
         await this.start();
       } else {
-        console.log('[ScreenshotListenerService] Auto-start pending permission approval.');
+        loggerService.info('Scanner', 'Auto-start pending storage permission approval.');
       }
     }
   }
 
   /**
-   * Starts the screenshot listener.
-   * Requests permissions if necessary and begins observing MediaStore.
+   * Starts the screenshot listener idempotently.
    */
   async start(): Promise<boolean> {
-    const hasPermission = await permissionService.requestStoragePermission();
+    if (this.isListeningActive) {
+      loggerService.debug('Scanner', 'Screenshot listener is already active.');
+      return true;
+    }
+
+    const hasPermission = await permissionService.requestStoragePermission(false);
     const permStatus = await permissionService.checkStoragePermission();
     useScannerStore.getState().setPermissionStatus(permStatus);
 
     if (!hasPermission && Platform.OS === 'android') {
-      console.warn('[ScreenshotListenerService] Cannot start: permission denied.');
+      loggerService.warn('Scanner', 'Cannot start listener: permission not granted.');
       return false;
     }
 
+    // Clean up any stale observer subscription
     if (this.observerUnsubscribe) {
       this.observerUnsubscribe();
+      this.observerUnsubscribe = null;
     }
+
     this.observerUnsubscribe = mediaObserverService.addListener(
       this.handleDetectedScreenshot
     );
 
     const started = mediaObserverService.startObserving();
     if (started) {
+      this.isListeningActive = true;
       await AsyncStorage.setItem(STORAGE_KEY_SCANNER_ENABLED, 'true');
       useScannerStore.getState().setIsListening(true);
-      console.log('[ScreenshotListenerService] Screenshot listener is active.');
+      loggerService.info('Scanner', 'Screenshot listener activated successfully.');
       await this.refreshStoreCounts();
       return true;
     }
 
+    loggerService.error('Scanner', 'Failed to start MediaStore observer.');
     return false;
   }
 
   /**
-   * Stops the screenshot listener when requested.
+   * Stops the screenshot listener safely.
    */
   async stop(): Promise<void> {
     if (this.observerUnsubscribe) {
@@ -96,15 +115,20 @@ export class ScreenshotListenerService {
     }
 
     mediaObserverService.stopObserving();
+    this.isListeningActive = false;
     await AsyncStorage.setItem(STORAGE_KEY_SCANNER_ENABLED, 'false');
     useScannerStore.getState().setIsListening(false);
-    console.log('[ScreenshotListenerService] Screenshot listener stopped.');
+    loggerService.info('Scanner', 'Screenshot listener stopped.');
+  }
+
+  getIsListening(): boolean {
+    return this.isListeningActive;
   }
 
   /**
    * Core detection handler invoked whenever Android MediaStore fires an event.
    * Extracts metadata, checks deduplication, saves to SQLite PendingScreenshots,
-   * and dispatches to background OCRQueueService.
+   * dispatches notifications, and enqueues to background OCRQueueService.
    */
   handleDetectedScreenshot = async (event: DetectedScreenshotEvent): Promise<void> => {
     if (!event || !event.filePath) {
@@ -139,7 +163,7 @@ export class ScreenshotListenerService {
 
     // 1. Fast in-memory deduplication
     if (this.processedAssetIds.has(deviceAssetId) || this.processedHashes.has(fileHash)) {
-      console.log('[ScreenshotListenerService] Duplicate ignored (in-memory):', fileName);
+      loggerService.debug('Scanner', `Duplicate ignored (in-memory): ${fileName}`);
       return;
     }
 
@@ -151,7 +175,7 @@ export class ScreenshotListenerService {
     );
 
     if (isDbDuplicate) {
-      console.log('[ScreenshotListenerService] Duplicate ignored (SQLite):', fileName);
+      loggerService.debug('Scanner', `Duplicate ignored (SQLite): ${fileName}`);
       this.processedAssetIds.add(deviceAssetId);
       this.processedHashes.add(fileHash);
       return;
@@ -159,6 +183,12 @@ export class ScreenshotListenerService {
 
     this.processedAssetIds.add(deviceAssetId);
     this.processedHashes.add(fileHash);
+
+    // Limit set sizes in long-running processes to prevent memory leak
+    if (this.processedHashes.size > 1000) {
+      this.processedHashes.clear();
+      this.processedAssetIds.clear();
+    }
 
     const pendingId = uuidv4();
     const pendingItem: PendingScreenshot = {
@@ -185,9 +215,12 @@ export class ScreenshotListenerService {
     // 3. Store in SQLite PendingScreenshots table BEFORE OCR processing
     try {
       await pendingScreenshotRepository.insertPending(pendingItem);
-      console.log('[ScreenshotListenerService] Stored pending screenshot in SQLite:', fileName);
+      loggerService.info('Scanner', `Stored pending screenshot in SQLite: ${fileName}`);
 
-      // 4. Update Zustand store with latest detected screenshot
+      // 4. Send notification if enabled
+      notificationService.notifyScreenshotDetected(fileName).catch(() => {});
+
+      // 5. Update Zustand store with latest detected screenshot
       useScannerStore.getState().setLastScreenshot({
         id: pendingId,
         deviceAssetId,
@@ -205,7 +238,7 @@ export class ScreenshotListenerService {
 
       await this.refreshStoreCounts();
 
-      // 5. Dispatch to background OCRQueueService for sequential ML Kit text recognition
+      // 6. Dispatch to background OCRQueueService for sequential text recognition
       ocrQueueService.enqueue({
         id: pendingId,
         deviceAssetId,
@@ -220,8 +253,8 @@ export class ScreenshotListenerService {
         mimeType,
         retryCount: 0,
       });
-    } catch (err) {
-      console.error('[ScreenshotListenerService] Error saving pending screenshot:', err);
+    } catch (err: any) {
+      loggerService.error('Scanner', `Error saving pending screenshot: ${fileName}`, err);
     }
   };
 
@@ -266,14 +299,21 @@ export class ScreenshotListenerService {
       });
       await ocrQueueService.updateStoreCounts();
     } catch (err) {
-      console.warn('[ScreenshotListenerService] Could not refresh counts:', err);
+      loggerService.warn('Scanner', 'Could not refresh scanner store counts', err);
     }
   }
 
-  private handleAppStateChange = (nextAppState: AppStateStatus) => {
-    console.log('[ScreenshotListenerService] AppState transitioned to:', nextAppState);
+  private handleAppStateChange = async (nextAppState: AppStateStatus) => {
+    loggerService.debug('Scanner', `AppState transitioned to: ${nextAppState}`);
     if (nextAppState === 'active') {
-      this.refreshStoreCounts();
+      await this.refreshStoreCounts();
+
+      // Check if scanner was expected to be running but stopped
+      const savedState = await AsyncStorage.getItem(STORAGE_KEY_SCANNER_ENABLED);
+      if (savedState === 'true' && !this.isListeningActive) {
+        loggerService.info('Scanner', 'Resuming screenshot observer on app foreground.');
+        await this.start();
+      }
     }
   };
 

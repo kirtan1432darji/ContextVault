@@ -15,6 +15,8 @@ import {
   PrivacyPolicyScreen,
   ScannerStatusScreen,
   GlobalAISearchScreen,
+  StorageScreen,
+  QADebugPanelScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 
@@ -76,6 +78,16 @@ export const RootNavigator: React.FC = () => {
             name="GlobalAISearch"
             component={GlobalAISearchScreen}
             options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="Storage"
+            component={StorageScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="QADebugPanel"
+            component={QADebugPanelScreen}
+            options={{ animation: 'slide_from_right' }}
           />
         </>
       ) : null}
