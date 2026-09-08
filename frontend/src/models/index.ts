@@ -8,3 +8,4 @@ export * from './classification.model';
 export * from './chat.model';
 export * from './syncQueue.model';
 export * from './ocr.model';
+export * from './search.model';

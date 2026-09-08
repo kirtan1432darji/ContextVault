@@ -24,7 +24,7 @@ import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
 import { smartFolderService } from '../services/SmartFolderService';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
-import { chatRepository, RecentChatFolderSummary } from '../database/repositories/chatRepository';
+import { chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
 
 export const DashboardScreen: React.FC = () => {
@@ -46,6 +46,9 @@ export const DashboardScreen: React.FC = () => {
 
   // Sprint RN-07 Context AI Chat State
   const [recentChats, setRecentChats] = useState<RecentChatFolderSummary[]>([]);
+
+  // Sprint RN-08 Global AI Search State
+  const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
 
   const [isOrganizing, setIsOrganizing] = useState(false);
 
@@ -73,11 +76,21 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
-  // Reload chats whenever the dashboard comes into focus
+  const loadRecentSearches = useCallback(async () => {
+    try {
+      const items = await searchRepository.getRecentSearches(6);
+      setRecentSearches(items || []);
+    } catch (err) {
+      console.warn('Failed to load recent searches for dashboard:', err);
+    }
+  }, []);
+
+  // Reload chats and recent searches whenever the dashboard comes into focus
   useFocusEffect(
     useCallback(() => {
       loadRecentChats();
-    }, [loadRecentChats])
+      loadRecentSearches();
+    }, [loadRecentChats, loadRecentSearches])
   );
 
   // Load fresh categories & screenshots & context stats on mount
@@ -85,13 +98,14 @@ export const DashboardScreen: React.FC = () => {
     loadCategories();
     loadStatsAndRecents();
     loadRecentChats();
+    loadRecentSearches();
     screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
       if (items && items.length > 0) {
         setScreenshots(items);
       }
     });
-  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats]);
+  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches]);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
@@ -201,7 +215,75 @@ export const DashboardScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* 2. Stats Header Card */}
+      {/* 2. Ask ContextVault Hero Search Bar (Sprint RN-08) */}
+      <View style={styles.heroSearchSection}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('GlobalAISearch', { autoFocus: true })}
+          style={[
+            styles.heroSearchBar,
+            {
+              backgroundColor: theme.colors.card,
+              borderColor: `${theme.colors.primary}40`,
+            },
+          ]}
+          activeOpacity={0.8}
+        >
+          <View style={styles.heroSearchLeft}>
+            <View style={[styles.heroSparkleBox, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Icon name="sparkles" size={16} color={theme.colors.primary} />
+            </View>
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <View style={styles.rowCenter}>
+                <Text style={[styles.heroSearchTitle, { color: theme.colors.textPrimary }]}>
+                  Ask ContextVault
+                </Text>
+                <View style={[styles.aiPill, { backgroundColor: `${theme.colors.accent}18` }]}>
+                  <Text style={[styles.aiPillText, { color: theme.colors.accent }]}>Global AI</Text>
+                </View>
+              </View>
+              <Text numberOfLines={1} style={[styles.heroSearchPlaceholder, { color: theme.colors.textSecondary }]}>
+                Search receipts, UPI, Amazon, Flutter code...
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('GlobalAISearch', { autoFocus: false })}
+            style={[styles.heroMicBtn, { backgroundColor: `${theme.colors.primary}18` }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Icon name="mic" size={16} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+
+        {/* Recent Search Chips under hero bar */}
+        {recentSearches.length > 0 && (
+          <View style={styles.heroRecentStrip}>
+            <Icon name="time-outline" size={13} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRecentScroll}>
+              {recentSearches.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => navigation.navigate('GlobalAISearch', { initialQuery: item.query })}
+                  style={[
+                    styles.heroRecentChip,
+                    {
+                      backgroundColor: theme.isDark ? '#1E293B80' : '#F1F5F9',
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                >
+                  <Text numberOfLines={1} style={[styles.heroRecentChipText, { color: theme.colors.textPrimary }]}>
+                    {item.query}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </View>
+
+      {/* 3. Stats Header Card */}
       <ModernCard style={styles.statsCard}>
         <View style={styles.statCol}>
           <Text style={[styles.statValue, { color: theme.colors.primary }]}>
@@ -1668,5 +1750,78 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  heroSearchSection: {
+    marginBottom: 16,
+  },
+  heroSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  heroSearchLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  heroSparkleBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroSearchTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  aiPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  aiPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroSearchPlaceholder: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  heroMicBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroRecentStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  heroRecentScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroRecentChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  heroRecentChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    maxWidth: 140,
   },
 });

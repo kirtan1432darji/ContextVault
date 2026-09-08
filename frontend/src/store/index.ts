@@ -5,3 +5,4 @@ export * from './folderContext.store';
 export * from './chat.store';
 export * from './settings.store';
 export * from './scanner.store';
+export * from './search.store';

@@ -20,3 +20,4 @@ export * from './SmartFolderService';
 export * from './ContextSyncService';
 export * from './FolderContextService';
 export * from './ContextChatService';
+export * from './GlobalSearchService';

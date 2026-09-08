@@ -7,3 +7,4 @@ export * from './syncQueueRepository';
 export * from './folderContextRepository';
 export * from './classificationCacheRepository';
 export * from './chatRepository';
+export * from './searchRepository';

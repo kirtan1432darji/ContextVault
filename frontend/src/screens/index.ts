@@ -14,3 +14,4 @@ export * from './FavoritesScreen';
 export * from './SettingsScreen';
 export * from './PrivacyPolicyScreen';
 export * from './ScannerStatusScreen';
+export * from './GlobalAISearchScreen';

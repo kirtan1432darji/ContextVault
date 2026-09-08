@@ -78,6 +78,12 @@ class DatabaseService {
       'CREATE INDEX IF NOT EXISTS idx_chat_history_folder ON chat_history(folder_id)',
       'CREATE INDEX IF NOT EXISTS idx_chat_history_session ON chat_history(session_id)',
       'CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_on)',
+
+      // Global Search migrations (Sprint RN-08)
+      'CREATE TABLE IF NOT EXISTS recent_searches (id TEXT PRIMARY KEY, query TEXT NOT NULL UNIQUE, timestamp TEXT NOT NULL, result_count INTEGER NOT NULL DEFAULT 0)',
+      'CREATE INDEX IF NOT EXISTS idx_recent_searches_time ON recent_searches(timestamp)',
+      'CREATE TABLE IF NOT EXISTS saved_searches (id TEXT PRIMARY KEY, query TEXT NOT NULL UNIQUE, title TEXT, icon_name TEXT, color_hex TEXT, created_at TEXT NOT NULL)',
+      'CREATE INDEX IF NOT EXISTS idx_saved_searches_created ON saved_searches(created_at)',
     ];
 
     for (const alterSql of alterStatements) {

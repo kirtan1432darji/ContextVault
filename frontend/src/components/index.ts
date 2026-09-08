@@ -6,3 +6,4 @@ export * from './EmptyStateView';
 export * from './LoadingShimmer';
 export * from './ScreenshotImageThumbnail';
 export * from './chat';
+export * from './search';

@@ -8,6 +8,7 @@ import {
   FolderContextModel,
   TagModel,
   ScreenshotModel,
+  ContextSearchResultDto,
 } from '../models';
 import { useAuthStore } from '../store/auth.store';
 import { useSettingsStore } from '../store/settings.store';
@@ -395,6 +396,28 @@ class ApiClient {
       return Result.success(this.unwrap(res.data));
     } catch (e: any) {
       return Result.failure(e.response?.data?.message || e.message || 'Sync failed', e);
+    }
+  }
+
+  async searchContextKnowledge(query: string): Promise<Result<ContextSearchResultDto[]>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.contextSearch, {
+        params: { q: query },
+      });
+      const data = this.unwrap<ContextSearchResultDto[]>(res.data);
+      return Result.success(data || []);
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Context search failed', e);
+    }
+  }
+
+  async fetchCategoryTree(): Promise<Result<any[]>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.categoryTree);
+      const data = this.unwrap<any[]>(res.data);
+      return Result.success(data || []);
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Category tree fetch failed', e);
     }
   }
 

@@ -48,5 +48,8 @@ export const ApiConstants = {
   sync: '/sync',
   syncChanges: '/sync/changes',
   semanticSearch: '/search',
+  contextSearch: '/context/search',
+  categoryTree: '/categories?tree=true',
+  singleScreenshot: (id: string) => `/screenshots/${id}`,
   healthCheck: '/health',
 };

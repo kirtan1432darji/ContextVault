@@ -33,6 +33,12 @@ export type RootStackParamList = {
   ScreenshotDetail: {
     id: string;
   };
+  GlobalAISearch:
+    | {
+        initialQuery?: string;
+        autoFocus?: boolean;
+      }
+    | undefined;
   PrivacyPolicy: undefined;
   ScannerStatus: undefined;
 };

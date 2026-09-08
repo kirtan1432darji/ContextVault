@@ -14,6 +14,7 @@ import {
   ScreenshotDetailScreen,
   PrivacyPolicyScreen,
   ScannerStatusScreen,
+  GlobalAISearchScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 
@@ -70,6 +71,11 @@ export const RootNavigator: React.FC = () => {
             name="ScannerStatus"
             component={ScannerStatusScreen}
             options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="GlobalAISearch"
+            component={GlobalAISearchScreen}
+            options={{ animation: 'slide_from_bottom' }}
           />
         </>
       ) : null}
