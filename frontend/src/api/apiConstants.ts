@@ -39,7 +39,10 @@ export const ApiConstants = {
   folderContext: (categoryId: string) => `/context/${categoryId}`,
   generateFolderContext: (categoryId: string) => `/context/generate/${categoryId}`,
   chatMessage: '/chat/message',
-  chatHistory: (sessionId: string) => `/chat/history/${sessionId}`,
+  chatHistory: (folderId: string) => `/chat/history/${folderId}`,
+  chatSuggestions: (folderId: string) => `/chat/suggestions/${folderId}`,
+  chatSessions: (folderId: string) => `/chat/sessions/${folderId}`,
+  chatDeleteSession: (sessionId: string) => `/chat/session/${sessionId}`,
 
   // Sync & Search Endpoints
   sync: '/sync',

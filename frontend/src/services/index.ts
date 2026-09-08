@@ -19,3 +19,4 @@ export * from './OCRQueueService';
 export * from './SmartFolderService';
 export * from './ContextSyncService';
 export * from './FolderContextService';
+export * from './ContextChatService';

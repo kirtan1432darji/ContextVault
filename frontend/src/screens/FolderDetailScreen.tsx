@@ -193,15 +193,29 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           </Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate('FolderContext', { categoryId, categoryName })
-          }
-          style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
-        >
-          <Icon name="sparkles" size={16} color={theme.colors.primary} style={{ marginRight: 4 }} />
-          <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
-        </TouchableOpacity>
+        <View style={styles.topActionsRow}>
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('ContextAIChat', { categoryId, categoryName })
+            }
+            style={[styles.askAiBtn, { backgroundColor: theme.colors.primary }]}
+            accessibilityLabel="Ask Context AI about this folder"
+          >
+            <Icon name="chatbubbles" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.askAiBtnText}>Ask AI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('FolderContext', { categoryId, categoryName })
+            }
+            style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
+            accessibilityLabel="View Living AI Context"
+          >
+            <Icon name="sparkles" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 2. Search & Sort Bar */}
@@ -415,6 +429,23 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     marginTop: 1,
+  },
+  topActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  askAiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  askAiBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   aiContextBtn: {
     flexDirection: 'row',

@@ -123,17 +123,23 @@ export const SCHEMA_SQL = [
     FOREIGN KEY (screenshot_id) REFERENCES screenshots (id) ON DELETE CASCADE
   );`,
 
-  // 9. Chat History
+  // 9. Chat History (Sprint RN-07)
   `CREATE TABLE IF NOT EXISTS chat_history (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
+    session_id TEXT,
     folder_id TEXT,
     screenshot_id TEXT,
     role TEXT NOT NULL,
-    content TEXT NOT NULL,
+    message TEXT NOT NULL,
+    content TEXT,
     citations_json TEXT,
-    created_at TEXT NOT NULL
+    created_on TEXT NOT NULL,
+    created_at TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'synced'
   );`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_history_folder ON chat_history(folder_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_history_session ON chat_history(session_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_on);`,
 
   // 10. Pending Screenshots Queue (Sprint RN-03 / RN-04)
   `CREATE TABLE IF NOT EXISTS pending_screenshots (

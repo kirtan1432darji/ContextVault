@@ -74,17 +74,27 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
             Context Folder • Living Intelligence
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={handleManualRefresh}
-          disabled={isGenerating}
-          style={[styles.refreshBtn, { backgroundColor: `${theme.colors.primary}20` }]}
-        >
-          {isGenerating ? (
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-          ) : (
-            <Icon name="refresh-outline" size={20} color={theme.colors.primary} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.topActions}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ContextAIChat', { categoryId, categoryName })}
+            style={[styles.headerAiBtn, { backgroundColor: `${theme.colors.primary}20` }]}
+            accessibilityLabel="Ask AI about this folder"
+          >
+            <Icon name="chatbubbles-outline" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleManualRefresh}
+            disabled={isGenerating}
+            style={[styles.refreshBtn, { backgroundColor: `${theme.colors.primary}20` }]}
+            accessibilityLabel="Refresh living context"
+          >
+            {isGenerating ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : (
+              <Icon name="refresh-outline" size={18} color={theme.colors.primary} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -383,6 +393,18 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 12,
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerAiBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   refreshBtn: {
     width: 38,

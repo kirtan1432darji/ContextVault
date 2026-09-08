@@ -334,6 +334,48 @@ class ApiClient {
     }
   }
 
+  async fetchChatHistory(
+    folderId: string,
+    params?: { sessionId?: string; page?: number; pageSize?: number }
+  ): Promise<Result<any>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.chatHistory(folderId), { params });
+      return Result.success(this.unwrap(res.data));
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Failed to fetch chat history', e);
+    }
+  }
+
+  async fetchChatSuggestions(folderId: string): Promise<Result<any>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.chatSuggestions(folderId));
+      return Result.success(this.unwrap(res.data));
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Failed to fetch chat suggestions', e);
+    }
+  }
+
+  async fetchChatSessions(folderId: string, limit = 20): Promise<Result<any[]>> {
+    try {
+      const res = await this.axiosInstance.get(ApiConstants.chatSessions(folderId), {
+        params: { limit },
+      });
+      const data = this.unwrap<any[]>(res.data);
+      return Result.success(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Failed to fetch chat sessions', e);
+    }
+  }
+
+  async deleteChatSession(sessionId: string): Promise<Result<boolean>> {
+    try {
+      const res = await this.axiosInstance.delete(ApiConstants.chatDeleteSession(sessionId));
+      return Result.success(Boolean(this.unwrap(res.data)));
+    } catch (e: any) {
+      return Result.failure(e.response?.data?.message || e.message || 'Failed to delete chat session', e);
+    }
+  }
+
   // ==================== SEARCH & SYNC ====================
 
   async search(query: string, categoryId?: string, limit = 50): Promise<Result<any>> {

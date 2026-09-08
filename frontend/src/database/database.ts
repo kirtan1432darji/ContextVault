@@ -70,6 +70,14 @@ class DatabaseService {
       // Screenshot table migrations (Sprint RN-06)
       'ALTER TABLE screenshots ADD COLUMN folder_path TEXT',
       'ALTER TABLE screenshots ADD COLUMN classification_source TEXT DEFAULT "local"',
+
+      // Chat history migrations (Sprint RN-07)
+      'ALTER TABLE chat_history ADD COLUMN message TEXT',
+      'ALTER TABLE chat_history ADD COLUMN created_on TEXT',
+      'ALTER TABLE chat_history ADD COLUMN sync_status TEXT DEFAULT "synced"',
+      'CREATE INDEX IF NOT EXISTS idx_chat_history_folder ON chat_history(folder_id)',
+      'CREATE INDEX IF NOT EXISTS idx_chat_history_session ON chat_history(session_id)',
+      'CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_on)',
     ];
 
     for (const alterSql of alterStatements) {
