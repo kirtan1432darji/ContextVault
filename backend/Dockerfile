@@ -1,5 +1,13 @@
 FROM python:3.12-slim
 
+# Install Linux ODBC libraries required by pyodbc
+RUN apt-get update && apt-get install -y \
+    unixodbc \
+    unixodbc-dev \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
