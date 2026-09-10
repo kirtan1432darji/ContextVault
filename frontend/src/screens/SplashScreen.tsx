@@ -7,6 +7,7 @@ import { useAppTheme } from '../theme';
 import { AppInfo } from '../utils/appConstants';
 import { useAuthStore } from '../store/auth.store';
 import { StorageService, StorageKeys } from '../utils/storage';
+import { DEVELOPER_MODE } from '../config/developerConfig';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 
@@ -33,6 +34,14 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
     ]).start();
 
     const verifyAuthAndNavigate = async () => {
+      // 1. Developer Mode Bypass: Navigate directly to Main App / Dashboard
+      if (DEVELOPER_MODE) {
+        await loadSession();
+        navigation.replace('MainTabs', { screen: 'Home' });
+        return;
+      }
+
+      // 2. Production Authentication Flow
       const delayPromise = new Promise((res) => setTimeout(res, 1200));
       const [isAuthenticated] = await Promise.all([
         loadSession(),

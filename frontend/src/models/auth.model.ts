@@ -2,6 +2,8 @@ export interface UserModel {
   id: string;
   username: string;
   email: string;
+  name?: string;
+  role?: string;
   isActive?: boolean;
   createdAt: string;
 }

@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import { UserModel, LoginPayload, RegisterPayload } from '../models/auth.model';
 import { authService } from '../services/authService';
 import { StorageService } from '../utils/storage';
+import {
+  DEVELOPER_MODE,
+  MOCK_DEVELOPER_USER,
+  MOCK_DEV_ACCESS_TOKEN,
+  MOCK_DEV_REFRESH_TOKEN,
+} from '../config/developerConfig';
 
 export interface AuthState {
   accessToken: string | null;
@@ -10,7 +16,9 @@ export interface AuthState {
   user: UserModel | null; // Alias for backward compatibility
   isAuthenticated: boolean;
   loading: boolean;
+  isLoading: boolean; // Compatibility alias
   isInitializing: boolean;
+  isDeveloperMode: boolean;
   error: string | null;
 
   // Actions required by sprint specification
@@ -27,13 +35,15 @@ export interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  accessToken: null,
-  refreshToken: null,
-  currentUser: null,
-  user: null,
-  isAuthenticated: false,
+  accessToken: DEVELOPER_MODE ? MOCK_DEV_ACCESS_TOKEN : null,
+  refreshToken: DEVELOPER_MODE ? MOCK_DEV_REFRESH_TOKEN : null,
+  currentUser: DEVELOPER_MODE ? MOCK_DEVELOPER_USER : null,
+  user: DEVELOPER_MODE ? MOCK_DEVELOPER_USER : null,
+  isAuthenticated: DEVELOPER_MODE ? true : false,
   loading: false,
-  isInitializing: true,
+  isLoading: false,
+  isInitializing: DEVELOPER_MODE ? false : true,
+  isDeveloperMode: DEVELOPER_MODE,
   error: null,
 
   setTokens: (accessToken: string, refreshToken: string, user?: UserModel) => {
@@ -49,6 +59,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentUser: resolvedUser,
       user: resolvedUser,
       isAuthenticated: true,
+      loading: false,
+      isLoading: false,
       error: null,
     });
   },
@@ -62,6 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
       isAuthenticated: false,
       loading: false,
+      isLoading: false,
       error: null,
     });
   },
@@ -71,6 +84,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loadSession: async () => {
+    if (DEVELOPER_MODE) {
+      set({
+        accessToken: MOCK_DEV_ACCESS_TOKEN,
+        refreshToken: MOCK_DEV_REFRESH_TOKEN,
+        currentUser: MOCK_DEVELOPER_USER,
+        user: MOCK_DEVELOPER_USER,
+        isAuthenticated: true,
+        loading: false,
+        isLoading: false,
+        isInitializing: false,
+        isDeveloperMode: true,
+        error: null,
+      });
+      return true;
+    }
+
     set({ isInitializing: true, error: null });
     try {
       const storedAccessToken = StorageService.getAccessToken();
@@ -165,7 +194,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (payload: LoginPayload) => {
-    set({ loading: true, error: null });
+    if (DEVELOPER_MODE) {
+      set({
+        accessToken: MOCK_DEV_ACCESS_TOKEN,
+        refreshToken: MOCK_DEV_REFRESH_TOKEN,
+        currentUser: MOCK_DEVELOPER_USER,
+        user: MOCK_DEVELOPER_USER,
+        isAuthenticated: true,
+        loading: false,
+        isLoading: false,
+        isDeveloperMode: true,
+        error: null,
+      });
+      return true;
+    }
+
+    set({ loading: true, isLoading: true, error: null });
     const result = await authService.login(payload);
 
     if (result.isSuccess && result.data) {
@@ -183,6 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: user ?? null,
         isAuthenticated: true,
         loading: false,
+        isLoading: false,
         error: null,
       });
       return true;
@@ -190,13 +235,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({
       loading: false,
+      isLoading: false,
       error: result.error || 'Authentication failed. Please check your credentials.',
     });
     return false;
   },
 
   register: async (payload: RegisterPayload) => {
-    set({ loading: true, error: null });
+    if (DEVELOPER_MODE) {
+      set({
+        accessToken: MOCK_DEV_ACCESS_TOKEN,
+        refreshToken: MOCK_DEV_REFRESH_TOKEN,
+        currentUser: MOCK_DEVELOPER_USER,
+        user: MOCK_DEVELOPER_USER,
+        isAuthenticated: true,
+        loading: false,
+        isLoading: false,
+        isDeveloperMode: true,
+        error: null,
+      });
+      return true;
+    }
+
+    set({ loading: true, isLoading: true, error: null });
     const result = await authService.register(payload);
 
     if (result.isSuccess && result.data) {
@@ -214,6 +275,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: user ?? null,
         isAuthenticated: true,
         loading: false,
+        isLoading: false,
         error: null,
       });
       return true;
@@ -221,12 +283,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({
       loading: false,
+      isLoading: false,
       error: result.error || 'Registration failed. Please try again.',
     });
     return false;
   },
 
   refreshSession: async () => {
+    if (DEVELOPER_MODE) {
+      return true;
+    }
+
     const currentRefreshToken = get().refreshToken || StorageService.getRefreshToken();
     if (!currentRefreshToken) {
       get().clearSession();
@@ -260,7 +327,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    set({ loading: true });
+    if (DEVELOPER_MODE) {
+      get().clearSession();
+      return;
+    }
+
+    set({ loading: true, isLoading: true });
     const rToken = get().refreshToken || StorageService.getRefreshToken();
     if (rToken) {
       await authService.logout(rToken);

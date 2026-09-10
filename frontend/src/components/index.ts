@@ -8,3 +8,4 @@ export * from './ScreenshotImageThumbnail';
 export * from './ErrorBoundary';
 export * from './chat';
 export * from './search';
+export * from './DeveloperModeBanner';
