@@ -20,6 +20,7 @@ import { useAuthStore } from '../store/auth.store';
 import { ModernCard } from '../components/ModernCard';
 import { AppInfo } from '../utils/appConstants';
 import { apiClient } from '../api/apiClient';
+import { healthApi, PingResult } from '../api/healthApi';
 import { StorageService } from '../utils/storage';
 import { loggerService } from '../services/loggerService';
 import { storageManagerService } from '../services/storageManagerService';
@@ -38,6 +39,7 @@ export const SettingsScreen: React.FC = () => {
 
   const [urlInput, setUrlInput] = useState(backendUrl);
   const [testingHealth, setTestingHealth] = useState(false);
+  const [pingResult, setPingResult] = useState<PingResult | null>(null);
 
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
@@ -62,15 +64,23 @@ export const SettingsScreen: React.FC = () => {
 
   const handleTestHealth = async () => {
     setTestingHealth(true);
-    if (urlInput) {
-      useSettingsStore.getState().setBackendUrl(urlInput);
+    const target = (urlInput || backendUrl).trim();
+    if (target) {
+      useSettingsStore.getState().setBackendUrl(target);
     }
-    const ok = await apiClient.checkHealth();
+    const res = await healthApi.pingServer(target);
+    setPingResult(res);
     setTestingHealth(false);
-    if (ok) {
-      Alert.alert('Connection Success', 'Connected to ContextVault backend API successfully.');
+    if (res.isHealthy) {
+      Alert.alert(
+        'Backend Online',
+        `Connected to ContextVault backend API successfully in ${res.latencyMs}ms.\n\nDatabase: ${res.database}\nVersion: ${res.version}\nStatus: ${res.status}`
+      );
     } else {
-      Alert.alert('Connection Failed', 'Could not connect. Verify server IP and network.');
+      Alert.alert(
+        'Connection Failed',
+        res.errorMessage || `Could not connect to ContextVault Docker backend at ${target}. Please verify server IP and Docker container.`
+      );
     }
   };
 
@@ -306,13 +316,15 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Set local server address (e.g., http://localhost:8000/api or http://10.158.37.96:8000/api)
+          FastAPI backend running inside Docker (e.g., http://10.193.167.152:8000/api)
         </Text>
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}
-          placeholder="http://localhost:8000/api"
+          placeholder="http://10.193.167.152:8000/api"
           placeholderTextColor={theme.colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
           style={[
             styles.urlInput,
             {
@@ -335,10 +347,79 @@ export const SettingsScreen: React.FC = () => {
             style={[styles.testBtn, { borderColor: theme.colors.primary }]}
           >
             <Text style={[styles.testBtnText, { color: theme.colors.primary }]}>
-              {testingHealth ? 'Testing...' : 'Test Connection'}
+              {testingHealth ? 'Pinging...' : 'Ping Backend'}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Real-time Diagnostics Display */}
+        {pingResult && (
+          <View
+            style={[
+              styles.diagnosticContainer,
+              {
+                backgroundColor: theme.isDark ? '#0F172A' : '#F1F5F9',
+                borderColor: pingResult.isHealthy ? '#10B981' : '#EF4444',
+              },
+            ]}
+          >
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Backend Status</Text>
+              <View style={styles.diagBadgeRow}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: pingResult.isHealthy ? '#10B981' : '#EF4444' },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.diagValue,
+                    { color: pingResult.isHealthy ? '#10B981' : '#EF4444' },
+                  ]}
+                >
+                  {pingResult.isHealthy ? 'Connected (Healthy)' : 'Disconnected'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Response Time</Text>
+              <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+                {pingResult.latencyMs} ms
+              </Text>
+            </View>
+
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Database Status</Text>
+              <Text
+                style={[
+                  styles.diagValue,
+                  { color: pingResult.database === 'connected' ? '#10B981' : '#F59E0B' },
+                ]}
+              >
+                {pingResult.database}
+              </Text>
+            </View>
+
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>API Version</Text>
+              <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+                {pingResult.version}
+              </Text>
+            </View>
+
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Base URL</Text>
+              <Text
+                style={[styles.diagValue, { color: theme.colors.textSecondary, fontSize: 11 }]}
+                numberOfLines={1}
+              >
+                {pingResult.baseUrl}
+              </Text>
+            </View>
+          </View>
+        )}
       </ModernCard>
 
       {/* Storage & Data Management (Sprint RN-10) */}
@@ -609,5 +690,34 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  diagnosticContainer: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  diagRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 5,
+  },
+  diagBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  diagLabel: {
+    fontSize: 12,
+  },
+  diagValue: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

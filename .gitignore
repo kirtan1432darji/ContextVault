@@ -68,9 +68,9 @@ wheels/
 # Environment variables & secrets
 .env
 .env.*
+!.env.example
 .env.local
 .env.*.local
-frontend/.env.development
 
 # Logs
 *.log

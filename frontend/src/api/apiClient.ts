@@ -136,6 +136,13 @@ class ApiClient {
           }
         }
 
+        // Handle network unreachable / Docker host down or timeout errors with user-friendly messages
+        if (!error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+          error.message = `Cannot connect to ContextVault Docker backend at ${this.getBaseUrl()}. Please ensure container 'contextvault-api' is running on Ubuntu host.`;
+        } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          error.message = 'Connection to ContextVault backend timed out after 30 seconds.';
+        }
+
         return Promise.reject(error);
       }
     );

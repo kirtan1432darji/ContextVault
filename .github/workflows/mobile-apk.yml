@@ -1,0 +1,128 @@
+name: Mobile APK CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build Android APK & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        working-directory: frontend/android
+        run: chmod +x gradlew
+
+      - name: Build Android Debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify and Prepare APK Asset
+        run: |
+          SOURCE_APK="frontend/android/app/build/outputs/apk/debug/app-debug.apk"
+          TARGET_APK="frontend/ContextVault.apk"
+
+          if [ ! -f "$SOURCE_APK" ]; then
+            echo "::error::Source APK build output not found at: $SOURCE_APK"
+            exit 1
+          fi
+
+          cp "$SOURCE_APK" "$TARGET_APK"
+
+          if [ ! -f "$TARGET_APK" ]; then
+            echo "::error::Failed to copy APK to: $TARGET_APK"
+            exit 1
+          fi
+
+          echo "APK successfully prepared at: $TARGET_APK"
+          ls -lh "$TARGET_APK"
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextVault-APK
+          path: frontend/ContextVault.apk
+          retention-days: 30
+
+      - name: Publish or Update Latest GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG_NAME="latest"
+          RELEASE_TITLE="Latest APK"
+          APK_PATH="frontend/ContextVault.apk"
+
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::Release asset missing at: $APK_PATH"
+            exit 1
+          fi
+
+          echo "Configuring Git identity..."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Moving Git tag '$TAG_NAME' to commit ${{ github.sha }}..."
+          git tag -f "$TAG_NAME" "${{ github.sha }}"
+          git push -f origin "$TAG_NAME"
+
+          BUILD_TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/releases/latest/download/ContextVault.apk"
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          RELEASE_BODY=$(printf "### ContextVault Android APK (Latest Build)\n\n- **Commit**: [%s](%s)\n- **Built At**: %s\n- **Permanent Download Link**: [%s](%s)\n\n*This rolling release is automatically updated on every push to \`main\` affecting the mobile app.*" "${{ github.sha }}" "$COMMIT_URL" "$BUILD_TIMESTAMP" "ContextVault.apk" "$DOWNLOAD_URL")
+
+          echo "Checking if GitHub Release '$TAG_NAME' exists..."
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release '$TAG_NAME' exists. Updating title, notes, and latest status..."
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+
+            echo "Uploading and overwriting $APK_PATH asset..."
+            gh release upload "$TAG_NAME" "$APK_PATH" --clobber
+          else
+            echo "Release '$TAG_NAME' does not exist. Creating new release..."
+            gh release create "$TAG_NAME" "$APK_PATH" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+          fi
+
+          echo "Verifying published release assets..."
+          gh release view "$TAG_NAME"

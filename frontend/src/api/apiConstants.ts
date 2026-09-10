@@ -1,11 +1,13 @@
-export const ApiConstants = {
-  // Default base URL for physical device with adb reverse / emulator (FastAPI default port 8000)
-  defaultBaseUrl: 'http://localhost:8000/api',
+import { API_BASE_URL, REQUEST_TIMEOUT_MS, API_V1_PREFIX } from '../config/apiConfig';
 
-  // Timeout settings
-  connectTimeout: 15000,
-  receiveTimeout: 25000,
-  sendTimeout: 20000,
+export const ApiConstants = {
+  // Default base URL for physical device / APK connecting to Docker host (FastAPI default port 8000)
+  defaultBaseUrl: `${API_BASE_URL}${API_V1_PREFIX}`,
+
+  // Timeout settings (30s)
+  connectTimeout: REQUEST_TIMEOUT_MS,
+  receiveTimeout: REQUEST_TIMEOUT_MS,
+  sendTimeout: REQUEST_TIMEOUT_MS,
 
   // Auth Endpoints (Frozen Backend Contract)
   authRegister: '/auth/register',
