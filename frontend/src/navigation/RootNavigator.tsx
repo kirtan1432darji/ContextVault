@@ -19,11 +19,13 @@ import {
   QADebugPanelScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
+import { DEVELOPER_MODE } from '../config/developerConfig';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const canAccessProtected = DEVELOPER_MODE || isAuthenticated;
 
   return (
     <Stack.Navigator
@@ -41,7 +43,7 @@ export const RootNavigator: React.FC = () => {
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
 
       {/* 2. Protected Routes */}
-      {isAuthenticated ? (
+      {canAccessProtected ? (
         <>
           <Stack.Screen name="MainTabs" component={MainTabNavigator} />
           <Stack.Screen

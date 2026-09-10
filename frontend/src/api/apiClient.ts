@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from '../store/auth.store';
 import { useSettingsStore } from '../store/settings.store';
 import { StorageService } from '../utils/storage';
+import { DEVELOPER_MODE } from '../config/developerConfig';
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
@@ -75,6 +76,11 @@ class ApiClient {
         const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
         if (error.response?.status === 401 && !originalRequest._retry) {
+          if (DEVELOPER_MODE) {
+            // In Developer Mode, skip token refresh and avoid session eviction
+            return Promise.reject(error);
+          }
+
           if (this.isRefreshing) {
             return new Promise((resolve, reject) => {
               this.failedQueue.push({ resolve, reject });

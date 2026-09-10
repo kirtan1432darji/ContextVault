@@ -8,6 +8,8 @@ import { useSettingsStore } from './src/store/settings.store';
 import { screenshotListenerService } from './src/services/ScreenshotListenerService';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { performanceAuditService } from './src/services/performanceAuditService';
+import { AuthProvider } from './src/context/AuthContext';
+import { DeveloperModeBanner } from './src/components/DeveloperModeBanner';
 
 export const App: React.FC = () => {
   const themeMode = useSettingsStore((s) => s.themeMode);
@@ -30,13 +32,16 @@ export const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <StatusBar
-          barStyle={theme.isDark ? 'light-content' : 'dark-content'}
-          backgroundColor={theme.colors.background}
-        />
-        <NavigationContainer>
-          <RootNavigator />
-        </NavigationContainer>
+        <AuthProvider>
+          <StatusBar
+            barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+            backgroundColor={theme.colors.background}
+          />
+          <DeveloperModeBanner />
+          <NavigationContainer>
+            <RootNavigator />
+          </NavigationContainer>
+        </AuthProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
   );
