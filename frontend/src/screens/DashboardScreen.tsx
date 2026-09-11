@@ -497,10 +497,21 @@ export const DashboardScreen: React.FC = () => {
           </View>
 
           {lastScreenshot ? (
-            <View style={styles.lastItemRow}>
-              <View style={[styles.fileIconBox, { backgroundColor: theme.colors.primary + '15' }]}>
-                <Icon name="image-outline" size={20} color={theme.colors.primary} />
-              </View>
+            <TouchableOpacity
+              onPress={() => {
+                if (lastScreenshot.id) {
+                  navigation.navigate('ScreenshotDetail', { id: lastScreenshot.id });
+                }
+              }}
+              activeOpacity={lastScreenshot.id ? 0.7 : 1}
+              style={styles.lastItemRow}
+            >
+              <ScreenshotImageThumbnail
+                filePath={lastScreenshot.filePath}
+                style={styles.lastItemThumb}
+                borderRadius={8}
+                showLoadingIndicator
+              />
               <View style={styles.lastItemDetails}>
                 <Text
                   numberOfLines={1}
@@ -512,7 +523,10 @@ export const DashboardScreen: React.FC = () => {
                   {FileUtils.formatBytes(lastScreenshot.fileSize)} • Detected automatically
                 </Text>
               </View>
-            </View>
+              {lastScreenshot.id ? (
+                <Icon name="chevron-forward" size={16} color={theme.colors.textSecondary} style={{ marginLeft: 4 }} />
+              ) : null}
+            </TouchableOpacity>
           ) : (
             <View style={styles.lastItemEmptyRow}>
               <Icon
@@ -1394,6 +1408,12 @@ const styles = StyleSheet.create({
   lastItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  lastItemThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    marginRight: 10,
   },
   fileIconBox: {
     width: 36,

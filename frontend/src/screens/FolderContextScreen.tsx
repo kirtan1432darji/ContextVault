@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
-  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -19,6 +18,7 @@ import { screenshotRepository } from '../database/repositories/screenshotReposit
 import { ScreenshotModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
+import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { useAuthStore } from '../store/auth.store';
 import { FeatureLockCard } from '../components/FeatureLockCard';
 
@@ -357,24 +357,24 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
               data={screenshots}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.screenshotsList}
-              renderItem={({ item }) => {
-                const uri = item.filePath.startsWith('http') || item.filePath.startsWith('file://')
-                  ? item.filePath
-                  : `file://${item.filePath}`;
-                return (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
-                    style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
-                  >
-                    <Image source={{ uri }} style={styles.screenshotThumb} resizeMode="cover" />
-                    <View style={styles.thumbLabelBox}>
-                      <Text numberOfLines={1} style={styles.thumbLabel}>
-                        {item.subcategory || item.fileName}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+                  style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
+                >
+                  <ScreenshotImageThumbnail
+                    filePath={item.filePath}
+                    style={styles.screenshotThumb}
+                    borderRadius={8}
+                    showLoadingIndicator
+                  />
+                  <View style={styles.thumbLabelBox}>
+                    <Text numberOfLines={1} style={styles.thumbLabel}>
+                      {item.subcategory || item.fileName}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             />
           </View>
         )}

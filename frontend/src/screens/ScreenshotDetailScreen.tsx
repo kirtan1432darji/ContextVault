@@ -7,6 +7,8 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Modal,
+  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -102,9 +104,24 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
     setIsSyncing(false);
   };
 
-  const uri = screenshot.filePath.startsWith('http') || screenshot.filePath.startsWith('file://')
-    ? screenshot.filePath
-    : `file://${screenshot.filePath}`;
+  const [imageError, setImageError] = useState(false);
+  const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [lastTap, setLastTap] = useState(0);
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      setZoomScale((prev) => (prev > 1.2 ? 1 : 2.5));
+    }
+    setLastTap(now);
+  };
+
+  const handleZoomIn = () => setZoomScale((s) => Math.min(4, +(s + 0.5).toFixed(1)));
+  const handleZoomOut = () => setZoomScale((s) => Math.max(1, +(s - 0.5).toFixed(1)));
+  const handleZoomReset = () => setZoomScale(1);
+
+  const uri = FileUtils.normalizeImageUri(screenshot.filePath);
 
   const ocrText = screenshot.ocrText || ocrRecord?.extractedText || '';
   const processingDuration = ocrRecord?.processingTime || 0;
@@ -164,9 +181,50 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Preview Image */}
-        <View style={[styles.imageContainer, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}>
-          <Image source={{ uri }} style={styles.image} resizeMode="contain" />
-        </View>
+        {imageError || !uri ? (
+          <View
+            style={[
+              styles.imageErrorContainer,
+              {
+                backgroundColor: theme.isDark ? '#1E293B' : '#FEF2F2',
+                borderColor: theme.isDark ? '#334155' : '#FCA5A5',
+              },
+            ]}
+          >
+            <Icon name="alert-circle-outline" size={36} color={theme.colors.error} />
+            <Text style={[styles.imageErrorTitle, { color: theme.colors.error }]}>
+              Screenshot Image Unavailable
+            </Text>
+            <Text style={[styles.imageErrorSubtext, { color: theme.colors.textSecondary }]}>
+              The image file was not found at the recorded local path or could not be decoded.
+            </Text>
+            <Text numberOfLines={2} style={[styles.imageErrorPath, { color: theme.colors.textMuted }]}>
+              {screenshot.filePath}
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.92}
+            onPress={() => {
+              setZoomScale(1);
+              setIsZoomModalOpen(true);
+            }}
+            style={[styles.imageContainer, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
+            accessibilityRole="button"
+            accessibilityLabel="Tap to zoom screenshot full-screen"
+          >
+            <Image
+              source={{ uri, cache: 'force-cache' }}
+              style={styles.image}
+              resizeMode="contain"
+              onError={() => setImageError(true)}
+            />
+            <View style={styles.zoomHintPill}>
+              <Icon name="scan-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.zoomHintText}>Pinch to Zoom</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* 1. Category, AI Source & Confidence Card */}
         <ModernCard style={styles.card}>
@@ -453,6 +511,101 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           ) : null}
         </ModernCard>
       </ScrollView>
+
+      {/* Fullscreen Pinch-to-Zoom Lightbox Modal */}
+      <Modal
+        visible={isZoomModalOpen}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={() => setIsZoomModalOpen(false)}
+        testID="screenshot-zoom-modal"
+      >
+        <View style={styles.modalBackdrop}>
+          {/* Modal Top Bar */}
+          <View style={styles.modalTopBar}>
+            <TouchableOpacity
+              onPress={() => setIsZoomModalOpen(false)}
+              style={styles.modalCloseBtn}
+              accessibilityLabel="Close full screen view"
+            >
+              <Icon name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={styles.modalTitleBox}>
+              <Text numberOfLines={1} style={styles.modalTitleText}>
+                {screenshot.fileName}
+              </Text>
+              <Text style={styles.modalMetaText}>
+                {screenshot.width} x {screenshot.height} px • {FileUtils.formatBytes(screenshot.fileSize)}
+              </Text>
+            </View>
+
+            {/* Zoom Controls Toolbar */}
+            <View style={styles.modalControlsRow}>
+              <TouchableOpacity
+                onPress={handleZoomOut}
+                disabled={zoomScale <= 1}
+                style={[styles.zoomControlBtn, zoomScale <= 1 && styles.zoomBtnDisabled]}
+                accessibilityLabel="Zoom out"
+              >
+                <Icon name="remove" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleZoomReset}
+                style={styles.zoomScaleBadge}
+                accessibilityLabel="Reset zoom"
+              >
+                <Text style={styles.zoomScaleText}>{zoomScale.toFixed(1)}x</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleZoomIn}
+                disabled={zoomScale >= 4}
+                style={[styles.zoomControlBtn, zoomScale >= 4 && styles.zoomBtnDisabled]}
+                accessibilityLabel="Zoom in"
+              >
+                <Icon name="add" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Interactive Zoom Viewport */}
+          <ScrollView
+            style={styles.modalScrollView}
+            contentContainerStyle={styles.modalScrollContent}
+            maximumZoomScale={4.0}
+            minimumZoomScale={1.0}
+            centerContent={true}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleDoubleTap}
+              style={styles.modalImageTouchable}
+            >
+              <Image
+                source={{ uri, cache: 'force-cache' }}
+                style={[
+                  styles.modalImage,
+                  {
+                    transform: [{ scale: zoomScale }],
+                  },
+                ]}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Double Tap Hint Footer */}
+          <View style={styles.modalFooter}>
+            <Text style={styles.modalFooterText}>
+              Double tap to zoom • Pinch with two fingers to inspect details
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -670,5 +823,136 @@ const styles = StyleSheet.create({
   metaVal: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  imageErrorContainer: {
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  imageErrorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  imageErrorSubtext: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  imageErrorPath: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    textAlign: 'center',
+  },
+  zoomHintPill: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  zoomHintText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  modalTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 44,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    zIndex: 10,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitleBox: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  modalTitleText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalMetaText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  modalControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  zoomControlBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomBtnDisabled: {
+    opacity: 0.35,
+  },
+  zoomScaleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginHorizontal: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  zoomScaleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImageTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalFooter: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  },
+  modalFooterText: {
+    color: '#94A3B8',
+    fontSize: 12,
   },
 });

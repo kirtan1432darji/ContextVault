@@ -134,56 +134,76 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const renderScreenshotGridItem = ({ item }: { item: ScreenshotModel }) => (
-    <ModernCard style={styles.gridCard}>
-      <TouchableOpacity
-        onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
-        style={styles.cardTouch}
-      >
-        <ScreenshotImageThumbnail
-          filePath={item.filePath}
-          style={styles.thumbnail}
-        />
+  const renderScreenshotGridItem = ({ item, index }: { item: ScreenshotModel; index: number }) => {
+    let itemHeight = 160;
+    if (item.width && item.height && item.width > 0) {
+      const ratio = item.height / item.width;
+      itemHeight = Math.round(Math.max(130, Math.min(220, (COLUMN_WIDTH - 16) * ratio)));
+    } else {
+      itemHeight = index % 3 === 0 ? 190 : index % 2 === 0 ? 150 : 170;
+    }
 
-        {/* Visual Indicators (Feature 12) */}
-        <View style={styles.cardBadgesRow}>
-          {item.isAutoCategorized ? (
-            <View style={[styles.aiBadge, { backgroundColor: '#6366F120' }]}>
-              <Icon name="sparkles" size={10} color="#6366F1" style={{ marginRight: 2 }} />
-              <Text style={styles.aiBadgeText}>AI Filed</Text>
-            </View>
-          ) : (
-            <View style={[styles.aiBadge, { backgroundColor: '#64748B20' }]}>
-              <Text style={[styles.aiBadgeText, { color: '#64748B' }]}>Manual</Text>
-            </View>
-          )}
-
-          <ConfidenceBadge confidence={item.confidence} showPercent={false} />
-        </View>
-
-        <Text numberOfLines={1} style={[styles.itemFileName, { color: theme.colors.textPrimary }]}>
-          {item.fileName}
-        </Text>
-
-        {item.subcategory ? (
-          <View style={styles.subfolderBadge}>
-            <Icon name="folder-open-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
-            <Text numberOfLines={1} style={[styles.subfolderText, { color: theme.colors.primary }]}>
-              {item.subcategory}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Move button */}
+    return (
+      <ModernCard style={styles.gridCard}>
         <TouchableOpacity
-          onPress={() => handleOpenMove(item)}
-          style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+          onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+          style={styles.cardTouch}
         >
-          <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
+          <View style={styles.thumbWrapper}>
+            <ScreenshotImageThumbnail
+              filePath={item.filePath}
+              style={[styles.thumbnail, { height: itemHeight }]}
+              borderRadius={8}
+              showLoadingIndicator
+            />
+            {item.isFavorite && (
+              <View style={styles.favBadgeOverlay}>
+                <Icon name="heart" size={12} color="#EF4444" />
+              </View>
+            )}
+          </View>
+
+          {/* Visual Indicators (Feature 12) */}
+          <View style={styles.cardBadgesRow}>
+            {item.isAutoCategorized ? (
+              <View style={[styles.aiBadge, { backgroundColor: '#6366F120' }]}>
+                <Icon name="sparkles" size={10} color="#6366F1" style={{ marginRight: 2 }} />
+                <Text style={styles.aiBadgeText}>AI Filed</Text>
+              </View>
+            ) : (
+              <View style={[styles.aiBadge, { backgroundColor: '#64748B20' }]}>
+                <Text style={[styles.aiBadgeText, { color: '#64748B' }]}>Manual</Text>
+              </View>
+            )}
+
+            <ConfidenceBadge confidence={item.confidence} showPercent={false} />
+          </View>
+
+          <Text numberOfLines={1} style={[styles.itemFileName, { color: theme.colors.textPrimary }]}>
+            {item.fileName}
+          </Text>
+
+          {item.subcategory ? (
+            <View style={styles.subfolderBadge}>
+              <Icon name="folder-open-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
+              <Text numberOfLines={1} style={[styles.subfolderText, { color: theme.colors.primary }]}>
+                {item.subcategory}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Move button */}
+          <TouchableOpacity
+            onPress={() => handleOpenMove(item)}
+            style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+            accessibilityLabel="Move to another folder"
+          >
+            <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
-    </ModernCard>
-  );
+      </ModernCard>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -544,11 +564,23 @@ const styles = StyleSheet.create({
   cardTouch: {
     position: 'relative',
   },
+  thumbWrapper: {
+    position: 'relative',
+    marginBottom: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
   thumbnail: {
     width: '100%',
-    height: 150,
     borderRadius: 8,
-    marginBottom: 8,
+  },
+  favBadgeOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    padding: 4,
+    borderRadius: 10,
   },
   cardBadgesRow: {
     flexDirection: 'row',

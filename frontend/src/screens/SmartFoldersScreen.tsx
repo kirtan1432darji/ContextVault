@@ -19,6 +19,8 @@ import { useCategoryStore, CategoryTreeNode } from '../store/category.store';
 import { smartFolderService } from '../services/SmartFolderService';
 import { CategoryModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
+import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
+import { useScreenshotStore } from '../store/screenshot.store';
 
 export const SmartFoldersScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -32,6 +34,7 @@ export const SmartFoldersScreen: React.FC = () => {
   const renameFolder = useCategoryStore((s) => s.renameFolder);
   const toggleFavorite = useCategoryStore((s) => s.toggleFavorite);
   const deleteFolder = useCategoryStore((s) => s.deleteFolder);
+  const screenshots = useScreenshotStore((s) => s.screenshots);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isOrganizing, setIsOrganizing] = useState(false);
@@ -131,6 +134,12 @@ export const SmartFoldersScreen: React.FC = () => {
       (node.path && node.path.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const indentPadding = node.level * 20;
+
+    const folderScreenshots = screenshots.filter(
+      (s) =>
+        s.categoryId === node.id ||
+        (s.categoryName && s.categoryName.toLowerCase() === node.name.toLowerCase())
+    );
 
     return (
       <View key={node.id} style={styles.nodeWrapper}>
@@ -242,6 +251,51 @@ export const SmartFoldersScreen: React.FC = () => {
                 )}
               </View>
             </View>
+
+            {/* Folder Screenshot Previews (Sprint RN-03 / Gallery Restoration) */}
+            {folderScreenshots.length > 0 && (
+              <View style={styles.folderThumbnailsRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.thumbsScroll}
+                >
+                  {folderScreenshots.slice(0, 4).map((shot) => (
+                    <TouchableOpacity
+                      key={shot.id}
+                      onPress={() => navigation.navigate('ScreenshotDetail', { id: shot.id })}
+                      style={styles.folderThumbItem}
+                      accessibilityLabel={`View screenshot ${shot.fileName}`}
+                    >
+                      <ScreenshotImageThumbnail
+                        filePath={shot.filePath}
+                        style={styles.folderThumbImage}
+                        borderRadius={8}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                  {folderScreenshots.length > 4 && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        navigation.navigate('FolderDetail', {
+                          categoryId: node.id,
+                          categoryName: node.name,
+                        })
+                      }
+                      style={[
+                        styles.moreThumbsBadge,
+                        { backgroundColor: theme.isDark ? '#334155' : '#E2E8F0' },
+                      ]}
+                      accessibilityLabel={`View all ${folderScreenshots.length} screenshots in ${node.name}`}
+                    >
+                      <Text style={[styles.moreThumbsText, { color: theme.colors.textSecondary }]}>
+                        +{folderScreenshots.length - 4}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+            )}
           </ModernCard>
         )}
 
@@ -599,6 +653,37 @@ const styles = StyleSheet.create({
   },
   modalBtnText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  folderThumbnailsRow: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.15)',
+  },
+  thumbsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  folderThumbItem: {
+    marginRight: 8,
+  },
+  folderThumbImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+  },
+  moreThumbsBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  moreThumbsText: {
+    fontSize: 12,
     fontWeight: '700',
   },
 });
