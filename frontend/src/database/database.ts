@@ -36,7 +36,11 @@ class DatabaseService {
 
   private async initSchema(db: SQLiteDatabase): Promise<void> {
     for (const statement of SCHEMA_SQL) {
-      await db.executeSql(statement);
+      try {
+        await db.executeSql(statement);
+      } catch (e) {
+        // Continue creating subsequent tables even if one errors
+      }
     }
 
     // Safe column migrations for existing SQLite databases
