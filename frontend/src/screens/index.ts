@@ -18,3 +18,4 @@ export * from './GlobalAISearchScreen';
 export * from './StorageScreen';
 export * from './QADebugPanelScreen';
 export * from './NotificationCenterScreen';
+export * from './RecycleBinScreen';

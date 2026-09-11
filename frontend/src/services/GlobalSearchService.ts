@@ -391,6 +391,9 @@ export class GlobalSearchService {
       conditions.push('confidence < 0.65');
     }
 
+    // Exclude soft-deleted screenshots
+    conditions.push('(is_deleted = 0 OR is_deleted IS NULL)');
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const sql = `SELECT * FROM screenshots ${whereClause} ORDER BY created_at DESC LIMIT 150`;
 

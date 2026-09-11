@@ -73,6 +73,28 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
     await screenshotService.toggleFavorite(id);
   };
 
+  const handleDeleteScreenshot = () => {
+    Alert.alert(
+      'Move to Recycle Bin',
+      `Move "${screenshot.fileName}" to the Recycle Bin?\n\nYou can restore it anytime from Settings > Recycle Bin. Original photos on your device will NOT be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move to Bin',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await useScreenshotStore.getState().softDeleteScreenshot(id);
+              navigation.goBack();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to move screenshot to Recycle Bin.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCopyText = () => {
     const textToCopy = screenshot.ocrText || ocrRecord?.extractedText || '';
     if (!textToCopy) return;
@@ -175,6 +197,14 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             style={[styles.actionBtn, { backgroundColor: `${theme.colors.primary}15`, borderColor: theme.colors.border, marginLeft: 8 }]}
           >
             <Icon name="sparkles" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDeleteScreenshot}
+            style={[styles.actionBtn, { backgroundColor: `${theme.colors.error}15`, borderColor: theme.colors.border, marginLeft: 8 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Move to Recycle Bin"
+          >
+            <Icon name="trash-outline" size={18} color={theme.colors.error} />
           </TouchableOpacity>
         </View>
       </View>

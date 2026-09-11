@@ -950,6 +950,30 @@ export const StorageScreen: React.FC = () => {
               </View>
             </ModernCard>
 
+            {/* 6. Recycle Bin Card */}
+            <ModernCard style={styles.card}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.itemTitleRow}>
+                  <Icon name="trash-bin-outline" size={20} color={theme.colors.error} />
+                  <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+                    Recycle Bin
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.itemDesc, { color: theme.colors.textSecondary }]}>
+                Soft-deleted screenshots are safely preserved in the Recycle Bin before permanent deletion.
+              </Text>
+              <TouchableOpacity
+                style={[styles.actionBtn, { borderColor: theme.colors.error }]}
+                onPress={() => navigation.navigate('RecycleBin')}
+              >
+                <Icon name="trash-bin-outline" size={16} color={theme.colors.error} style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: theme.colors.error }]}>
+                  Open Recycle Bin
+                </Text>
+              </TouchableOpacity>
+            </ModernCard>
+
             {/* Master Purge Button */}
             <TouchableOpacity
               style={[styles.purgeBtn, { borderColor: theme.colors.error }]}

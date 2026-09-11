@@ -26,3 +26,4 @@ export * from './storageManagerService';
 export * from './demoModeService';
 export * from './backupService';
 export * from './performanceAuditService';
+export * from './recycleBinService';

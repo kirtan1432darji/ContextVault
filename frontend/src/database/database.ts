@@ -67,9 +67,12 @@ class DatabaseService {
       'ALTER TABLE ocr_cache ADD COLUMN created_on TEXT',
       'ALTER TABLE ocr_cache ADD COLUMN blocks_json TEXT',
 
-      // Screenshot table migrations (Sprint RN-06)
+      // Screenshot table migrations (Sprint RN-06 & Sprint P1-5 Recycle Bin)
       'ALTER TABLE screenshots ADD COLUMN folder_path TEXT',
       'ALTER TABLE screenshots ADD COLUMN classification_source TEXT DEFAULT "local"',
+      'ALTER TABLE screenshots ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE screenshots ADD COLUMN deleted_at TEXT',
+      'CREATE INDEX IF NOT EXISTS idx_screenshots_deleted ON screenshots(is_deleted)',
 
       // Chat history migrations (Sprint RN-07)
       'ALTER TABLE chat_history ADD COLUMN message TEXT',

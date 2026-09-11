@@ -31,6 +31,8 @@ export interface ScreenshotModel {
   isMock?: boolean;
   classificationSource?: 'backend' | 'local';
   entities?: ExtractedEntitiesDto;
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface ScreenshotFilter {
@@ -42,6 +44,7 @@ export interface ScreenshotFilter {
   isReviewed?: boolean;
   needsReview?: boolean;
   searchTerm?: string;
+  isDeleted?: boolean;
   limit?: number;
   offset?: number;
 }

@@ -6,6 +6,12 @@ export class ScreenshotRepository {
     const conditions: string[] = [];
     const params: any[] = [];
 
+    if (filter.isDeleted === true) {
+      conditions.push('is_deleted = 1');
+    } else {
+      conditions.push('(is_deleted = 0 OR is_deleted IS NULL)');
+    }
+
     if (filter.categoryId && filter.categoryId !== 'all') {
       conditions.push('category_id = ?');
       params.push(filter.categoryId);
@@ -46,7 +52,7 @@ export class ScreenshotRepository {
 
   async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
     const rows = await databaseService.executeQuery(
-      'SELECT * FROM screenshots WHERE category_id = ? ORDER BY created_at DESC',
+      'SELECT * FROM screenshots WHERE category_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at DESC',
       [categoryId]
     );
     return rows.map(this.mapRowToModel);
@@ -54,9 +60,71 @@ export class ScreenshotRepository {
 
   async getNeedsReviewCount(): Promise<number> {
     const rows = await databaseService.executeQuery(
-      `SELECT COUNT(*) as count FROM screenshots WHERE is_reviewed = 0 AND (confidence < 0.70 OR category_id = 'unsorted')`
+      `SELECT COUNT(*) as count FROM screenshots WHERE is_reviewed = 0 AND (confidence < 0.70 OR category_id = 'unsorted') AND (is_deleted = 0 OR is_deleted IS NULL)`
     );
     return rows.length > 0 ? rows[0].count : 0;
+  }
+
+  async getDeletedScreenshots(): Promise<ScreenshotModel[]> {
+    const rows = await databaseService.executeQuery(
+      'SELECT * FROM screenshots WHERE is_deleted = 1 ORDER BY deleted_at DESC, created_at DESC'
+    );
+    return rows.map(this.mapRowToModel);
+  }
+
+  async softDeleteScreenshot(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 1, deleted_at = ? WHERE id = ?',
+      [now, id]
+    );
+  }
+
+  async restoreScreenshot(id: string): Promise<void> {
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 0, deleted_at = NULL WHERE id = ?',
+      [id]
+    );
+  }
+
+  async restoreAllScreenshots(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT id FROM screenshots WHERE is_deleted = 1'
+    );
+    if (rows.length === 0) return 0;
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 0, deleted_at = NULL WHERE is_deleted = 1'
+    );
+    return rows.length;
+  }
+
+  async permanentDeleteScreenshot(id: string): Promise<void> {
+    await databaseService.executeCommand('DELETE FROM screenshot_tags WHERE screenshot_id = ?', [id]);
+    await databaseService.executeCommand('DELETE FROM ocr_cache WHERE screenshot_id = ?', [id]);
+    await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
+  }
+
+  async emptyRecycleBin(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT id FROM screenshots WHERE is_deleted = 1'
+    );
+    const count = rows.length;
+    if (count === 0) return 0;
+    await databaseService.executeCommand(
+      'DELETE FROM screenshot_tags WHERE screenshot_id IN (SELECT id FROM screenshots WHERE is_deleted = 1)'
+    );
+    await databaseService.executeCommand(
+      'DELETE FROM ocr_cache WHERE screenshot_id IN (SELECT id FROM screenshots WHERE is_deleted = 1)'
+    );
+    await databaseService.executeCommand('DELETE FROM screenshots WHERE is_deleted = 1');
+    return count;
+  }
+
+  async getRecycleBinCount(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT COUNT(*) as count FROM screenshots WHERE is_deleted = 1'
+    );
+    return rows[0]?.count || 0;
   }
 
   async hasScreenshot(deviceAssetId?: string, filePath?: string): Promise<boolean> {
@@ -85,8 +153,9 @@ export class ScreenshotRepository {
         subcategory, confidence, source_app, detected_app,
         keywords_json, is_auto_categorized, is_favorite,
         is_reviewed, is_synced, ocr_status, ocr_text,
-        last_scanned_at, is_mock, classification_source, folder_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        last_scanned_at, is_mock, classification_source, folder_path,
+        is_deleted, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
@@ -115,6 +184,8 @@ export class ScreenshotRepository {
       screenshot.isMock ? 1 : 0,
       screenshot.classificationSource || 'local',
       screenshot.folderPath ? JSON.stringify(screenshot.folderPath) : null,
+      screenshot.isDeleted ? 1 : 0,
+      screenshot.deletedAt || null,
     ]);
   }
 
@@ -196,6 +267,8 @@ export class ScreenshotRepository {
       isFavorite: Boolean(row.is_favorite),
       isReviewed: Boolean(row.is_reviewed),
       isSynced: Boolean(row.is_synced),
+      isDeleted: Boolean(row.is_deleted),
+      deletedAt: row.deleted_at || undefined,
       ocrStatus: row.ocr_status,
       ocrText: row.ocr_text,
       lastScannedAt: row.last_scanned_at,

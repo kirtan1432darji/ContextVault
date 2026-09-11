@@ -612,6 +612,26 @@ export const SettingsScreen: React.FC = () => {
           <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
         </TouchableOpacity>
 
+        <TouchableOpacity
+          onPress={() => navigation.navigate('RecycleBin')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Recycle Bin"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="trash-bin-outline" size={20} color={theme.colors.error} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Recycle Bin
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Restore or permanently delete screenshots
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
         <View style={styles.apiBtnRow}>
           <TouchableOpacity
             onPress={handleClearCache}

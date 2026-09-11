@@ -44,6 +44,7 @@ export type RootStackParamList = {
   Storage: undefined;
   QADebugPanel: undefined;
   NotificationCenter: undefined;
+  RecycleBin: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

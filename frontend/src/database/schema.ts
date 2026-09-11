@@ -67,11 +67,14 @@ export const SCHEMA_SQL = [
     ocr_text TEXT,
     last_scanned_at TEXT,
     is_mock INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT,
     FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE SET DEFAULT
   );`,
   `CREATE INDEX IF NOT EXISTS idx_screenshots_cat ON screenshots(category_id);`,
   `CREATE INDEX IF NOT EXISTS idx_screenshots_fav ON screenshots(is_favorite);`,
   `CREATE INDEX IF NOT EXISTS idx_screenshots_reviewed ON screenshots(is_reviewed);`,
+  `CREATE INDEX IF NOT EXISTS idx_screenshots_deleted ON screenshots(is_deleted);`,
 
   // 5. Screenshot Tags M2M
   `CREATE TABLE IF NOT EXISTS screenshot_tags (

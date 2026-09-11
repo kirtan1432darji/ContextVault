@@ -103,6 +103,7 @@ export class SearchService {
         whereClause += ' AND category_id = ?';
         params.push(categoryId);
       }
+      whereClause += ' AND (is_deleted = 0 OR is_deleted IS NULL)';
 
       const sql = `SELECT * FROM screenshots WHERE ${whereClause} ORDER BY created_at DESC LIMIT 100`;
       const rows = await databaseService.executeQuery(sql, params);
