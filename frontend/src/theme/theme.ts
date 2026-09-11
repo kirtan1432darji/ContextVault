@@ -55,8 +55,8 @@ const spacing = {
 const borderRadius = {
   sm: 6,
   md: 12,
-  lg: 16,
-  xl: 24,
+  lg: 14,
+  xl: 16,
   full: 9999,
 };
 

@@ -68,7 +68,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={styles.topBar}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+            style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
           >
             <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
           </TouchableOpacity>
@@ -101,7 +101,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -269,7 +269,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Text>
                 <View style={styles.chipsWrap}>
                   {structured.urls.map((u, i) => (
-                    <TagChip key={i} label={u} colorHex="#6366F1" />
+                    <TagChip key={i} label={u} colorHex={theme.colors.primary} />
                   ))}
                 </View>
               </View>
@@ -418,7 +418,8 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 12,
@@ -439,16 +440,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerAiBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   refreshBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -545,7 +546,7 @@ const styles = StyleSheet.create({
   screenshotThumbBox: {
     width: 100,
     height: 140,
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
     marginRight: 12,
   },
@@ -579,13 +580,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 12,
+    elevation: 1,
   },
   chatCtaText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginLeft: 8,
   },
 });

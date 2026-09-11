@@ -138,7 +138,7 @@ export const GuestUpgradeBottomSheet: React.FC<GuestUpgradeBottomSheetProps> = (
                     styles.secondaryButton,
                     {
                       borderColor: theme.colors.border,
-                      backgroundColor: theme.isDark ? '#1F2937' : '#F8FAFC',
+                      backgroundColor: theme.isDark ? '#252525' : '#F1F3F4',
                     },
                   ]}
                   onPress={handleRegister}

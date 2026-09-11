@@ -78,8 +78,16 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
           },
         ]}
       >
-        <View style={[styles.logoContainer, { backgroundColor: `${theme.colors.primary}20` }]}>
-          <Icon name="scan-outline" size={54} color={theme.colors.primary} />
+        <View
+          style={[
+            styles.logoContainer,
+            {
+              backgroundColor: theme.isDark ? '#1E1E1E' : '#E8F0FE',
+              borderColor: theme.isDark ? '#2E2E2E' : '#D2E3FC',
+            },
+          ]}
+        >
+          <Icon name="albums-outline" size={48} color={theme.colors.primary} />
         </View>
         <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
           {AppInfo.appName}
@@ -111,17 +119,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
   },
   title: {
     fontSize: 32,

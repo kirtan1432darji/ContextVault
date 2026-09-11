@@ -58,7 +58,7 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
         >
           {/* Back Button */}
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+            style={[styles.backButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
             onPress={() => navigation.goBack()}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -68,8 +68,8 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
           {isSubmitted ? (
             /* Success confirmation view */
             <View style={styles.successContainer}>
-              <View style={[styles.iconBadge, { backgroundColor: `${theme.colors.success}20` }]}>
-                <Icon name="mail-open-outline" size={48} color={theme.colors.success} />
+              <View style={[styles.iconBadge, { backgroundColor: `${theme.colors.success}15`, borderColor: `${theme.colors.success}30` }]}>
+                <Icon name="mail-open-outline" size={32} color={theme.colors.success} />
               </View>
               <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
                 Check Your Inbox
@@ -92,8 +92,8 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
             /* Reset request form */
             <View>
               <View style={styles.header}>
-                <View style={[styles.iconBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
-                  <Icon name="key-outline" size={42} color={theme.colors.primary} />
+                <View style={[styles.iconBadge, { backgroundColor: `${theme.colors.primary}15`, borderColor: `${theme.colors.primary}30` }]}>
+                  <Icon name="key-outline" size={32} color={theme.colors.primary} />
                 </View>
                 <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
                   Reset Password
@@ -117,7 +117,7 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
                 style={[
                   styles.inputWrapper,
                   {
-                    backgroundColor: theme.isDark ? '#131B2E' : '#F8FAFC',
+                    backgroundColor: theme.colors.inputBackground,
                     borderColor: theme.colors.border,
                   },
                 ]}
@@ -185,9 +185,10 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -197,17 +198,18 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   iconBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -232,16 +234,16 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    height: 52,
+    height: 50,
   },
   inputIcon: {
     marginRight: 10,
@@ -255,18 +257,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 54,
-    borderRadius: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 4,
+    height: 50,
+    borderRadius: 12,
+    elevation: 1,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
   },
   backToLoginRow: {
     flexDirection: 'row',
@@ -276,7 +274,7 @@ const styles = StyleSheet.create({
   },
   backToLoginText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     marginLeft: 4,
   },
   successContainer: {
@@ -285,7 +283,7 @@ const styles = StyleSheet.create({
   },
   emailHighlight: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 4,
   },
 });

@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { MainTabParamList } from './types';
@@ -20,17 +21,20 @@ export const MainTabNavigator: React.FC = () => {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarInactiveTintColor: theme.colors.textSecondary,
         tabBarStyle: {
           backgroundColor: theme.colors.tabBar,
           borderTopColor: theme.colors.border,
-          height: 60,
+          borderTopWidth: 1,
+          height: 64,
           paddingBottom: 8,
-          paddingTop: 8,
+          paddingTop: 6,
+          elevation: 0,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontWeight: '600',
+          marginTop: -2,
         },
         tabBarIcon: ({ color, size, focused }) => {
           let iconName = 'home-outline';
@@ -47,7 +51,28 @@ export const MainTabNavigator: React.FC = () => {
             iconName = focused ? 'settings' : 'settings-outline';
           }
 
-          return <Icon name={iconName} size={size} color={color} />;
+          return (
+            <View
+              style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 3,
+                borderRadius: 16,
+                backgroundColor: focused
+                  ? theme.isDark
+                    ? `${theme.colors.primary}25`
+                    : `${theme.colors.primary}15`
+                  : 'transparent',
+              }}
+            >
+              <Icon
+                name={iconName}
+                size={focused ? 20 : 20}
+                color={focused ? theme.colors.primary : theme.colors.textSecondary}
+              />
+            </View>
+          );
         },
       })}
     >

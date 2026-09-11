@@ -147,7 +147,7 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
         >
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+            style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
           >
             <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
           </TouchableOpacity>
@@ -192,7 +192,7 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
       >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -436,17 +436,18 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   headerTitleBox: {
     flex: 1,
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   statusRow: {
     flexDirection: 'row',
@@ -461,7 +462,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',
@@ -510,17 +511,17 @@ const styles = StyleSheet.create({
     paddingTop: 36,
   },
   welcomeIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     marginBottom: 16,
   },
   welcomeTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
     textAlign: 'center',
   },

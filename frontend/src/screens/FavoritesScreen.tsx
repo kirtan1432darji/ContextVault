@@ -76,8 +76,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   subtitle: {
@@ -93,7 +94,7 @@ const styles = StyleSheet.create({
   gridThumb: {
     width: '100%',
     height: 200,
-    borderRadius: 14,
+    borderRadius: 10,
   },
   metaRow: {
     marginTop: 6,
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
   },
   titleText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     flex: 1,
     marginRight: 4,
   },

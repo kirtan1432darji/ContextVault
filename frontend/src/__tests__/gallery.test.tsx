@@ -31,17 +31,17 @@ jest.mock('../theme', () => ({
     isDark: false,
     colors: {
       background: '#FFFFFF',
-      card: '#F8FAFC',
-      border: '#E2E8F0',
-      primary: '#6366F1',
-      secondary: '#64748B',
-      accent: '#8B5CF6',
-      success: '#10B981',
-      warning: '#F59E0B',
-      error: '#EF4444',
-      textPrimary: '#0F172A',
-      textSecondary: '#64748B',
-      textMuted: '#94A3B8',
+      card: '#FFFFFF',
+      border: '#E5E7EB',
+      primary: '#1A73E8',
+      secondary: '#5F6368',
+      accent: '#188038',
+      success: '#188038',
+      warning: '#F29900',
+      error: '#D93025',
+      textPrimary: '#202124',
+      textSecondary: '#5F6368',
+      textMuted: '#80868B',
     },
   }),
 }));
@@ -115,7 +115,7 @@ describe('ContextVault Screenshot Gallery & Image Preview Suite (P0)', () => {
         );
       });
 
-      const images = renderer!.root.findAllByType('Image');
+      const images = renderer!.root.findAllByType('Image' as any);
       expect(images.length).toBe(1);
       expect(images[0].props.source).toEqual({
         uri: 'file:///storage/emulated/0/Pictures/Screenshots/shot1.png',
@@ -132,7 +132,7 @@ describe('ContextVault Screenshot Gallery & Image Preview Suite (P0)', () => {
         );
       });
 
-      const images = renderer!.root.findAllByType('Image');
+      const images = renderer!.root.findAllByType('Image' as any);
       expect(images.length).toBe(0);
 
       const fallbacks = renderer!.root.findAllByProps({ testID: 'thumbnail-fallback' });
@@ -148,7 +148,7 @@ describe('ContextVault Screenshot Gallery & Image Preview Suite (P0)', () => {
       });
 
       // Initially renders Image
-      const imageComponent = renderer!.root.findByType('Image');
+      const imageComponent = renderer!.root.findByType('Image' as any);
       expect(imageComponent).toBeTruthy();
 
       // Trigger onError
@@ -157,7 +157,7 @@ describe('ContextVault Screenshot Gallery & Image Preview Suite (P0)', () => {
       });
 
       // Image should now be replaced with fallback
-      const imagesAfterError = renderer!.root.findAllByType('Image');
+      const imagesAfterError = renderer!.root.findAllByType('Image' as any);
       expect(imagesAfterError.length).toBe(0);
 
       const fallbacks = renderer!.root.findAllByProps({ testID: 'thumbnail-fallback' });
@@ -176,7 +176,7 @@ describe('ContextVault Screenshot Gallery & Image Preview Suite (P0)', () => {
         );
       });
 
-      const touchable = renderer!.root.findByType('TouchableOpacity');
+      const touchable = renderer!.root.findByType('TouchableOpacity' as any);
       expect(touchable).toBeTruthy();
       expect(touchable.props.accessibilityRole).toBe('button');
 

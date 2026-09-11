@@ -166,8 +166,8 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           {/* Visual Indicators (Feature 12) */}
           <View style={styles.cardBadgesRow}>
             {item.isAutoCategorized ? (
-              <View style={[styles.aiBadge, { backgroundColor: '#6366F120' }]}>
-                <Icon name="sparkles" size={10} color="#6366F1" style={{ marginRight: 2 }} />
+              <View style={[styles.aiBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
+                <Icon name="sparkles" size={10} color={theme.colors.primary} style={{ marginRight: 2 }} />
                 <Text style={styles.aiBadgeText}>AI Filed</Text>
               </View>
             ) : (
@@ -211,7 +211,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -460,7 +460,8 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -470,7 +471,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 12,
@@ -485,24 +486,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   askAiBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   aiContextBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   aiBtnText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   searchAndSortRow: {
     flexDirection: 'row',
@@ -515,7 +517,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     marginRight: 8,
   },
@@ -530,7 +532,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   sortBtnText: {
@@ -580,7 +582,7 @@ const styles = StyleSheet.create({
     left: 6,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     padding: 4,
-    borderRadius: 10,
+    borderRadius: 6,
   },
   cardBadgesRow: {
     flexDirection: 'row',
@@ -597,8 +599,8 @@ const styles = StyleSheet.create({
   },
   aiBadgeText: {
     fontSize: 9,
-    fontWeight: '700',
-    color: '#6366F1',
+    fontWeight: '600',
+    color: '#1A73E8',
   },
   itemFileName: {
     fontSize: 12,

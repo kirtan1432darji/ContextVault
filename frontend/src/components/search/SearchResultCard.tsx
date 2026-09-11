@@ -155,12 +155,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   thumbContainer: {
-    width: 80,
-    height: 110,
-    borderRadius: 8,
+    width: 90,
+    height: 120,
+    borderRadius: 10,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#1E1E1E',
   },
   thumb: {
     width: '100%',

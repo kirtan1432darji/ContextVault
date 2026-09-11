@@ -93,8 +93,16 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
         >
           {/* Header Brand */}
           <View style={styles.header}>
-            <View style={[styles.logoBadge, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="scan" size={38} color={theme.colors.primary} />
+            <View
+              style={[
+                styles.logoBadge,
+                {
+                  backgroundColor: theme.isDark ? '#1E1E1E' : '#E8F0FE',
+                  borderColor: theme.isDark ? '#2E2E2E' : '#D2E3FC',
+                },
+              ]}
+            >
+              <Icon name="albums-outline" size={34} color={theme.colors.primary} />
             </View>
             <Text style={[styles.welcomeTitle, { color: theme.colors.textPrimary }]}>
               Welcome Back
@@ -122,7 +130,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: theme.isDark ? '#131B2E' : '#F8FAFC',
+                  backgroundColor: theme.colors.inputBackground,
                   borderColor: theme.colors.border,
                 },
               ]}
@@ -156,7 +164,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: theme.isDark ? '#131B2E' : '#F8FAFC',
+                  backgroundColor: theme.colors.inputBackground,
                   borderColor: theme.colors.border,
                 },
               ]}
@@ -294,17 +302,18 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   welcomeTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 6,
   },
   welcomeSubtitle: {
@@ -332,7 +341,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: 8,
     marginTop: 12,
   },
@@ -340,9 +349,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    height: 52,
+    height: 50,
   },
   inputIcon: {
     marginRight: 10,
@@ -365,29 +374,25 @@ const styles = StyleSheet.create({
   },
   rememberMeText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     marginLeft: 4,
   },
   forgotPasswordText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 54,
-    borderRadius: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 4,
+    height: 50,
+    borderRadius: 12,
+    elevation: 1,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
@@ -400,7 +405,7 @@ const styles = StyleSheet.create({
   },
   registerLink: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   dividerRow: {
     flexDirection: 'row',
@@ -414,20 +419,20 @@ const styles = StyleSheet.create({
   dividerText: {
     marginHorizontal: 12,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     letterSpacing: 0.8,
   },
   guestButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   guestButtonText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   guestDisclaimer: {
     fontSize: 12,

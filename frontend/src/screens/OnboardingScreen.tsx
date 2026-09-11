@@ -35,7 +35,7 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: '1',
     icon: 'shield-checkmark-outline',
-    iconColor: '#10B981',
+    iconColor: '#1E8E3E',
     title: 'Non-Destructive Privacy',
     subtitle:
       'Zero binary uploads. Your original photos never leave your device and are never modified, deleted, or compressed.',
@@ -46,7 +46,7 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: '2',
     icon: 'folder-open-outline',
-    iconColor: '#6366F1',
+    iconColor: '#1A73E8',
     title: 'Smart Hierarchical Folders',
     subtitle:
       'Receipts, Invoices, Bank Statements, Project Specs, and Shopping items are auto-filed with multi-tier taxonomic intelligence.',
@@ -57,7 +57,7 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: '3',
     icon: 'sparkles-outline',
-    iconColor: '#8B5CF6',
+    iconColor: '#0284C7',
     title: 'Context AI Assistant',
     subtitle:
       'Ask questions across your entire screenshot history, extract payment details, tasks, and executive summaries on demand.',
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 10,
     borderWidth: 1,
     width: '100%',
     justifyContent: 'center',
@@ -277,13 +277,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 4,
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 1,
   },
   buttonText: {
     color: '#FFFFFF',

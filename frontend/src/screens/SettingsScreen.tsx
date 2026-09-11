@@ -738,8 +738,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   subtitle: {
@@ -749,8 +750,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardHeader: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 12,
   },
   appearanceHeaderRow: {
@@ -784,8 +785,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 6,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    borderRadius: 10,
+    borderWidth: 1,
   },
   themeOptionLabel: {
     fontSize: 13,
@@ -830,7 +831,7 @@ const styles = StyleSheet.create({
   saveBtn: {
     flex: 1,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -838,18 +839,18 @@ const styles = StyleSheet.create({
   testBtn: {
     flex: 1,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '600',
     fontSize: 13,
   },
   testBtnText: {
-    fontWeight: '700',
+    fontWeight: '600',
     fontSize: 13,
   },
   legalRow: {
@@ -918,33 +919,33 @@ const styles = StyleSheet.create({
   guestPrimaryBtn: {
     flex: 1,
     flexDirection: 'row',
-    height: 44,
-    borderRadius: 12,
+    height: 42,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guestPrimaryBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   guestSecondaryBtn: {
     flex: 1,
     flexDirection: 'row',
-    height: 44,
-    borderRadius: 12,
+    height: 42,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guestSecondaryBtnText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   exitGuestBtn: {
     flexDirection: 'row',
-    height: 40,
-    borderRadius: 10,
+    height: 38,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

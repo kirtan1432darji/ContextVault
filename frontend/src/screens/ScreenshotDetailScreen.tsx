@@ -154,7 +154,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.actionBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -162,7 +162,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         <View style={styles.topBarActions}>
           <TouchableOpacity
             onPress={handleToggleFavorite}
-            style={[styles.actionBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+            style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
           >
             <Icon
               name={screenshot.isFavorite ? 'heart' : 'heart-outline'}
@@ -172,9 +172,9 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('ContextAIChat', { screenshotId: id })}
-            style={[styles.actionBtn, { backgroundColor: `${theme.colors.primary}20`, marginLeft: 8 }]}
+            style={[styles.actionBtn, { backgroundColor: `${theme.colors.primary}15`, borderColor: theme.colors.border, marginLeft: 8 }]}
           >
-            <Icon name="sparkles" size={20} color={theme.colors.primary} />
+            <Icon name="sparkles" size={18} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -355,7 +355,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
                 </Text>
                 <View style={styles.tagsWrap}>
                   {extractedEntities.urls.map((u, idx) => (
-                    <TagChip key={idx} label={u} colorHex="#6366F1" />
+                    <TagChip key={idx} label={u} colorHex={theme.colors.primary} />
                   ))}
                 </View>
               </View>
@@ -629,7 +629,8 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -642,7 +643,7 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     height: 320,
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 16,
   },
@@ -660,8 +661,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryName: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subcategoryName: {
     fontSize: 14,

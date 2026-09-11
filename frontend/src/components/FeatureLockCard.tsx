@@ -51,16 +51,16 @@ export const FeatureLockCard: React.FC<FeatureLockCardProps> = ({
     return (
       <ModernCard style={[styles.compactCard, { borderColor: theme.colors.cardBorder }, style]}>
         <View style={styles.compactRow}>
-          <View style={[styles.compactLockBadge, { backgroundColor: `${theme.colors.accent}20` }]}>
-            <Icon name={iconName} size={18} color={theme.colors.accent} />
+          <View style={[styles.compactLockBadge, { backgroundColor: `${theme.colors.primary}15` }]}>
+            <Icon name={iconName} size={18} color={theme.colors.primary} />
           </View>
           <View style={styles.compactTextContainer}>
             <View style={styles.badgeRow}>
               <Text style={[styles.compactTitle, { color: theme.colors.textPrimary }]}>
                 {title}
               </Text>
-              <View style={[styles.pillBadge, { backgroundColor: `${theme.colors.accent}20` }]}>
-                <Text style={[styles.pillText, { color: theme.colors.accent }]}>Login required</Text>
+              <View style={[styles.pillBadge, { backgroundColor: `${theme.colors.primary}12` }]}>
+                <Text style={[styles.pillText, { color: theme.colors.primary }]}>Login required</Text>
               </View>
             </View>
             <Text style={[styles.compactDesc, { color: theme.colors.textSecondary }]} numberOfLines={2}>
@@ -85,12 +85,12 @@ export const FeatureLockCard: React.FC<FeatureLockCardProps> = ({
     <ModernCard style={[styles.card, { borderColor: theme.colors.cardBorder }, style]}>
       {/* Top Badge & Lock Icon */}
       <View style={styles.headerRow}>
-        <View style={[styles.lockCircle, { backgroundColor: `${theme.colors.accent}20` }]}>
-          <Icon name={iconName} size={28} color={theme.colors.accent} />
+        <View style={[styles.lockCircle, { backgroundColor: `${theme.colors.primary}15` }]}>
+          <Icon name={iconName} size={26} color={theme.colors.primary} />
         </View>
-        <View style={[styles.pillBadge, { backgroundColor: `${theme.colors.accent}20` }]}>
-          <Icon name="shield-outline" size={12} color={theme.colors.accent} style={{ marginRight: 4 }} />
-          <Text style={[styles.pillText, { color: theme.colors.accent }]}>Login required</Text>
+        <View style={[styles.pillBadge, { backgroundColor: `${theme.colors.primary}12` }]}>
+          <Icon name="shield-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
+          <Text style={[styles.pillText, { color: theme.colors.primary }]}>Login required</Text>
         </View>
       </View>
 

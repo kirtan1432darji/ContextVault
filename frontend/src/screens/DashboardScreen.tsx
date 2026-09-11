@@ -256,7 +256,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('MainTabs', { screen: 'Settings' })}
-          style={[styles.iconButton, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.iconButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
           accessibilityRole="button"
           accessibilityLabel="Open ContextVault Settings"
         >
@@ -319,7 +319,7 @@ export const DashboardScreen: React.FC = () => {
             styles.heroSearchBar,
             {
               backgroundColor: theme.colors.card,
-              borderColor: `${theme.colors.primary}40`,
+              borderColor: theme.colors.border,
             },
           ]}
           activeOpacity={0.8}
@@ -1274,18 +1274,19 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   brandTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   brandSubtitle: {
     fontSize: 13,
     marginTop: 2,
   },
   iconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1293,16 +1294,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingVertical: 18,
-    marginBottom: 20,
+    paddingVertical: 14,
+    marginBottom: 16,
   },
   statCol: {
     alignItems: 'center',
     flex: 1,
   },
   statValue: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700',
     marginBottom: 4,
   },
   statLabel: {
@@ -1565,7 +1566,7 @@ const styles = StyleSheet.create({
   recentThumb: {
     width: 120,
     height: 160,
-    borderRadius: 12,
+    borderRadius: 10,
     marginBottom: 6,
   },
   recentCategory: {
@@ -1594,22 +1595,22 @@ const styles = StyleSheet.create({
   },
   folderCard: {
     width: '48%',
-    padding: 14,
-    borderRadius: 14,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 12,
-  },
-  folderIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 10,
   },
+  folderIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
   folderName: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
     marginBottom: 2,
   },
   folderPathText: {
@@ -1916,10 +1917,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1,
   },
   heroSearchLeft: {
     flexDirection: 'row',
@@ -1928,15 +1929,15 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   heroSparkleBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroSearchTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   aiPill: {
     paddingHorizontal: 6,

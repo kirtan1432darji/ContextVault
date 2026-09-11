@@ -469,9 +469,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 12,
@@ -481,20 +481,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   addRootBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
   },
@@ -514,11 +514,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   organizeBtnText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -529,6 +529,7 @@ const styles = StyleSheet.create({
   },
   folderCard: {
     padding: 12,
+    borderRadius: 12,
   },
   cardMainRow: {
     flexDirection: 'row',
@@ -545,8 +546,8 @@ const styles = StyleSheet.create({
     width: 24,
   },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -561,7 +562,7 @@ const styles = StyleSheet.create({
   },
   folderName: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   folderPath: {
     fontSize: 11,
@@ -571,12 +572,12 @@ const styles = StyleSheet.create({
   countBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
     marginRight: 8,
   },
   countBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   actionIcons: {
     flexDirection: 'row',
@@ -594,10 +595,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
+    borderRadius: 12,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 12,
   },
   emptySubtitle: {
@@ -615,11 +617,12 @@ const styles = StyleSheet.create({
   modalBox: {
     width: '100%',
     maxWidth: 380,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 20,
+    borderWidth: 1,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
   },
   modalSubtitle: {
@@ -653,7 +656,7 @@ const styles = StyleSheet.create({
   },
   modalBtnText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   folderThumbnailsRow: {
     marginTop: 10,
@@ -670,13 +673,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   folderThumbImage: {
-    width: 48,
-    height: 48,
+    width: 50,
+    height: 50,
     borderRadius: 8,
   },
   moreThumbsBadge: {
-    width: 48,
-    height: 48,
+    width: 50,
+    height: 50,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -684,6 +687,6 @@ const styles = StyleSheet.create({
   },
   moreThumbsText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });

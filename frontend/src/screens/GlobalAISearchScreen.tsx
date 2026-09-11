@@ -148,7 +148,7 @@ export const GlobalAISearchScreen: React.FC = () => {
           {navigation.canGoBack() && (
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+              style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
               accessibilityLabel="Go back"
             >
               <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
@@ -203,10 +203,9 @@ export const GlobalAISearchScreen: React.FC = () => {
                 styles.pinBtn,
                 {
                   backgroundColor: isCurrentQuerySaved
-                    ? `${theme.colors.primary}25`
-                    : theme.isDark
-                    ? '#1E293B'
-                    : '#F1F5F9',
+                    ? `${theme.colors.primary}20`
+                    : theme.colors.card,
+                  borderColor: theme.colors.border,
                 },
               ]}
               accessibilityLabel="Pin this search"
@@ -416,7 +415,8 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 22,
     borderWidth: 1,
   },
   input: {
@@ -446,7 +446,8 @@ const styles = StyleSheet.create({
   pinBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
