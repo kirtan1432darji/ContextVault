@@ -1,11 +1,13 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { DEVELOPER_MODE } from '../config/developerConfig';
+import { useAppTheme } from '../theme';
 
 export const DeveloperModeBanner: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const theme = useAppTheme();
   const [isMinimized, setIsMinimized] = useState(false);
 
   if (!DEVELOPER_MODE) {
@@ -15,32 +17,52 @@ export const DeveloperModeBanner: React.FC = () => {
   if (isMinimized) {
     return (
       <TouchableOpacity
-        style={[styles.minimizedPill, { top: Math.max(insets.top, 8) + 4 }]}
+        style={[
+          styles.minimizedPill,
+          {
+            top: Math.max(insets.top, 8) + 4,
+            backgroundColor: theme.isDark ? '#451A03' : '#FEF3C7',
+            borderColor: theme.isDark ? '#78350F' : '#FDE68A',
+          },
+        ]}
         onPress={() => setIsMinimized(false)}
         activeOpacity={0.8}
       >
-        <Icon name="construct" size={12} color="#92400E" style={{ marginRight: 4 }} />
-        <Text style={styles.minimizedText}>DEV MODE</Text>
+        <Icon name="construct" size={12} color={theme.isDark ? '#FDE68A' : '#92400E'} style={{ marginRight: 4 }} />
+        <Text style={[styles.minimizedText, { color: theme.isDark ? '#FDE68A' : '#92400E' }]}>DEV MODE</Text>
       </TouchableOpacity>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 8) }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          paddingTop: Math.max(insets.top, 8),
+          backgroundColor: theme.isDark ? '#451A03' : '#FEF3C7',
+          borderBottomColor: theme.isDark ? '#78350F' : '#FDE68A',
+        },
+      ]}
+    >
       <View style={styles.content}>
         <View style={styles.iconWrapper}>
-          <Icon name="construct" size={16} color="#92400E" />
+          <Icon name="construct" size={16} color={theme.isDark ? '#FDE68A' : '#92400E'} />
         </View>
         <View style={styles.textWrapper}>
-          <Text style={styles.title}>🛠 Developer Mode Enabled</Text>
-          <Text style={styles.subtitle}>Authentication Bypassed</Text>
+          <Text style={[styles.title, { color: theme.isDark ? '#FEF3C7' : '#92400E' }]}>
+            🛠 Developer Mode Enabled
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.isDark ? '#FDE68A' : '#B45309' }]}>
+            Authentication Bypassed
+          </Text>
         </View>
         <TouchableOpacity
-          style={styles.minimizeBtn}
+          style={[styles.minimizeBtn, { backgroundColor: theme.isDark ? '#78350F' : '#FDE68A' }]}
           onPress={() => setIsMinimized(true)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon name="chevron-up" size={14} color="#92400E" />
+          <Icon name="chevron-up" size={14} color={theme.isDark ? '#FDE68A' : '#92400E'} />
         </TouchableOpacity>
       </View>
     </View>

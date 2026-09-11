@@ -216,23 +216,82 @@ export const SettingsScreen: React.FC = () => {
 
       {/* Theme Section */}
       <ModernCard style={styles.card}>
-        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Appearance
-        </Text>
-        <View style={styles.row}>
+        <View style={styles.appearanceHeaderRow}>
           <View style={styles.rowLabelGroup}>
-            <Icon name="moon-outline" size={20} color={theme.colors.primary} />
-            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary }]}>
-              Dark Mode
+            <Icon name="color-palette-outline" size={20} color={theme.colors.primary} />
+            <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginBottom: 0, marginLeft: 8 }]}>
+              Appearance & Theme
             </Text>
           </View>
-          <Switch
-            value={themeMode === 'dark'}
-            onValueChange={(val) =>
-              useSettingsStore.getState().setThemeMode(val ? 'dark' : 'light')
-            }
-            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-          />
+          <View style={[styles.activeThemeBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
+            <Text style={[styles.activeThemeBadgeText, { color: theme.colors.primary }]}>
+              {themeMode === 'system'
+                ? `System (${theme.isDark ? 'Dark' : 'Light'})`
+                : themeMode === 'dark'
+                ? 'Dark'
+                : 'Light'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.themeSubtitle, { color: theme.colors.textSecondary }]}>
+          Choose how ContextVault appears on your device.
+        </Text>
+
+        <View style={styles.themeSelectorGroup}>
+          {(
+            [
+              { key: 'system', label: 'System', icon: 'phone-portrait-outline', desc: 'Match device' },
+              { key: 'light', label: 'Light', icon: 'sunny-outline', desc: 'Always light' },
+              { key: 'dark', label: 'Dark', icon: 'moon-outline', desc: 'Always dark' },
+            ] as const
+          ).map((item) => {
+            const isSelected = themeMode === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                activeOpacity={0.7}
+                onPress={() => useSettingsStore.getState().setThemeMode(item.key)}
+                style={[
+                  styles.themeOptionButton,
+                  {
+                    backgroundColor: isSelected
+                      ? `${theme.colors.primary}18`
+                      : theme.isDark
+                      ? '#131B2E'
+                      : '#F8FAFC',
+                    borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon
+                  name={item.icon}
+                  size={20}
+                  color={isSelected ? theme.colors.primary : theme.colors.textSecondary}
+                  style={{ marginBottom: 4 }}
+                />
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    {
+                      color: isSelected ? theme.colors.primary : theme.colors.textPrimary,
+                      fontWeight: isSelected ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.themeOptionDesc,
+                    { color: isSelected ? theme.colors.primary : theme.colors.textMuted },
+                  ]}
+                >
+                  {item.desc}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ModernCard>
 
@@ -605,6 +664,49 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginBottom: 12,
+  },
+  appearanceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  activeThemeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  activeThemeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  themeSubtitle: {
+    fontSize: 12,
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  themeSelectorGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  themeOptionButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  themeOptionLabel: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  themeOptionDesc: {
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',

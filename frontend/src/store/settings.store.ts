@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ApiConstants } from '../api/apiConstants';
-import { ThemeMode } from '../theme';
+import { ThemeMode } from '../theme/theme';
+import { StorageService } from '../utils/storage';
 
 interface SettingsState {
   themeMode: ThemeMode;
@@ -27,8 +28,10 @@ interface SettingsState {
   clearRecentSearches: () => void;
 }
 
+const initialThemeMode: ThemeMode = StorageService.getThemeMode();
+
 export const useSettingsStore = create<SettingsState>((set) => ({
-  themeMode: 'system',
+  themeMode: initialThemeMode,
   backendUrl: ApiConstants.defaultBaseUrl,
   autoScanOnLaunch: true,
   autoDetectScreenshots: true,
@@ -38,7 +41,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   lastScanTimestamp: null,
   recentSearches: [],
 
-  setThemeMode: (mode: ThemeMode) => set({ themeMode: mode }),
+  setThemeMode: (mode: ThemeMode) => {
+    StorageService.setThemeMode(mode);
+    set({ themeMode: mode });
+  },
   setBackendUrl: (url: string) => set({ backendUrl: url }),
   setAutoScanOnLaunch: (enabled: boolean) => set({ autoScanOnLaunch: enabled }),
   setAutoDetectScreenshots: (enabled: boolean) => set({ autoDetectScreenshots: enabled }),

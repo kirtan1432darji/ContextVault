@@ -1,6 +1,12 @@
 import { useColorScheme } from 'react-native';
+import {
+  DefaultTheme as NavigationDefaultTheme,
+  DarkTheme as NavigationDarkTheme,
+  Theme as NavigationTheme,
+} from '@react-navigation/native';
 import { Colors } from './colors';
 import { Typography } from './typography';
+import { useSettingsStore } from '../store/settings.store';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -79,9 +85,28 @@ export const getTheme = (isDark: boolean): AppTheme => {
   };
 };
 
-export const useAppTheme = (manualMode: ThemeMode = 'system'): AppTheme => {
+export const getNavigationTheme = (appTheme: AppTheme): NavigationTheme => {
+  const base = appTheme.isDark ? NavigationDarkTheme : NavigationDefaultTheme;
+  return {
+    ...base,
+    dark: appTheme.isDark,
+    colors: {
+      ...base.colors,
+      primary: appTheme.colors.primary,
+      background: appTheme.colors.background,
+      card: appTheme.colors.surface,
+      text: appTheme.colors.textPrimary,
+      border: appTheme.colors.border,
+      notification: appTheme.colors.secondary,
+    },
+  };
+};
+
+export const useAppTheme = (manualMode?: ThemeMode): AppTheme => {
+  const storeThemeMode = useSettingsStore((s) => s.themeMode);
   const systemScheme = useColorScheme();
-  const isDark =
-    manualMode === 'system' ? systemScheme === 'dark' : manualMode === 'dark';
+
+  const activeMode = manualMode ?? storeThemeMode ?? 'system';
+  const isDark = activeMode === 'system' ? systemScheme === 'dark' : activeMode === 'dark';
   return getTheme(isDark);
 };

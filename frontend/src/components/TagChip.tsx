@@ -29,9 +29,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         {
           backgroundColor: selected
             ? colorHex
-            : theme.isDark
-            ? '#1E293B'
-            : '#F1F5F9',
+            : theme.colors.surfaceVariant,
           borderColor: selected ? colorHex : theme.colors.border,
         },
       ]}
@@ -42,9 +40,7 @@ export const TagChip: React.FC<TagChipProps> = ({
           {
             color: selected
               ? '#FFFFFF'
-              : theme.isDark
-              ? '#E2E8F0'
-              : '#334155',
+              : theme.colors.textPrimary,
           },
         ]}
       >

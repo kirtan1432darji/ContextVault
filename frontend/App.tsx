@@ -1,20 +1,35 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { useAppTheme } from './src/theme';
-import { useSettingsStore } from './src/store/settings.store';
+import { ThemeProvider, useAppTheme, getNavigationTheme } from './src/theme';
 import { screenshotListenerService } from './src/services/ScreenshotListenerService';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { performanceAuditService } from './src/services/performanceAuditService';
 import { AuthProvider } from './src/context/AuthContext';
 import { DeveloperModeBanner } from './src/components/DeveloperModeBanner';
 
-export const App: React.FC = () => {
-  const themeMode = useSettingsStore((s) => s.themeMode);
-  const theme = useAppTheme(themeMode);
+const MainAppContent: React.FC = () => {
+  const theme = useAppTheme();
+  const navigationTheme = useMemo(() => getNavigationTheme(theme), [theme]);
 
+  return (
+    <>
+      <StatusBar
+        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.background}
+        animated={true}
+      />
+      <DeveloperModeBanner />
+      <NavigationContainer theme={navigationTheme}>
+        <RootNavigator />
+      </NavigationContainer>
+    </>
+  );
+};
+
+export const App: React.FC = () => {
   useEffect(() => {
     // Benchmark cold start completion
     performanceAuditService.initColdStart();
@@ -32,16 +47,11 @@ export const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <AuthProvider>
-          <StatusBar
-            barStyle={theme.isDark ? 'light-content' : 'dark-content'}
-            backgroundColor={theme.colors.background}
-          />
-          <DeveloperModeBanner />
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <MainAppContent />
+          </AuthProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
   );

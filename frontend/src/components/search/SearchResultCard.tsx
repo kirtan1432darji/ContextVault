@@ -43,7 +43,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
     <ModernCard style={styles.card}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.cardTouchable}>
         {/* Left Thumbnail */}
-        <View style={styles.thumbContainer}>
+        <View style={[styles.thumbContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
           <ScreenshotImageThumbnail filePath={item.filePath} style={styles.thumb} />
           {item.isFavorite && (
             <View style={styles.favBadge}>
@@ -73,7 +73,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
           </Text>
 
           {/* Match Reason Tag */}
-          <View style={[styles.matchReasonBadge, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}>
+          <View style={[styles.matchReasonBadge, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Icon name="sparkles-outline" size={10} color={theme.colors.accent} style={{ marginRight: 4 }} />
             <Text numberOfLines={1} style={[styles.matchReasonText, { color: theme.colors.textSecondary }]}>
               {item.matchReason}
@@ -115,9 +115,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
                         backgroundColor:
                           ent.type === 'amount'
                             ? `${theme.colors.success}18`
-                            : theme.isDark
-                            ? '#334155'
-                            : '#E2E8F0',
+                            : theme.colors.surfaceVariant,
                       },
                     ]}
                   >

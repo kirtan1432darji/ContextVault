@@ -102,7 +102,7 @@ export const AIAnswerCard: React.FC<AIAnswerCardProps> = ({
                 style={[
                   styles.entityChip,
                   {
-                    backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9',
+                    backgroundColor: theme.colors.surfaceVariant,
                     borderColor: theme.colors.border,
                   },
                 ]}
@@ -147,7 +147,7 @@ export const AIAnswerCard: React.FC<AIAnswerCardProps> = ({
                 style={[
                   styles.followUpChip,
                   {
-                    backgroundColor: theme.isDark ? '#1E293B80' : '#FFFFFF',
+                    backgroundColor: theme.isDark ? `${theme.colors.surfaceVariant}80` : theme.colors.card,
                     borderColor: `${theme.colors.primary}40`,
                   },
                 ]}

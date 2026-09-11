@@ -15,26 +15,32 @@ export const Colors = {
   light: {
     background: '#F8FAFC',
     surface: '#FFFFFF',
+    surfaceVariant: '#F1F5F9',
     card: '#FFFFFF',
+    cardBorder: '#E2E8F0',
     textPrimary: '#0F172A',
     textSecondary: '#64748B',
     textMuted: '#94A3B8',
     border: '#E2E8F0',
     divider: '#F1F5F9',
     tabBar: '#FFFFFF',
+    inputBackground: '#F8FAFC',
   },
 
   // Dark Theme
   dark: {
     background: '#0B0F19',
     surface: '#131B2E',
+    surfaceVariant: '#1E293B',
     card: '#1E293B',
+    cardBorder: '#334155',
     textPrimary: '#F8FAFC',
     textSecondary: '#94A3B8',
     textMuted: '#64748B',
     border: '#334155',
     divider: '#1E293B',
     tabBar: '#0E1424',
+    inputBackground: '#131B2E',
   },
 
   // Category Accent Colors
