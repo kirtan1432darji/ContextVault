@@ -19,6 +19,8 @@ import { screenshotRepository } from '../database/repositories/screenshotReposit
 import { ScreenshotModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
+import { useAuthStore } from '../store/auth.store';
+import { FeatureLockCard } from '../components/FeatureLockCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderContext'>;
 
@@ -26,15 +28,18 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   const { categoryId, categoryName } = route.params;
   const theme = useAppTheme();
 
+  const isGuest = useAuthStore((s) => s.isGuest);
   const folderContext = useFolderContextStore((s) => s.getFolderContext(categoryId, categoryName));
   const isGenerating = useFolderContextStore((s) => s.isGenerating);
   const [loading, setLoading] = useState(false);
   const [screenshots, setScreenshots] = useState<ScreenshotModel[]>([]);
 
   useEffect(() => {
-    loadContext();
+    if (!isGuest) {
+      loadContext();
+    }
     loadFolderScreenshots();
-  }, [categoryId]);
+  }, [categoryId, isGuest]);
 
   const loadFolderScreenshots = async () => {
     const items = await screenshotRepository.getScreenshotsByCategoryId(categoryId);
@@ -48,6 +53,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleManualRefresh = async () => {
+    if (isGuest) return;
     useFolderContextStore.getState().setGenerating(true);
     await folderContextService.generateFolderContext(categoryId, categoryName);
     await loadFolderScreenshots();
@@ -55,6 +61,39 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const structured = folderContext.structuredEntities;
+
+  if (isGuest) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          >
+            <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.titleBox}>
+            <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
+              {categoryName} Context
+            </Text>
+            <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+              Living Folder Intelligence
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+          <FeatureLockCard
+            title="Folder Context Locked"
+            featureName="Folder Context"
+            description="Sign in to ContextVault to generate AI summaries, extracted entities, action items, and timelines for your screenshots."
+            onSignIn={() => navigation.navigate('Login')}
+            onCreateAccount={() => navigation.navigate('Register')}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

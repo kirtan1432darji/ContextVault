@@ -23,13 +23,18 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useAppTheme();
-  const { login, loading, error } = useAuthStore();
+  const { login, loading, error, loginAsGuest } = useAuthStore();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleContinueAsGuest = () => {
+    loginAsGuest();
+    navigation.replace('MainTabs', { screen: 'Home' });
+  };
 
   useEffect(() => {
     const savedRemember = StorageService.getBoolean(StorageKeys.REMEMBER_ME);
@@ -225,6 +230,37 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+              <Text style={[styles.dividerText, { color: theme.colors.textMuted }]}>OR</Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+            </View>
+
+            {/* Continue as Guest Button (Sprint P0) */}
+            <TouchableOpacity
+              style={[
+                styles.guestButton,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? '#1F293750' : '#F8FAFC',
+                },
+              ]}
+              onPress={handleContinueAsGuest}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Continue as Guest without creating an account"
+            >
+              <Icon name="person-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.guestButtonText, { color: theme.colors.textPrimary }]}>
+                Continue as Guest
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.guestDisclaimer, { color: theme.colors.textSecondary }]}>
+              Use ContextVault without an account. Your data stays only on this device.
+            </Text>
           </View>
 
           {/* Footer - Register Navigation */}
@@ -365,5 +401,39 @@ const styles = StyleSheet.create({
   registerLink: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  guestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  guestButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  guestDisclaimer: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 10,
+    paddingHorizontal: 8,
   },
 });

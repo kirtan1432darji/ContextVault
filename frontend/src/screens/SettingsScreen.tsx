@@ -43,10 +43,30 @@ export const SettingsScreen: React.FC = () => {
 
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const exitGuestMode = useAuthStore((s) => s.exitGuestMode);
 
   const handleSaveUrl = () => {
     useSettingsStore.getState().setBackendUrl(urlInput);
     Alert.alert('Settings Saved', `Backend URL updated to ${urlInput}`);
+  };
+
+  const handleExitGuestMode = () => {
+    Alert.alert(
+      'Exit Guest Mode',
+      'Are you sure you want to return to the login screen? Your local screenshots and folders will be preserved.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit Guest Mode',
+          style: 'destructive',
+          onPress: () => {
+            exitGuestMode();
+            navigation.replace('Login');
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = () => {
@@ -185,34 +205,102 @@ export const SettingsScreen: React.FC = () => {
         </Text>
       </View>
 
-      {/* Account Section */}
-      <ModernCard style={styles.card}>
-        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Account & Session
-        </Text>
-        <View style={styles.row}>
-          <View style={styles.rowLabelGroup}>
-            <Icon name="person-circle-outline" size={32} color={theme.colors.primary} />
-            <View style={{ marginLeft: 10 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary }}>
-                {currentUser?.username || 'Active User'}
+      {/* Account Section: Guest Mode vs Authenticated User */}
+      {isGuest ? (
+        <ModernCard style={styles.card}>
+          <View style={styles.appearanceHeaderRow}>
+            <View style={styles.rowLabelGroup}>
+              <Icon name="person-outline" size={22} color={theme.colors.accent} />
+              <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginBottom: 0, marginLeft: 8 }]}>
+                Guest Account
               </Text>
-              <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
-                {currentUser?.email || 'Logged in via JWT'}
+            </View>
+            <View style={[styles.activeThemeBadge, { backgroundColor: `${theme.colors.accent}18` }]}>
+              <Text style={[styles.activeThemeBadgeText, { color: theme.colors.accent }]}>
+                Local Mode
               </Text>
             </View>
           </View>
+
+          <Text style={[styles.themeSubtitle, { color: theme.colors.textSecondary, marginBottom: 16 }]}>
+            You are browsing as a guest. Screenshots and smart folders remain private on this device. Sign in to unlock AI chat and cloud backups.
+          </Text>
+
+          {/* Action Buttons: Sign In, Create Account, Exit Guest Mode */}
+          <View style={styles.guestBtnGroup}>
+            <TouchableOpacity
+              style={[styles.guestPrimaryBtn, { backgroundColor: theme.colors.primary }]}
+              onPress={() => navigation.navigate('Login')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with your account"
+            >
+              <Icon name="log-in-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.guestPrimaryBtnText}>Sign In</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.guestSecondaryBtn,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? '#1F2937' : '#F8FAFC',
+                },
+              ]}
+              onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Create a new ContextVault account"
+            >
+              <Icon name="person-add-outline" size={16} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
+              <Text style={[styles.guestSecondaryBtnText, { color: theme.colors.textPrimary }]}>
+                Create Account
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
-            style={[styles.logoutButton, { borderColor: theme.colors.error }]}
-            onPress={handleLogout}
+            style={[styles.exitGuestBtn, { borderColor: theme.colors.border }]}
+            onPress={handleExitGuestMode}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Exit Guest Mode and return to login"
           >
-            <Icon name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 4 }} />
-            <Text style={{ color: theme.colors.error, fontSize: 13, fontWeight: '700' }}>
-              Sign Out
+            <Icon name="arrow-back-outline" size={15} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={[styles.exitGuestBtnText, { color: theme.colors.textSecondary }]}>
+              Exit Guest Mode
             </Text>
           </TouchableOpacity>
-        </View>
-      </ModernCard>
+        </ModernCard>
+      ) : (
+        <ModernCard style={styles.card}>
+          <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+            Account & Session
+          </Text>
+          <View style={styles.row}>
+            <View style={styles.rowLabelGroup}>
+              <Icon name="person-circle-outline" size={32} color={theme.colors.primary} />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary }}>
+                  {currentUser?.username || 'Active User'}
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                  {currentUser?.email || 'Logged in via JWT'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.logoutButton, { borderColor: theme.colors.error }]}
+              onPress={handleLogout}
+            >
+              <Icon name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 4 }} />
+              <Text style={{ color: theme.colors.error, fontSize: 13, fontWeight: '700' }}>
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ModernCard>
+      )}
 
       {/* Theme Section */}
       <ModernCard style={styles.card}>
@@ -820,6 +908,50 @@ const styles = StyleSheet.create({
   },
   diagValue: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  guestBtnGroup: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  guestPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  guestSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestSecondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  exitGuestBtn: {
+    flexDirection: 'row',
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  exitGuestBtnText: {
+    fontSize: 13,
     fontWeight: '600',
   },
 });

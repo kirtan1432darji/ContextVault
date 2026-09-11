@@ -28,6 +28,8 @@ import { screenshotListenerService } from '../services/ScreenshotListenerService
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
+import { useAuthStore } from '../store/auth.store';
+import { FeatureLockCard, GuestUpgradeBottomSheet } from '../components';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -51,6 +53,16 @@ export const DashboardScreen: React.FC = () => {
 
   // Sprint RN-08 Global AI Search State
   const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
+
+  // Sprint P0 Guest Mode State
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [lockedFeatureName, setLockedFeatureName] = useState<string>('AI Features');
+
+  const handleRestrictedAction = useCallback((featureName: string) => {
+    setLockedFeatureName(featureName);
+    setGuestModalVisible(true);
+  }, []);
 
   const [isOrganizing, setIsOrganizing] = useState(false);
 
@@ -251,6 +263,53 @@ export const DashboardScreen: React.FC = () => {
           <Icon name="cog-outline" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
       </View>
+
+      {/* Guest Mode Banner (Sprint P0) */}
+      {isGuest && (
+        <View
+          style={[
+            styles.guestBanner,
+            {
+              backgroundColor: theme.isDark ? '#1F2937' : '#FEF3C7',
+              borderColor: theme.isDark ? '#374151' : '#FDE68A',
+            },
+          ]}
+        >
+          <View style={styles.guestBannerLeft}>
+            <View
+              style={[
+                styles.guestBadgeIcon,
+                { backgroundColor: theme.isDark ? '#374151' : '#FBBF2420' },
+              ]}
+            >
+              <Icon name="person-outline" size={18} color={theme.colors.accent} />
+            </View>
+            <View style={styles.guestBannerTextGroup}>
+              <View style={styles.rowCenter}>
+                <Text style={[styles.guestBannerTitle, { color: theme.colors.textPrimary }]}>
+                  Guest Mode
+                </Text>
+                <View style={[styles.guestLockPill, { backgroundColor: `${theme.colors.accent}20` }]}>
+                  <Icon name="lock-closed" size={10} color={theme.colors.accent} style={{ marginRight: 3 }} />
+                  <Text style={[styles.guestLockPillText, { color: theme.colors.accent }]}>Local Only</Text>
+                </View>
+              </View>
+              <Text style={[styles.guestBannerSubtitle, { color: theme.colors.textSecondary }]}>
+                AI features are locked until you sign in.
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.guestBannerSignInBtn, { backgroundColor: theme.colors.primary }]}
+            onPress={() => navigation.navigate('Login')}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Sign in to unlock AI features"
+          >
+            <Text style={styles.guestBannerSignInBtnText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* 2. Ask ContextVault Hero Search Bar (Sprint RN-08) */}
       <View style={styles.heroSearchSection}>
@@ -596,10 +655,29 @@ export const DashboardScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-          <View style={[styles.avgTimePill, { backgroundColor: `${theme.colors.success}15` }]}>
-            <Icon name="shield-checkmark" size={12} color={theme.colors.success} style={{ marginRight: 3 }} />
-            <Text style={[styles.avgTimeText, { color: theme.colors.success }]}>Active</Text>
-          </View>
+          <TouchableOpacity
+            onPress={() => isGuest && handleRestrictedAction('AI Sync')}
+            disabled={!isGuest}
+            style={[
+              styles.avgTimePill,
+              { backgroundColor: isGuest ? `${theme.colors.accent}15` : `${theme.colors.success}15` },
+            ]}
+          >
+            <Icon
+              name={isGuest ? 'lock-closed' : 'shield-checkmark'}
+              size={12}
+              color={isGuest ? theme.colors.accent : theme.colors.success}
+              style={{ marginRight: 3 }}
+            />
+            <Text
+              style={[
+                styles.avgTimeText,
+                { color: isGuest ? theme.colors.accent : theme.colors.success },
+              ]}
+            >
+              {isGuest ? 'Login required' : 'Active'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.ocrMetricsGrid}>
@@ -637,8 +715,16 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 6. Sprint RN-07: Continue AI Conversation Card */}
-      {recentChats.length > 0 ? (
+      {/* 6. Sprint RN-07: Context AI Chat / Feature Lock */}
+      {isGuest ? (
+        <FeatureLockCard
+          title="Context AI Chat Locked"
+          featureName="Context AI Chat"
+          description="Sign in to chat with screenshots inside folders, ask natural language questions, and extract entities."
+          onSignIn={() => navigation.navigate('Login')}
+          onCreateAccount={() => navigation.navigate('Register')}
+        />
+      ) : recentChats.length > 0 ? (
         <ModernCard style={styles.chatResumeCard}>
           <View style={styles.chatResumeHeader}>
             <View style={styles.rowCenter}>
@@ -818,12 +904,16 @@ export const DashboardScreen: React.FC = () => {
               const catName = cat ? cat.name : item.categoryName;
               return (
                 <TouchableOpacity
-                  onPress={() =>
+                  onPress={() => {
+                    if (isGuest) {
+                      handleRestrictedAction('Folder Context');
+                      return;
+                    }
                     navigation.navigate('FolderContext', {
                       categoryId: item.categoryId,
                       categoryName: catName,
-                    })
-                  }
+                    });
+                  }}
                   style={[styles.recentContextCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
                 >
                   <View style={styles.recentContextTop}>
@@ -1149,6 +1239,11 @@ export const DashboardScreen: React.FC = () => {
           </View>
         )}
       </View>
+      <GuestUpgradeBottomSheet
+        visible={guestModalVisible}
+        onDismiss={() => setGuestModalVisible(false)}
+        featureName={lockedFeatureName}
+      />
     </ScrollView>
   );
 };
@@ -1866,5 +1961,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     maxWidth: 140,
+  },
+  guestBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  guestBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  guestBadgeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestBannerTextGroup: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  guestBannerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  guestLockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  guestLockPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  guestBannerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  guestBannerSignInBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestBannerSignInBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

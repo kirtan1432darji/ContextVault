@@ -20,6 +20,9 @@ export const StorageKeys = {
   REMEMBER_ME: 'cv_auth_remember_me',
   REMEMBERED_IDENTIFIER: 'cv_auth_remembered_identifier',
   IS_ONBOARDED: 'cv_app_is_onboarded',
+  IS_GUEST: 'is_guest',
+  IS_AUTHENTICATED: 'is_authenticated',
+  GUEST_SESSION_CREATED_AT: 'guest_session_created_at',
 };
 
 export const StorageService = {
@@ -135,5 +138,27 @@ export const StorageService = {
     this.removeItem(StorageKeys.ACCESS_TOKEN);
     this.removeItem(StorageKeys.REFRESH_TOKEN);
     this.removeItem(StorageKeys.USER_PROFILE);
+    this.setBoolean(StorageKeys.IS_AUTHENTICATED, false);
+  },
+
+  // Guest Session Helpers
+  isGuest(): boolean {
+    return this.getBoolean(StorageKeys.IS_GUEST);
+  },
+
+  setGuestSession(): void {
+    this.setBoolean(StorageKeys.IS_GUEST, true);
+    this.setBoolean(StorageKeys.IS_AUTHENTICATED, false);
+    this.setString(StorageKeys.GUEST_SESSION_CREATED_AT, new Date().toISOString());
+  },
+
+  clearGuestSession(): void {
+    this.setBoolean(StorageKeys.IS_GUEST, false);
+    this.removeItem(StorageKeys.IS_GUEST);
+    this.removeItem(StorageKeys.GUEST_SESSION_CREATED_AT);
+  },
+
+  getGuestSessionCreatedAt(): string | null {
+    return this.getString(StorageKeys.GUEST_SESSION_CREATED_AT);
   },
 };

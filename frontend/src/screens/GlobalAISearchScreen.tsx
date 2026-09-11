@@ -25,6 +25,8 @@ import {
   RecentAndSavedSearches,
 } from '../components/search';
 import { EmptyStateView } from '../components/EmptyStateView';
+import { FeatureLockCard } from '../components/FeatureLockCard';
+import { useAuthStore } from '../store/auth.store';
 import { GlobalSearchResultItem } from '../models';
 
 type RouteProps = RouteProp<RootStackParamList, 'GlobalAISearch'>;
@@ -46,6 +48,7 @@ export const GlobalAISearchScreen: React.FC = () => {
   const recentSearches = useSearchStore((s) => s.recentSearches);
   const savedSearches = useSearchStore((s) => s.savedSearches);
   const isVoiceModalOpen = useSearchStore((s) => s.isVoiceModalOpen);
+  const isGuest = useAuthStore((s) => s.isGuest);
 
   const setQuery = useSearchStore((s) => s.setQuery);
   const setFilter = useSearchStore((s) => s.setFilter);
@@ -217,8 +220,18 @@ export const GlobalAISearchScreen: React.FC = () => {
           )}
         </View>
 
+        {/* Guest Search Mode Banner */}
+        {isGuest && (
+          <View style={[styles.offlineBanner, { backgroundColor: `${theme.colors.accent}15` }]}>
+            <Icon name="lock-closed" size={14} color={theme.colors.accent} style={{ marginRight: 6 }} />
+            <Text style={[styles.offlineBannerText, { color: theme.colors.accent }]}>
+              Guest Mode: Searching on-device OCR & SQLite knowledge base. Cloud AI is locked.
+            </Text>
+          </View>
+        )}
+
         {/* Offline Indicator Banner */}
-        {isOffline && (
+        {!isGuest && isOffline && (
           <View style={[styles.offlineBanner, { backgroundColor: `${theme.colors.warning}15` }]}>
             <Icon name="cloud-offline-outline" size={14} color={theme.colors.warning} style={{ marginRight: 6 }} />
             <Text style={[styles.offlineBannerText, { color: theme.colors.warning }]}>
@@ -259,13 +272,23 @@ export const GlobalAISearchScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={
               <View>
-                {/* AI Answer Card */}
-                {aiAnswer && (
-                  <AIAnswerCard
-                    data={aiAnswer}
-                    loading={loading}
-                    onSelectFollowUp={handleSelectSuggestion}
+                {/* AI Answer Card / Lock */}
+                {isGuest ? (
+                  <FeatureLockCard
+                    compact
+                    title="Ask ContextVault AI Locked"
+                    description="Sign in to unlock natural language AI summaries and cross-folder synthesis."
+                    onSignIn={() => navigation.navigate('Login')}
+                    onCreateAccount={() => navigation.navigate('Register')}
                   />
+                ) : (
+                  aiAnswer && (
+                    <AIAnswerCard
+                      data={aiAnswer}
+                      loading={loading}
+                      onSelectFollowUp={handleSelectSuggestion}
+                    />
+                  )
                 )}
 
                 {/* View Mode Switcher (Relevance vs Grouped) */}

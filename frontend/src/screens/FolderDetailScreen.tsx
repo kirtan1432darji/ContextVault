@@ -23,6 +23,8 @@ import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { EmptyStateView } from '../components/EmptyStateView';
 import { ModernCard } from '../components/ModernCard';
 import { ScreenshotModel } from '../models';
+import { useAuthStore } from '../store/auth.store';
+import { GuestUpgradeBottomSheet } from '../components/GuestUpgradeBottomSheet';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderDetail'>;
 
@@ -44,6 +46,16 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedSubcat, setSelectedSubcat] = useState<string>('all');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [searchInFolder, setSearchInFolder] = useState('');
+
+  // Guest Mode State
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [lockedFeatureName, setLockedFeatureName] = useState('AI Features');
+
+  const handleRestrictedAction = (feature: string) => {
+    setLockedFeatureName(feature);
+    setGuestModalVisible(true);
+  };
 
   // Move Modal State
   const [moveModalVisible, setMoveModalVisible] = useState(false);
@@ -195,9 +207,13 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
         <View style={styles.topActionsRow}>
           <TouchableOpacity
-            onPress={() =>
-              navigation.navigate('ContextAIChat', { categoryId, categoryName })
-            }
+            onPress={() => {
+              if (isGuest) {
+                handleRestrictedAction('Context AI Chat');
+                return;
+              }
+              navigation.navigate('ContextAIChat', { categoryId, categoryName });
+            }}
             style={[styles.askAiBtn, { backgroundColor: theme.colors.primary }]}
             accessibilityLabel="Ask Context AI about this folder"
           >
@@ -206,9 +222,13 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() =>
-              navigation.navigate('FolderContext', { categoryId, categoryName })
-            }
+            onPress={() => {
+              if (isGuest) {
+                handleRestrictedAction('Folder Context');
+                return;
+              }
+              navigation.navigate('FolderContext', { categoryId, categoryName });
+            }}
             style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
             accessibilityLabel="View Living AI Context"
           >
@@ -396,6 +416,12 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      <GuestUpgradeBottomSheet
+        visible={guestModalVisible}
+        onDismiss={() => setGuestModalVisible(false)}
+        featureName={lockedFeatureName}
+      />
     </View>
   );
 };

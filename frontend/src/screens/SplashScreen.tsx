@@ -41,14 +41,17 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      // 2. Production Authentication Flow
+      // 2. Production Authentication & Guest Flow
       const delayPromise = new Promise((res) => setTimeout(res, 1200));
-      const [isAuthenticated] = await Promise.all([
+      const [sessionLoaded] = await Promise.all([
         loadSession(),
         delayPromise,
       ]);
 
-      if (isAuthenticated) {
+      const isGuest = StorageService.isGuest() || useAuthStore.getState().isGuest;
+      const isAuthenticated = useAuthStore.getState().isAuthenticated;
+
+      if (sessionLoaded || isAuthenticated || isGuest) {
         navigation.replace('MainTabs', { screen: 'Home' });
         return;
       }

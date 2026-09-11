@@ -25,7 +25,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const canAccessProtected = DEVELOPER_MODE || isAuthenticated;
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const canAccessProtected = DEVELOPER_MODE || isAuthenticated || isGuest;
 
   return (
     <Stack.Navigator

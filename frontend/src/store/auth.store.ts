@@ -15,6 +15,7 @@ export interface AuthState {
   currentUser: UserModel | null;
   user: UserModel | null; // Alias for backward compatibility
   isAuthenticated: boolean;
+  isGuest: boolean;
   loading: boolean;
   isLoading: boolean; // Compatibility alias
   isInitializing: boolean;
@@ -24,6 +25,8 @@ export interface AuthState {
   // Actions required by sprint specification
   login: (payload: LoginPayload) => Promise<boolean>;
   register: (payload: RegisterPayload) => Promise<boolean>;
+  loginAsGuest: () => void;
+  exitGuestMode: () => void;
   logout: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   loadSession: () => Promise<boolean>;
@@ -40,13 +43,45 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   currentUser: DEVELOPER_MODE ? MOCK_DEVELOPER_USER : null,
   user: DEVELOPER_MODE ? MOCK_DEVELOPER_USER : null,
   isAuthenticated: DEVELOPER_MODE ? true : false,
+  isGuest: DEVELOPER_MODE ? false : StorageService.isGuest(),
   loading: false,
   isLoading: false,
   isInitializing: DEVELOPER_MODE ? false : true,
   isDeveloperMode: DEVELOPER_MODE,
   error: null,
 
+  loginAsGuest: () => {
+    StorageService.setGuestSession();
+    set({
+      isGuest: true,
+      isAuthenticated: false,
+      accessToken: null,
+      refreshToken: null,
+      currentUser: null,
+      user: null,
+      loading: false,
+      isLoading: false,
+      error: null,
+    });
+  },
+
+  exitGuestMode: () => {
+    StorageService.clearGuestSession();
+    set({
+      isGuest: false,
+      isAuthenticated: false,
+      accessToken: null,
+      refreshToken: null,
+      currentUser: null,
+      user: null,
+      loading: false,
+      isLoading: false,
+      error: null,
+    });
+  },
+
   setTokens: (accessToken: string, refreshToken: string, user?: UserModel) => {
+    StorageService.clearGuestSession();
     StorageService.setAccessToken(accessToken);
     StorageService.setRefreshToken(refreshToken);
     if (user) {
@@ -59,6 +94,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentUser: resolvedUser,
       user: resolvedUser,
       isAuthenticated: true,
+      isGuest: false,
       loading: false,
       isLoading: false,
       error: null,
@@ -67,12 +103,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearSession: () => {
     StorageService.clearAuthSession();
+    StorageService.clearGuestSession();
     set({
       accessToken: null,
       refreshToken: null,
       currentUser: null,
       user: null,
       isAuthenticated: false,
+      isGuest: false,
       loading: false,
       isLoading: false,
       error: null,
@@ -91,6 +129,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentUser: MOCK_DEVELOPER_USER,
         user: MOCK_DEVELOPER_USER,
         isAuthenticated: true,
+        isGuest: false,
         loading: false,
         isLoading: false,
         isInitializing: false,
@@ -101,6 +140,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     set({ isInitializing: true, error: null });
+
+    if (StorageService.isGuest()) {
+      set({
+        isGuest: true,
+        isAuthenticated: false,
+        accessToken: null,
+        refreshToken: null,
+        currentUser: null,
+        user: null,
+        loading: false,
+        isLoading: false,
+        isInitializing: false,
+        error: null,
+      });
+      return true;
+    }
     try {
       const storedAccessToken = StorageService.getAccessToken();
       const storedRefreshToken = StorageService.getRefreshToken();
@@ -195,12 +250,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (payload: LoginPayload) => {
     if (DEVELOPER_MODE) {
+      StorageService.clearGuestSession();
       set({
         accessToken: MOCK_DEV_ACCESS_TOKEN,
         refreshToken: MOCK_DEV_REFRESH_TOKEN,
         currentUser: MOCK_DEVELOPER_USER,
         user: MOCK_DEVELOPER_USER,
         isAuthenticated: true,
+        isGuest: false,
         loading: false,
         isLoading: false,
         isDeveloperMode: true,
@@ -214,6 +271,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (result.isSuccess && result.data) {
       const { accessToken, refreshToken, user } = result.data;
+      StorageService.clearGuestSession();
       StorageService.setAccessToken(accessToken);
       StorageService.setRefreshToken(refreshToken);
       if (user) {
@@ -226,6 +284,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentUser: user ?? null,
         user: user ?? null,
         isAuthenticated: true,
+        isGuest: false,
         loading: false,
         isLoading: false,
         error: null,
@@ -243,12 +302,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   register: async (payload: RegisterPayload) => {
     if (DEVELOPER_MODE) {
+      StorageService.clearGuestSession();
       set({
         accessToken: MOCK_DEV_ACCESS_TOKEN,
         refreshToken: MOCK_DEV_REFRESH_TOKEN,
         currentUser: MOCK_DEVELOPER_USER,
         user: MOCK_DEVELOPER_USER,
         isAuthenticated: true,
+        isGuest: false,
         loading: false,
         isLoading: false,
         isDeveloperMode: true,
@@ -262,6 +323,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (result.isSuccess && result.data) {
       const { accessToken, refreshToken, user } = result.data;
+      StorageService.clearGuestSession();
       StorageService.setAccessToken(accessToken);
       StorageService.setRefreshToken(refreshToken);
       if (user) {
@@ -274,6 +336,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentUser: user ?? null,
         user: user ?? null,
         isAuthenticated: true,
+        isGuest: false,
         loading: false,
         isLoading: false,
         error: null,

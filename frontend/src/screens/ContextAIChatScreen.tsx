@@ -27,6 +27,9 @@ import {
   DateSeparator,
 } from '../components/chat';
 import { ChatMessageModel, ChatMessageCitation } from '../models';
+import { useAuthStore } from '../store/auth.store';
+import { FeatureLockCard } from '../components/FeatureLockCard';
+import { SafeAreaView, StatusBar } from 'react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ContextAIChat'>;
 
@@ -51,10 +54,14 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize conversation on mount or folder change
+  const isGuest = useAuthStore((s) => s.isGuest);
+
+  // Initialize conversation on mount or folder change (only if not guest)
   useEffect(() => {
-    initConversation(categoryId, categoryName, screenshotId);
-  }, [categoryId, categoryName, screenshotId]);
+    if (!isGuest) {
+      initConversation(categoryId, categoryName, screenshotId);
+    }
+  }, [categoryId, categoryName, screenshotId, isGuest]);
 
   // Auto-scroll to bottom when messages or typing state changes
   useEffect(() => {
@@ -124,6 +131,48 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return items;
   }, [messages]);
+
+  if (isGuest) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: theme.colors.card,
+              borderBottomColor: theme.colors.border,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          >
+            <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleBox}>
+            <Text numberOfLines={1} style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
+              {categoryName} AI
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+              Context AI Chat
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+          <FeatureLockCard
+            title="Context AI Chat Locked"
+            featureName="Context AI Chat"
+            description="Sign in to ContextVault to chat with screenshots inside this folder, ask natural language questions, and extract entities."
+            onSignIn={() => navigation.navigate('Login')}
+            onCreateAccount={() => navigation.navigate('Register')}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView

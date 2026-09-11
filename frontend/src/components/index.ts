@@ -9,3 +9,5 @@ export * from './ErrorBoundary';
 export * from './chat';
 export * from './search';
 export * from './DeveloperModeBanner';
+export * from './FeatureLockCard';
+export * from './GuestUpgradeBottomSheet';
