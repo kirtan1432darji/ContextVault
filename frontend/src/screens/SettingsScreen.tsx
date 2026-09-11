@@ -441,6 +441,20 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => navigation.navigate('NotificationCenter')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="file-tray-full-outline" size={20} color={theme.colors.primary} />
+            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary }]}>
+              Notification Center Inbox
+            </Text>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+
         <View style={styles.row}>
           <View style={styles.rowLabelGroup}>
             <Icon name="sparkles-outline" size={20} color="#10B981" />

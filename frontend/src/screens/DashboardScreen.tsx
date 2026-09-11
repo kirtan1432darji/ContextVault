@@ -29,6 +29,7 @@ import { screenshotRepository } from '../database/repositories/screenshotReposit
 import { chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
 import { useAuthStore } from '../store/auth.store';
+import { useNotificationStore } from '../store/notification.store';
 import { FeatureLockCard, GuestUpgradeBottomSheet } from '../components';
 
 export const DashboardScreen: React.FC = () => {
@@ -65,6 +66,7 @@ export const DashboardScreen: React.FC = () => {
   }, []);
 
   const [isOrganizing, setIsOrganizing] = useState(false);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   // Sprint RN-03 Scanner Store State
   const isListening = useScannerStore((s) => s.isListening);
@@ -254,14 +256,39 @@ export const DashboardScreen: React.FC = () => {
             Automatic Screenshot Intelligence
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('MainTabs', { screen: 'Settings' })}
-          style={[styles.iconButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-          accessibilityRole="button"
-          accessibilityLabel="Open ContextVault Settings"
-        >
-          <Icon name="cog-outline" size={20} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('NotificationCenter')}
+            style={[
+              styles.iconButton,
+              {
+                backgroundColor: theme.colors.card,
+                borderColor: theme.colors.border,
+                marginRight: 8,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Open Notification Center"
+          >
+            <Icon name="notifications-outline" size={20} color={theme.colors.textPrimary} />
+            {unreadCount > 0 && (
+              <View style={[styles.headerUnreadBadge, { backgroundColor: theme.colors.primary }]}>
+                <Text style={styles.headerUnreadBadgeText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('MainTabs', { screen: 'Settings' })}
+            style={[styles.iconButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open ContextVault Settings"
+          >
+            <Icon name="cog-outline" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Guest Mode Banner (Sprint P0) */}
@@ -2042,5 +2069,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  headerUnreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  headerUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

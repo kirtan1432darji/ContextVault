@@ -17,6 +17,7 @@ import {
   GlobalAISearchScreen,
   StorageScreen,
   QADebugPanelScreen,
+  NotificationCenterScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -90,6 +91,11 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="QADebugPanel"
             component={QADebugPanelScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="NotificationCenter"
+            component={NotificationCenterScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>

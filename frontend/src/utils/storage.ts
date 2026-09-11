@@ -23,6 +23,7 @@ export const StorageKeys = {
   IS_GUEST: 'is_guest',
   IS_AUTHENTICATED: 'is_authenticated',
   GUEST_SESSION_CREATED_AT: 'guest_session_created_at',
+  NOTIFICATIONS: 'cv_vault_notifications',
 };
 
 export const StorageService = {

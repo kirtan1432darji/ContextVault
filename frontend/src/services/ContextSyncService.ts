@@ -127,6 +127,14 @@ export class ContextSyncService {
           `Successfully synchronized ${screenshot.fileName} -> ${categoryName} (${Math.round(confidence * 100)}%)`
         );
 
+        // Dispatch AI Sync notification
+        notificationService.notifyAISyncCompleted(categoryName, suggestedTags.length).catch(() => {});
+
+        // If confidence is low, dispatch Needs Review notification
+        if (confidence < 0.85) {
+          notificationService.notifyPendingReview(1).catch(() => {});
+        }
+
         return Result.success(classificationResult);
       }
 

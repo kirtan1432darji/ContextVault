@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { loggerService } from './loggerService';
+import { useNotificationStore } from '../store/notification.store';
 
 export interface NotificationChannelConfig {
   id: string;
@@ -31,6 +32,12 @@ export const NOTIFICATION_CHANNELS: Record<string, NotificationChannelConfig> = 
     id: 'review_channel',
     name: 'Pending Review',
     description: 'Reminders for low confidence items needing review',
+    importance: 'default',
+  },
+  CONTEXT: {
+    id: 'context_channel',
+    name: 'Folder Context',
+    description: 'Alerts when living AI folder context is generated',
     importance: 'default',
   },
 };
@@ -79,6 +86,14 @@ export class NotificationService {
       title,
       body,
     });
+
+    useNotificationStore.getState().addNotification({
+      type: 'sync',
+      title,
+      body,
+      targetScreen: 'FolderDetail',
+      targetParams: { categoryName },
+    });
   }
 
   /**
@@ -94,13 +109,19 @@ export class NotificationService {
       title,
       body,
     });
+
+    useNotificationStore.getState().addNotification({
+      type: 'screenshot',
+      title,
+      body,
+    });
   }
 
   /**
    * Dispatches a notification when OCR completes successfully.
    */
   async notifyOCRCompleted(fileName: string, wordsCount?: number): Promise<void> {
-    const title = 'Text Extracted';
+    const title = 'OCR Text Extracted';
     const countInfo = wordsCount ? ` (${wordsCount} words)` : '';
     const body = `Processed text for "${fileName}"${countInfo}. Auto-filing...`;
 
@@ -110,21 +131,35 @@ export class NotificationService {
       title,
       body,
     });
+
+    useNotificationStore.getState().addNotification({
+      type: 'ocr',
+      title,
+      body,
+    });
   }
 
   /**
    * Dispatches a notification when knowledge sync or classification completes.
    */
   async notifyAISyncCompleted(folderName: string, entityCount?: number): Promise<void> {
-    const title = 'Context AI Updated';
-    const entityInfo = entityCount ? ` Found ${entityCount} entities.` : '';
-    const body = `Folder "${folderName}" context enriched.${entityInfo}`;
+    const title = 'AI Sync Completed';
+    const entityInfo = entityCount ? ` Enriched ${entityCount} entities.` : '';
+    const body = `Folder "${folderName}" synchronized with backend AI.${entityInfo}`;
 
     loggerService.info('Sync', `[Notification] ${title}: ${body}`);
     this.dispatchLocalNotification({
       channelId: NOTIFICATION_CHANNELS.SYNC.id,
       title,
       body,
+    });
+
+    useNotificationStore.getState().addNotification({
+      type: 'sync',
+      title,
+      body,
+      targetScreen: 'FolderDetail',
+      targetParams: { categoryName: folderName },
     });
   }
 
@@ -133,7 +168,7 @@ export class NotificationService {
    */
   async notifyPendingReview(count: number): Promise<void> {
     if (count <= 0) return;
-    const title = 'Review Screenshots';
+    const title = 'Needs Review';
     const body = `${count} screenshot${count === 1 ? '' : 's'} flagged for quick verification.`;
 
     loggerService.info('UI', `[Notification] ${title}: ${body}`);
@@ -141,6 +176,39 @@ export class NotificationService {
       channelId: NOTIFICATION_CHANNELS.REVIEW.id,
       title,
       body,
+    });
+
+    useNotificationStore.getState().addNotification({
+      type: 'review',
+      title,
+      body,
+      targetScreen: 'Dashboard',
+    });
+  }
+
+  /**
+   * Dispatches a notification when living AI folder context is generated.
+   */
+  async notifyContextGenerated(folderName: string, summarySnippet?: string): Promise<void> {
+    const title = 'Folder Context Generated';
+    const body =
+      summarySnippet && summarySnippet.length > 80
+        ? `${summarySnippet.substring(0, 80)}...`
+        : summarySnippet || `AI summary and key entities generated for "${folderName}".`;
+
+    loggerService.info('Sync', `[Notification] ${title}: ${body}`);
+    this.dispatchLocalNotification({
+      channelId: NOTIFICATION_CHANNELS.CONTEXT.id,
+      title,
+      body,
+    });
+
+    useNotificationStore.getState().addNotification({
+      type: 'context',
+      title,
+      body,
+      targetScreen: 'FolderContext',
+      targetParams: { categoryName: folderName },
     });
   }
 

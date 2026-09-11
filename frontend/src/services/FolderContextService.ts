@@ -17,6 +17,7 @@ import {
   ocrCacheRepository,
 } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
+import { notificationService } from './notificationService';
 
 export class FolderContextService {
   /**
@@ -188,6 +189,9 @@ export class FolderContextService {
 
     // 4. Update Zustand store
     useFolderContextStore.getState().setFolderContext(folderId, folderContext);
+
+    // 5. Dispatch Context Generated notification (Deliverable 4)
+    notificationService.notifyContextGenerated(folderName, folderContext.summary).catch(() => {});
 
     return folderContext;
   }
