@@ -38,6 +38,7 @@ interface CategoryState {
   getCategoryById: (id: string) => CategoryModel | undefined;
   getRootCategories: () => CategoryModel[];
   getSubcategories: (parentId: string) => CategoryModel[];
+  getDescendantCategoryIds: (categoryId: string) => string[];
   getCategoryTree: () => CategoryTreeNode[];
 }
 
@@ -138,6 +139,26 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     return get().categories.filter(
       (c) => c.parentId === parentId || c.parentCategoryId === parentId
     );
+  },
+
+  getDescendantCategoryIds: (categoryId: string) => {
+    const all = get().categories;
+    const result: string[] = [categoryId];
+    const queue: string[] = [categoryId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = all.filter(
+        (c) =>
+          (c.parentId === current || c.parentCategoryId === current) &&
+          !result.includes(c.id)
+      );
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
   },
 
   getCategoryTree: () => {

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useScreenshotStore } from '../store/screenshot.store';
@@ -61,12 +62,18 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const [moveModalVisible, setMoveModalVisible] = useState(false);
   const [targetScreenshot, setTargetScreenshot] = useState<ScreenshotModel | null>(null);
 
-  // All screenshots that belong to this folder or its subcategories
+  // Real-time synchronization when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      useCategoryStore.getState().loadCategories();
+      useScreenshotStore.getState().loadScreenshots();
+    }, [])
+  );
+
+  // All screenshots that belong to this folder or any nested subcategories
   const folderCategoryIds = useMemo(() => {
-    const childIds = categories
-      .filter((c) => c.parentId === categoryId || c.parentCategoryId === categoryId)
-      .map((c) => c.id);
-    return new Set([categoryId, ...childIds]);
+    const descendantIds = useCategoryStore.getState().getDescendantCategoryIds(categoryId);
+    return new Set(descendantIds);
   }, [categoryId, categories]);
 
   const folderScreenshots = useMemo(() => {
@@ -77,14 +84,16 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   }, [allScreenshots, folderCategoryIds, categoryName]);
 
-  // Distinct subcategory tags from screenshots
+  // Distinct subcategory tags and child folders from screenshots
   const distinctSubcategories = useMemo(() => {
     const fromScreenshots = folderScreenshots
       .map((s) => s.subcategory)
-      .filter((sub) => sub && sub.trim().length > 0);
-    const fromStore = subcategoriesFromStore.map((c) => c.name);
-    return Array.from(new Set([...fromScreenshots, ...fromStore]));
-  }, [folderScreenshots, subcategoriesFromStore]);
+      .filter((sub): sub is string => Boolean(sub && sub.trim().length > 0));
+    const childCategories = categories
+      .filter((c) => c.parentId === categoryId || c.parentCategoryId === categoryId)
+      .map((c) => c.name);
+    return Array.from(new Set([...fromScreenshots, ...childCategories]));
+  }, [folderScreenshots, categories, categoryId]);
 
   // Filtered and sorted screenshots
   const displayedScreenshots = useMemo(() => {
@@ -92,9 +101,19 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
     // Filter by subfolder
     if (selectedSubcat !== 'all') {
+      const targetCat = categories.find(
+        (c) =>
+          c.name.toLowerCase() === selectedSubcat.toLowerCase() &&
+          (c.parentId === categoryId || c.parentCategoryId === categoryId)
+      );
+      const targetDescendants = targetCat
+        ? new Set(useCategoryStore.getState().getDescendantCategoryIds(targetCat.id))
+        : null;
+
       result = result.filter(
         (s) =>
-          s.subcategory.toLowerCase() === selectedSubcat.toLowerCase() ||
+          (targetDescendants && targetDescendants.has(s.categoryId)) ||
+          (s.subcategory && s.subcategory.toLowerCase() === selectedSubcat.toLowerCase()) ||
           s.categoryName.toLowerCase() === selectedSubcat.toLowerCase()
       );
     }

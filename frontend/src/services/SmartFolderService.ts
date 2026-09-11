@@ -380,12 +380,7 @@ export class SmartFolderService {
 
     // 5. Save locally to SQLite
     await screenshotRepository.insertScreenshot(screenshotModel);
-    await categoryRepository.updateScreenshotCount(assignedCategory.id);
-
-    // Update root category count if this was a subfolder
-    if (assignedCategory.parentId) {
-      await categoryRepository.updateScreenshotCount(assignedCategory.parentId);
-    }
+    await categoryRepository.updateAllAncestorCounts(assignedCategory.id);
 
     // 6. Synchronize Zustand stores
     useScreenshotStore.getState().addOrUpdateScreenshot(screenshotModel);

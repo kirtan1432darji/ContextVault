@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ScreenshotModel, ScreenshotFilter } from '../models';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
 
 interface ScreenshotState {
   screenshots: ScreenshotModel[];
@@ -25,6 +26,7 @@ interface ScreenshotState {
   markReviewedLocal: (id: string) => void;
   updateCategoryLocal: (id: string, categoryId: string, categoryName: string, subcategory?: string) => void;
   deleteScreenshotLocal: (id: string) => void;
+  loadScreenshots: () => Promise<void>;
 }
 
 export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
@@ -182,5 +184,16 @@ export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
       selectedScreenshot:
         get().selectedScreenshot?.id === id ? null : get().selectedScreenshot,
     });
+  },
+
+  loadScreenshots: async () => {
+    try {
+      const items = await screenshotRepository.getAllScreenshots();
+      if (items) {
+        get().setScreenshots(items);
+      }
+    } catch (err: any) {
+      console.warn('[ScreenshotStore] Failed to load screenshots from DB:', err?.message);
+    }
   },
 }));

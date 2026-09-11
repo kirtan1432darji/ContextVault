@@ -152,13 +152,33 @@ export class CategoryRepository {
     return currentCategory!;
   }
 
+  async getDescendantCategoryIds(categoryId: string): Promise<string[]> {
+    const all = await this.getAllCategories();
+    const result: string[] = [categoryId];
+    const queue: string[] = [categoryId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = all.filter(
+        (c) =>
+          (c.parentId === current || c.parentCategoryId === current) &&
+          !result.includes(c.id)
+      );
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
+  }
+
   async updateScreenshotCount(categoryId: string): Promise<number> {
-    const [rows] = await Promise.all([
-      databaseService.executeQuery(
-        'SELECT COUNT(*) as count FROM screenshots WHERE category_id = ?',
-        [categoryId]
-      ),
-    ]);
+    const descendantIds = await this.getDescendantCategoryIds(categoryId);
+    const placeholders = descendantIds.map(() => '?').join(',');
+    const rows = await databaseService.executeQuery(
+      `SELECT COUNT(*) as count FROM screenshots WHERE category_id IN (${placeholders})`,
+      descendantIds
+    );
     const count = rows.length > 0 ? rows[0].count : 0;
 
     await databaseService.executeCommand(
@@ -168,13 +188,23 @@ export class CategoryRepository {
     return count;
   }
 
+  async updateAllAncestorCounts(categoryId: string): Promise<void> {
+    let currentId: string | null = categoryId;
+    const visited = new Set<string>();
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      await this.updateScreenshotCount(currentId);
+      const cat = await this.getCategoryById(currentId);
+      currentId = cat?.parentId || cat?.parentCategoryId || null;
+    }
+  }
+
   async recalculateAllCounts(): Promise<void> {
-    await databaseService.executeCommand(`
-      UPDATE categories
-      SET screenshot_count = (
-        SELECT COUNT(*) FROM screenshots WHERE screenshots.category_id = categories.id
-      )
-    `);
+    const all = await this.getAllCategories();
+    for (const cat of all) {
+      await this.updateScreenshotCount(cat.id);
+    }
   }
 
   async renameCategory(id: string, newName: string): Promise<void> {

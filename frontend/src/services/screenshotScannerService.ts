@@ -6,6 +6,7 @@ import { classificationService } from './classificationService';
 import { notificationService } from './notificationService';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
+import { categoryRepository } from '../database/repositories/categoryRepository';
 
 export interface DiscoveredMediaAsset {
   id: string;
@@ -121,11 +122,9 @@ export class ScreenshotScannerService {
 
     useScreenshotStore.getState().addOrUpdateScreenshot(organizedScreenshot);
 
-    // Refresh Category counts
-    const cat = useCategoryStore.getState().getCategoryById(targetCatId);
-    if (cat) {
-      useCategoryStore.getState().setCategoryCount(targetCatId, (cat.screenshotCount || 0) + 1);
-    }
+    // Refresh Category and ancestor counts in SQLite & Store
+    await categoryRepository.updateAllAncestorCounts(targetCatId);
+    await useCategoryStore.getState().loadCategories();
 
     // 5. Notification
     await notificationService.showScreenshotOrganizedNotification({

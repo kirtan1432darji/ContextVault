@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
@@ -46,9 +46,17 @@ export const SmartFoldersScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<CategoryModel | null>(null);
   const [folderNameInput, setFolderNameInput] = useState('');
 
+  // Real-time synchronization when screen is focused or when screenshots change
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCategories();
+      useScreenshotStore.getState().loadScreenshots();
+    }, [loadCategories])
+  );
+
   useEffect(() => {
     loadCategories();
-  }, [loadCategories]);
+  }, [loadCategories, screenshots.length]);
 
   const handleOrganizeUnsorted = async () => {
     setIsOrganizing(true);
@@ -135,11 +143,16 @@ export const SmartFoldersScreen: React.FC = () => {
 
     const indentPadding = node.level * 20;
 
+    const descendantIds = useCategoryStore.getState().getDescendantCategoryIds(node.id);
+    const descendantIdSet = new Set(descendantIds);
+
     const folderScreenshots = screenshots.filter(
       (s) =>
-        s.categoryId === node.id ||
+        descendantIdSet.has(s.categoryId) ||
         (s.categoryName && s.categoryName.toLowerCase() === node.name.toLowerCase())
     );
+
+    const displayCount = Math.max(node.screenshotCount || 0, folderScreenshots.length);
 
     return (
       <View key={node.id} style={styles.nodeWrapper}>
@@ -210,7 +223,7 @@ export const SmartFoldersScreen: React.FC = () => {
               {/* Count Badge */}
               <View style={[styles.countBadge, { backgroundColor: `${theme.colors.primary}15` }]}>
                 <Text style={[styles.countBadgeText, { color: theme.colors.primary }]}>
-                  {node.screenshotCount || 0}
+                  {displayCount}
                 </Text>
               </View>
 
