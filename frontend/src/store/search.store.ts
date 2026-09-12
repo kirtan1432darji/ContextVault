@@ -150,7 +150,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       });
 
       // Refresh recent searches list in store
-      get().loadRecentAndSavedSearches();
+      await get().loadRecentAndSavedSearches();
     } catch (err) {
       console.warn('[useSearchStore] Search error:', err);
       set({ loading: false });

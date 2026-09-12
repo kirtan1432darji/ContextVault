@@ -61,6 +61,18 @@ jest.mock('../services/GlobalSearchService', () => ({
   },
 }));
 
+jest.mock('../database/repositories/searchRepository', () => ({
+  searchRepository: {
+    getRecentSearches: jest.fn().mockResolvedValue([]),
+    getSavedSearches: jest.fn().mockResolvedValue([]),
+    saveRecentSearch: jest.fn().mockResolvedValue(undefined),
+    saveCustomSearch: jest.fn().mockResolvedValue(undefined),
+    deleteRecentSearch: jest.fn().mockResolvedValue(undefined),
+    deleteSavedSearch: jest.fn().mockResolvedValue(undefined),
+    clearRecentSearches: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
 describe('VoiceSearchService & Voice Search Integration (Sprint P2-1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -70,6 +82,10 @@ describe('VoiceSearchService & Voice Search Integration (Sprint P2-1)', () => {
       isVoiceModalOpen: false,
       results: [],
     });
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   describe('normalizeVoiceQuery', () => {
