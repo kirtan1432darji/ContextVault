@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -25,6 +26,7 @@ import { TagChip } from '../components/TagChip';
 import { ReclassifyModal } from '../components/ReclassifyModal';
 import { DateFormatter } from '../utils/dateFormatter';
 import { FileUtils } from '../utils/fileUtils';
+import { MediaStorePathResolver } from '../utils/MediaStorePathResolver';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScreenshotDetail'>;
 
@@ -133,15 +135,43 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
   const [lastTap, setLastTap] = useState(0);
+  const [isImageLoading, setIsImageLoading] = useState(true);
 
-  const candidateUris = React.useMemo(
-    () => FileUtils.getImageCandidateUris(screenshot?.filePath, screenshot?.deviceAssetId),
-    [screenshot?.filePath, screenshot?.deviceAssetId]
-  );
+  // Full-resolution candidate order for detail inspection
+  const candidateUris = React.useMemo(() => {
+    const list: string[] = [];
+    const add = (u?: string | null) => {
+      if (u && typeof u === 'string') {
+        const clean = u.trim();
+        if (clean && !list.includes(clean)) list.push(clean);
+      }
+    };
+
+    // 1. Content URI (Scoped Storage compatible)
+    if (screenshot?.contentUri) {
+      add(MediaStorePathResolver.resolveContentUri(screenshot.contentUri));
+    } else if (screenshot?.deviceAssetId && /^\d+$/.test(screenshot.deviceAssetId)) {
+      add(`content://media/external/images/media/${screenshot.deviceAssetId}`);
+    }
+
+    // 2. Local normalized file URI (full-res)
+    const rawLocal = screenshot?.localPath || screenshot?.filePath;
+    if (rawLocal) {
+      add(MediaStorePathResolver.normalizeFileUri(rawLocal));
+    }
+
+    // 3. Cached 300px thumbnail fallback
+    if (screenshot?.thumbnailUri) {
+      add(MediaStorePathResolver.normalizeFileUri(screenshot.thumbnailUri));
+    }
+
+    return list;
+  }, [screenshot]);
 
   useEffect(() => {
     setImageError(false);
     setCandidateIndex(0);
+    setIsImageLoading(true);
   }, [candidateUris]);
 
   const activeUri = candidateUris[candidateIndex] || '';
@@ -149,14 +179,55 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const handleImageError = () => {
     if (candidateIndex + 1 < candidateUris.length) {
       setCandidateIndex((prev) => prev + 1);
+      setIsImageLoading(true);
     } else {
       setImageError(true);
+      setIsImageLoading(false);
     }
   };
 
   const handleRetryImage = () => {
     setImageError(false);
     setCandidateIndex(0);
+    setIsImageLoading(true);
+  };
+
+  // Swipe previous / next navigation across gallery
+  const allScreenshots = useScreenshotStore((s) => s.screenshots);
+  const currentIndex = allScreenshots.findIndex((item) => item.id === id);
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < allScreenshots.length - 1;
+
+  const navigateToPrevious = () => {
+    if (hasPrevious) {
+      navigation.setParams({ id: allScreenshots[currentIndex - 1].id });
+    }
+  };
+
+  const navigateToNext = () => {
+    if (hasNext) {
+      navigation.setParams({ id: allScreenshots[currentIndex + 1].id });
+    }
+  };
+
+  const touchStartX = React.useRef(0);
+  const touchStartY = React.useRef(0);
+
+  const handleTouchStart = (e: any) => {
+    touchStartX.current = e.nativeEvent.pageX;
+    touchStartY.current = e.nativeEvent.pageY;
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const dx = e.nativeEvent.pageX - touchStartX.current;
+    const dy = e.nativeEvent.pageY - touchStartY.current;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 60) {
+      if (dx > 0) {
+        navigateToPrevious();
+      } else {
+        navigateToNext();
+      }
+    }
   };
 
   const handleDoubleTap = () => {
@@ -272,27 +343,65 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity
-            activeOpacity={0.92}
-            onPress={() => {
-              setZoomScale(1);
-              setIsZoomModalOpen(true);
-            }}
+          <View
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             style={[styles.imageContainer, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
-            accessibilityRole="button"
-            accessibilityLabel="Tap to zoom screenshot full-screen"
           >
-            <Image
-              source={{ uri, cache: 'force-cache' }}
-              style={styles.image}
-              resizeMode="contain"
-              onError={handleImageError}
-            />
+            <TouchableOpacity
+              activeOpacity={0.92}
+              onPress={() => {
+                setZoomScale(1);
+                setIsZoomModalOpen(true);
+              }}
+              style={styles.imageTouchable}
+              accessibilityRole="button"
+              accessibilityLabel="Tap to zoom screenshot full-screen"
+            >
+              <Image
+                source={{ uri, cache: 'force-cache' }}
+                style={styles.image}
+                resizeMode="contain"
+                onLoadStart={() => setIsImageLoading(true)}
+                onLoadEnd={() => setIsImageLoading(false)}
+                onError={handleImageError}
+              />
+              {isImageLoading && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Previous navigation chevron */}
+            {hasPrevious && (
+              <TouchableOpacity
+                onPress={navigateToPrevious}
+                style={[styles.navArrowBtn, styles.navArrowLeft]}
+                accessibilityRole="button"
+                accessibilityLabel="Previous screenshot"
+              >
+                <Icon name="chevron-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+
+            {/* Next navigation chevron */}
+            {hasNext && (
+              <TouchableOpacity
+                onPress={navigateToNext}
+                style={[styles.navArrowBtn, styles.navArrowRight]}
+                accessibilityRole="button"
+                accessibilityLabel="Next screenshot"
+              >
+                <Icon name="chevron-forward" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+
             <View style={styles.zoomHintPill}>
               <Icon name="scan-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text style={styles.zoomHintText}>Pinch to Zoom</Text>
+              <Text style={styles.zoomHintText}>Tap to Zoom • Swipe for Next</Text>
             </View>
-          </TouchableOpacity>
+          </View>
         )}
 
         {/* Needs Human Review Alert Banner */}
@@ -812,6 +921,34 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 16,
+    position: 'relative',
+  },
+  imageTouchable: {
+    width: '100%',
+    height: '100%',
+  },
+  imageLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  navArrowBtn: {
+    position: 'absolute',
+    top: '42%',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  navArrowLeft: {
+    left: 10,
+  },
+  navArrowRight: {
+    right: 10,
   },
   image: {
     width: '100%',

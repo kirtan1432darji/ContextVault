@@ -1,5 +1,6 @@
 import { databaseService } from '../database';
 import { ScreenshotModel, ScreenshotFilter } from '../../models';
+import { thumbnailService } from '../../services/ThumbnailService';
 
 export class ScreenshotRepository {
   async getAllScreenshots(filter: ScreenshotFilter = {}): Promise<ScreenshotModel[]> {
@@ -62,7 +63,7 @@ export class ScreenshotRepository {
     let query = `
       SELECT * FROM screenshots 
       WHERE (
-        category_id IN (${placeholders})
+        coalesce(folder_id, category_id) IN (${placeholders})
     `;
 
     if (categoryName && categoryName.trim().length > 0) {
@@ -127,6 +128,10 @@ export class ScreenshotRepository {
   }
 
   async permanentDeleteScreenshot(id: string): Promise<void> {
+    const s = await this.getScreenshotById(id);
+    if (s?.thumbnailUri) {
+      thumbnailService.deleteThumbnail(s.thumbnailUri).catch(() => {});
+    }
     await databaseService.executeCommand('DELETE FROM screenshot_tags WHERE screenshot_id = ?', [id]);
     await databaseService.executeCommand('DELETE FROM ocr_cache WHERE screenshot_id = ?', [id]);
     await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
@@ -174,28 +179,42 @@ export class ScreenshotRepository {
   }
 
   async insertScreenshot(screenshot: ScreenshotModel): Promise<void> {
+    const localPath = screenshot.localPath || screenshot.filePath;
+    const contentUri = screenshot.contentUri || (screenshot.deviceAssetId && /^\d+$/.test(screenshot.deviceAssetId) ? `content://media/external/images/media/${screenshot.deviceAssetId}` : null);
+    const thumbnailUri = screenshot.thumbnailUri || null;
+    const createdOn = screenshot.createdOn || screenshot.createdAt;
+    const folderId = screenshot.folderId || screenshot.categoryId;
+    const mimeType = screenshot.mimeType || (screenshot.fileName?.endsWith('.jpg') || screenshot.fileName?.endsWith('.jpeg') ? 'image/jpeg' : 'image/png');
+
     const sql = `
       INSERT OR REPLACE INTO screenshots (
-        id, device_asset_id, file_path, file_name, created_at,
-        width, height, file_size, category_id, category_name,
-        subcategory, confidence, source_app, detected_app,
-        keywords_json, is_auto_categorized, is_favorite,
-        is_reviewed, is_synced, ocr_status, ocr_text,
-        last_scanned_at, is_mock, classification_source, folder_path,
-        is_deleted, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, device_asset_id, file_path, local_path, content_uri,
+        thumbnail_uri, file_name, created_at, created_on,
+        width, height, file_size, mime_type, category_id,
+        folder_id, category_name, subcategory, confidence,
+        source_app, detected_app, keywords_json, is_auto_categorized,
+        is_favorite, is_reviewed, is_synced, ocr_status,
+        ocr_text, last_scanned_at, is_mock, classification_source,
+        folder_path, is_deleted, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
       screenshot.id,
       screenshot.deviceAssetId || '',
       screenshot.filePath,
+      localPath,
+      contentUri,
+      thumbnailUri,
       screenshot.fileName,
       screenshot.createdAt,
+      createdOn,
       screenshot.width,
       screenshot.height,
       screenshot.fileSize,
+      mimeType,
       screenshot.categoryId,
+      folderId,
       screenshot.categoryName,
       screenshot.subcategory || '',
       screenshot.confidence,
@@ -344,16 +363,32 @@ export class ScreenshotRepository {
       }
     } catch {}
 
+    const localPath = row.local_path || row.file_path;
+    let contentUri = row.content_uri;
+    if (!contentUri && row.device_asset_id && /^\d+$/.test(row.device_asset_id)) {
+      contentUri = `content://media/external/images/media/${row.device_asset_id}`;
+    }
+    const thumbnailUri = row.thumbnail_uri || undefined;
+    const mimeType = row.mime_type || (row.file_name?.endsWith('.jpg') || row.file_name?.endsWith('.jpeg') ? 'image/jpeg' : 'image/png');
+    const folderId = row.folder_id || row.category_id;
+    const createdOn = row.created_on || row.created_at;
+
     return {
       id: row.id,
       deviceAssetId: row.device_asset_id || '',
       filePath: row.file_path,
+      localPath,
+      contentUri,
+      thumbnailUri,
       fileName: row.file_name,
       createdAt: row.created_at,
+      createdOn,
       width: row.width,
       height: row.height,
       fileSize: row.file_size,
+      mimeType,
       categoryId: row.category_id,
+      folderId,
       categoryName: row.category_name,
       subcategory: row.subcategory || '',
       folderPath,

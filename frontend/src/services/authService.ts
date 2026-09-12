@@ -63,6 +63,9 @@ class AuthService {
         err.response?.data?.message ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
+        (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
+          ? `Cannot connect to ContextVault backend at ${apiClient.getBaseUrl()}. Please verify your network and backend server.`
+          : null) ||
         err.message ||
         'Authentication failed. Please verify your credentials.';
       return Result.failure(errMsg, err);
@@ -123,6 +126,9 @@ class AuthService {
         err.response?.data?.message ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
+        (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
+          ? `Cannot connect to ContextVault backend at ${apiClient.getBaseUrl()}. Please verify your network and backend server.`
+          : null) ||
         err.message ||
         'Registration failed. Please try again.';
       return Result.failure(errMsg, err);

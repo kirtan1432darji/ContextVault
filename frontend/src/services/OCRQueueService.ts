@@ -13,6 +13,9 @@ export interface OCRQueueItem {
   id: string; // ID in pending_screenshots
   deviceAssetId: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   fileName: string;
   fileSize: number;
   fileHash: string;
@@ -58,6 +61,9 @@ export class OCRQueueService {
           id: item.id,
           deviceAssetId: item.deviceAssetId,
           filePath: item.filePath,
+          localPath: item.localPath || item.filePath,
+          contentUri: item.contentUri,
+          thumbnailUri: item.thumbnailUri,
           fileName: item.fileName,
           fileSize: item.fileSize,
           fileHash: item.fileHash,
@@ -186,11 +192,16 @@ export class OCRQueueService {
         const { smartFolderService } = await import('./SmartFolderService');
         await smartFolderService.assignScreenshotToSmartFolder({
           screenshotId: item.id,
+          deviceAssetId: item.deviceAssetId,
           fileName: item.fileName,
           filePath: item.filePath,
+          localPath: item.localPath || item.filePath,
+          contentUri: item.contentUri,
+          thumbnailUri: item.thumbnailUri,
           ocrText: result.rawText,
           deviceFolder: item.deviceFolder,
           fileSize: item.fileSize,
+          mimeType: item.mimeType,
           width: item.width,
           height: item.height,
         });

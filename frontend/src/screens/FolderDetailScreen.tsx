@@ -361,7 +361,11 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         >
           <View style={styles.thumbWrapper}>
             <ScreenshotImageThumbnail
+              screenshot={item}
               filePath={item.filePath}
+              localPath={item.localPath}
+              contentUri={item.contentUri}
+              thumbnailUri={item.thumbnailUri}
               deviceAssetId={item.deviceAssetId}
               style={[styles.thumbnail, { height: itemHeight }]}
               borderRadius={8}

@@ -91,6 +91,17 @@ class DatabaseService {
       'CREATE INDEX IF NOT EXISTS idx_recent_searches_time ON recent_searches(timestamp)',
       'CREATE TABLE IF NOT EXISTS saved_searches (id TEXT PRIMARY KEY, query TEXT NOT NULL UNIQUE, title TEXT, icon_name TEXT, color_hex TEXT, created_at TEXT NOT NULL)',
       'CREATE INDEX IF NOT EXISTS idx_saved_searches_created ON saved_searches(created_at)',
+
+      // BugFix-01 MediaStore URI & Rendering Pipeline Migrations
+      'ALTER TABLE screenshots ADD COLUMN local_path TEXT',
+      'ALTER TABLE screenshots ADD COLUMN content_uri TEXT',
+      'ALTER TABLE screenshots ADD COLUMN thumbnail_uri TEXT',
+      'ALTER TABLE screenshots ADD COLUMN mime_type TEXT',
+      'ALTER TABLE screenshots ADD COLUMN folder_id TEXT',
+      'ALTER TABLE screenshots ADD COLUMN created_on TEXT',
+      'ALTER TABLE pending_screenshots ADD COLUMN local_path TEXT',
+      'ALTER TABLE pending_screenshots ADD COLUMN content_uri TEXT',
+      'ALTER TABLE pending_screenshots ADD COLUMN thumbnail_uri TEXT',
     ];
 
     for (const alterSql of alterStatements) {
@@ -99,6 +110,20 @@ class DatabaseService {
       } catch {
         // Ignored if column already exists
       }
+    }
+
+    // Backfill empty or null columns for backwards compatibility
+    const backfillStatements = [
+      'UPDATE screenshots SET local_path = file_path WHERE local_path IS NULL OR local_path = ""',
+      'UPDATE screenshots SET created_on = created_at WHERE created_on IS NULL OR created_on = ""',
+      'UPDATE screenshots SET folder_id = category_id WHERE folder_id IS NULL OR folder_id = ""',
+      'UPDATE pending_screenshots SET local_path = file_path WHERE local_path IS NULL OR local_path = ""',
+    ];
+
+    for (const sql of backfillStatements) {
+      try {
+        await db.executeSql(sql);
+      } catch {}
     }
 
     // Seed or update default smart categories

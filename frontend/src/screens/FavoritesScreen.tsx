@@ -53,7 +53,11 @@ export const FavoritesScreen: React.FC = () => {
               style={[styles.gridItem, { width: COLUMN_WIDTH }]}
             >
               <ScreenshotImageThumbnail
+                screenshot={item}
                 filePath={item.filePath}
+                localPath={item.localPath}
+                contentUri={item.contentUri}
+                thumbnailUri={item.thumbnailUri}
                 deviceAssetId={item.deviceAssetId}
                 style={styles.gridThumb}
               />

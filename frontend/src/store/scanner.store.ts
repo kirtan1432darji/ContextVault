@@ -5,6 +5,9 @@ export interface DetectedScreenshotMetadata {
   id: string;
   deviceAssetId: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   fileName: string;
   fileSize: number;
   fileHash: string;

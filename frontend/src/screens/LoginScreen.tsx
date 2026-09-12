@@ -10,6 +10,8 @@ import {
   Platform,
   ScrollView,
   Switch,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -18,6 +20,7 @@ import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useAuthStore } from '../store/auth.store';
 import { StorageService, StorageKeys } from '../utils/storage';
+import { backendConnectionService } from '../services/BackendConnectionService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -30,6 +33,9 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [showHealthDialog, setShowHealthDialog] = useState(false);
+  const [healthErrorData, setHealthErrorData] = useState<{ url: string; message: string } | null>(null);
 
   const handleContinueAsGuest = () => {
     loginAsGuest();
@@ -57,6 +63,20 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
     }
     if (!password) {
       setLocalError('Please enter your password.');
+      return;
+    }
+
+    // Pre-flight health check before authentication
+    setCheckingHealth(true);
+    const healthResult = await backendConnectionService.pingBackend();
+    setCheckingHealth(false);
+
+    if (!healthResult.isHealthy) {
+      setHealthErrorData({
+        url: healthResult.baseUrl,
+        message: healthResult.errorMessage || 'Cannot connect to ContextVault backend.',
+      });
+      setShowHealthDialog(true);
       return;
     }
 
@@ -223,13 +243,13 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                { backgroundColor: theme.colors.primary, opacity: loading ? 0.75 : 1 },
+                { backgroundColor: theme.colors.primary, opacity: loading || checkingHealth ? 0.75 : 1 },
               ]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || checkingHealth}
               activeOpacity={0.85}
             >
-              {loading ? (
+              {loading || checkingHealth ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
@@ -284,6 +304,67 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Material 3 Health Check Dialog */}
+      <Modal
+        visible={showHealthDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHealthDialog(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.m3Dialog,
+              { backgroundColor: theme.isDark ? '#1E293B' : '#FFFFFF' },
+            ]}
+          >
+            <View style={[styles.m3IconContainer, { backgroundColor: '#EF444418' }]}>
+              <Icon name="cloud-offline-outline" size={28} color="#EF4444" />
+            </View>
+            <Text style={[styles.m3DialogTitle, { color: theme.colors.textPrimary }]}>
+              Cannot connect to ContextVault backend.
+            </Text>
+            <Text style={[styles.m3DialogMessage, { color: theme.colors.textSecondary }]}>
+              Unable to reach backend server at:
+              {'\n'}
+              <Text style={{ fontWeight: '600', color: theme.colors.textPrimary }}>
+                {healthErrorData?.url}
+              </Text>
+              {'\n\n'}
+              Please ensure your FastAPI backend is running and accessible on your Wi-Fi/LAN network, or update your host IP in Backend Settings.
+            </Text>
+
+            <View style={styles.m3ActionRow}>
+              <TouchableOpacity
+                style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
+                onPress={() => {
+                  setShowHealthDialog(false);
+                  navigation.navigate('BackendSettings');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Open Backend Settings"
+              >
+                <Text style={[styles.m3TonalBtnText, { color: theme.colors.primary }]}>
+                  Backend Settings
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.m3PrimaryBtn, { backgroundColor: theme.colors.primary }]}
+                onPress={() => {
+                  setShowHealthDialog(false);
+                  handleLogin();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Retry Connection"
+              >
+                <Text style={styles.m3PrimaryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -440,5 +521,73 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 10,
     paddingHorizontal: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  m3Dialog: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  m3IconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  m3DialogTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  m3DialogMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  m3ActionRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  m3TonalBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  m3TonalBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  m3PrimaryBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  m3PrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -707,7 +707,11 @@ export const StorageScreen: React.FC = () => {
                           <View style={styles.dupPreviewStrip}>
                             <View style={styles.dupThumbnailWrapper}>
                               <ScreenshotImageThumbnail
+                                screenshot={group.original}
                                 filePath={group.original.filePath}
+                                localPath={group.original.localPath}
+                                contentUri={group.original.contentUri}
+                                thumbnailUri={group.original.thumbnailUri}
                                 deviceAssetId={group.original.deviceAssetId}
                                 style={styles.dupThumb}
                                 borderRadius={8}
@@ -719,7 +723,11 @@ export const StorageScreen: React.FC = () => {
                             {group.duplicates.map((dup) => (
                               <View key={dup.id} style={styles.dupThumbnailWrapper}>
                                 <ScreenshotImageThumbnail
+                                  screenshot={dup}
                                   filePath={dup.filePath}
+                                  localPath={dup.localPath}
+                                  contentUri={dup.contentUri}
+                                  thumbnailUri={dup.thumbnailUri}
                                   deviceAssetId={dup.deviceAssetId}
                                   style={styles.dupThumb}
                                   borderRadius={8}

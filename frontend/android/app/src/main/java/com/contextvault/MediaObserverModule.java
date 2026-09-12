@@ -22,7 +22,10 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.Locale;
@@ -401,5 +404,150 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void removeListeners(Integer count) {
         // Required for React Native built-in NativeEventEmitter
+    }
+
+    @ReactMethod
+    public void generateThumbnail(String uriOrPath, int targetSize, Promise promise) {
+        new Thread(() -> {
+            try {
+                if (uriOrPath == null || uriOrPath.trim().isEmpty()) {
+                    promise.reject("INVALID_URI", "URI or path cannot be empty");
+                    return;
+                }
+
+                int size = targetSize > 0 ? targetSize : 300;
+                String cleanInput = uriOrPath.trim();
+                Uri sourceUri;
+                if (cleanInput.startsWith("content://") || cleanInput.startsWith("file://")) {
+                    sourceUri = Uri.parse(cleanInput);
+                } else {
+                    sourceUri = Uri.fromFile(new File(cleanInput));
+                }
+
+                // Deterministic thumbnail cache file name based on URI hash
+                String cacheFileName = "thumb_" + Integer.toHexString(cleanInput.hashCode()) + "_" + size + ".jpg";
+                File cacheDir = new File(reactContext.getCacheDir(), "thumbnails");
+                if (!cacheDir.exists()) {
+                    cacheDir.mkdirs();
+                }
+
+                File thumbFile = new File(cacheDir, cacheFileName);
+                if (thumbFile.exists() && thumbFile.length() > 0) {
+                    // Reuse cached thumbnail
+                    promise.resolve(Uri.fromFile(thumbFile).toString());
+                    return;
+                }
+
+                // 1. Decode bounds to determine sample size
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+
+                InputStream is = null;
+                try {
+                    if ("content".equals(sourceUri.getScheme())) {
+                        is = reactContext.getContentResolver().openInputStream(sourceUri);
+                    } else {
+                        is = new FileInputStream(sourceUri.getPath());
+                    }
+                    BitmapFactory.decodeStream(is, null, options);
+                } finally {
+                    if (is != null) {
+                        try { is.close(); } catch (Exception ignored) {}
+                    }
+                }
+
+                if (options.outWidth <= 0 || options.outHeight <= 0) {
+                    promise.reject("DECODE_ERROR", "Could not decode image bounds");
+                    return;
+                }
+
+                // 2. Calculate inSampleSize
+                int inSampleSize = 1;
+                int maxDim = Math.max(options.outWidth, options.outHeight);
+                while (maxDim / (inSampleSize * 2) >= size) {
+                    inSampleSize *= 2;
+                }
+
+                options.inJustDecodeBounds = false;
+                options.inSampleSize = inSampleSize;
+                options.inPreferredConfig = Bitmap.Config.RGB_565; // Memory-efficient
+
+                Bitmap bitmap = null;
+                try {
+                    if ("content".equals(sourceUri.getScheme())) {
+                        is = reactContext.getContentResolver().openInputStream(sourceUri);
+                    } else {
+                        is = new FileInputStream(sourceUri.getPath());
+                    }
+                    bitmap = BitmapFactory.decodeStream(is, null, options);
+                } finally {
+                    if (is != null) {
+                        try { is.close(); } catch (Exception ignored) {}
+                    }
+                }
+
+                if (bitmap == null) {
+                    promise.reject("DECODE_ERROR", "Failed to decode bitmap from stream");
+                    return;
+                }
+
+                // 3. Scale down if still larger than targetSize
+                int width = bitmap.getWidth();
+                int height = bitmap.getHeight();
+                float scale = Math.min((float) size / width, (float) size / height);
+                Bitmap finalBitmap = bitmap;
+                if (scale < 1.0f) {
+                    int scaledWidth = Math.round(width * scale);
+                    int scaledHeight = Math.round(height * scale);
+                    if (scaledWidth > 0 && scaledHeight > 0) {
+                        finalBitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true);
+                        if (finalBitmap != bitmap) {
+                            bitmap.recycle();
+                        }
+                    }
+                }
+
+                // 4. Compress to JPEG
+                FileOutputStream fos = null;
+                try {
+                    fos = new FileOutputStream(thumbFile);
+                    finalBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos);
+                    fos.flush();
+                } finally {
+                    if (fos != null) {
+                        try { fos.close(); } catch (Exception ignored) {}
+                    }
+                    if (finalBitmap != null && !finalBitmap.isRecycled()) {
+                        finalBitmap.recycle();
+                    }
+                }
+
+                promise.resolve(Uri.fromFile(thumbFile).toString());
+            } catch (Exception e) {
+                promise.reject("THUMBNAIL_ERROR", e.getMessage(), e);
+            }
+        }).start();
+    }
+
+    @ReactMethod
+    public void deleteThumbnail(String thumbnailUri, Promise promise) {
+        try {
+            if (thumbnailUri != null && !thumbnailUri.trim().isEmpty()) {
+                String path = thumbnailUri;
+                if (path.startsWith("file://")) {
+                    path = Uri.parse(path).getPath();
+                }
+                if (path != null) {
+                    File file = new File(path);
+                    if (file.exists() && file.delete()) {
+                        promise.resolve(true);
+                        return;
+                    }
+                }
+            }
+            promise.resolve(false);
+        } catch (Exception e) {
+            promise.reject("DELETE_ERROR", e.getMessage(), e);
+        }
     }
 }

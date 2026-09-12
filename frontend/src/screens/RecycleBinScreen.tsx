@@ -151,7 +151,11 @@ export const RecycleBinScreen: React.FC = () => {
       <ModernCard style={styles.card}>
         <View style={styles.cardRow}>
           <ScreenshotImageThumbnail
+            screenshot={item}
             filePath={item.filePath}
+            localPath={item.localPath}
+            contentUri={item.contentUri}
+            thumbnailUri={item.thumbnailUri}
             deviceAssetId={item.deviceAssetId}
             style={styles.thumbnail}
             borderRadius={10}

@@ -1,4 +1,4 @@
-import { ENV } from './environment';
+import { EnvironmentManager } from './EnvironmentManager';
 
 /**
  * ContextVault Central API Configuration
@@ -6,8 +6,6 @@ import { ENV } from './environment';
  * Configured with dynamic environment resolution (development vs production).
  * Decoupled from native modules to ensure seamless operation on both physical devices and release APKs.
  */
-const DEFAULT_HOST_URL = ENV.apiBaseUrl;
-
 function resolveBaseUrl(): string {
   // Allow optional global or environment overrides if defined
   const globalEnv = (typeof global !== 'undefined' && (global as any).__CONTEXTVAULT_API_URL__) || null;
@@ -15,11 +13,11 @@ function resolveBaseUrl(): string {
     return globalEnv.trim().replace(/\/+$/, '');
   }
 
-  return DEFAULT_HOST_URL;
+  return EnvironmentManager.getApiBaseUrl();
 }
 
 /**
- * Normalized FastAPI Backend Host URL (e.g. "http://10.193.167.152:8000")
+ * Normalized FastAPI Backend Host URL (e.g. "http://10.122.196.152:8000")
  */
 export const API_BASE_URL: string = resolveBaseUrl();
 

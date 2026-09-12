@@ -138,8 +138,22 @@ export class ScreenshotListenerService {
       return;
     }
 
-    const deviceAssetId = event.deviceAssetId || `asset_${Date.now()}`;
+    const deviceAssetId = event.deviceAssetId || '';
     const filePath = event.filePath;
+    const localPath = event.filePath;
+    const contentUri =
+      event.uri ||
+      (deviceAssetId && /^\d+$/.test(deviceAssetId)
+        ? `content://media/external/images/media/${deviceAssetId}`
+        : undefined);
+
+    let thumbnailUri: string | undefined;
+    try {
+      const { thumbnailService } = await import('./ThumbnailService');
+      const thumb = await thumbnailService.getOrCreateThumbnail(contentUri || localPath, 300);
+      if (thumb) thumbnailUri = thumb;
+    } catch {}
+
     const fileName = event.fileName || FileUtils.getFileName(filePath);
     const fileSize = event.fileSize || 0;
     const width = event.width || 1080;
@@ -198,6 +212,9 @@ export class ScreenshotListenerService {
       id: pendingId,
       deviceAssetId,
       filePath,
+      localPath,
+      contentUri,
+      thumbnailUri,
       fileName,
       fileSize,
       fileHash,
@@ -228,6 +245,9 @@ export class ScreenshotListenerService {
         id: pendingId,
         deviceAssetId,
         filePath,
+        localPath,
+        contentUri,
+        thumbnailUri,
         fileName,
         fileSize,
         fileHash,
@@ -246,6 +266,9 @@ export class ScreenshotListenerService {
         id: pendingId,
         deviceAssetId,
         filePath,
+        localPath,
+        contentUri,
+        thumbnailUri,
         fileName,
         fileSize,
         fileHash,

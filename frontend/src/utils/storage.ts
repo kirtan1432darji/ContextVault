@@ -24,6 +24,7 @@ export const StorageKeys = {
   IS_AUTHENTICATED: 'is_authenticated',
   GUEST_SESSION_CREATED_AT: 'guest_session_created_at',
   NOTIFICATIONS: 'cv_vault_notifications',
+  BACKEND_URL_OVERRIDE: 'backend_url_override',
 };
 
 export const StorageService = {
@@ -161,5 +162,18 @@ export const StorageService = {
 
   getGuestSessionCreatedAt(): string | null {
     return this.getString(StorageKeys.GUEST_SESSION_CREATED_AT);
+  },
+
+  // Backend URL MMKV Persistence
+  getBackendUrlOverride(): string | null {
+    return this.getString(StorageKeys.BACKEND_URL_OVERRIDE);
+  },
+
+  setBackendUrlOverride(url: string): void {
+    this.setString(StorageKeys.BACKEND_URL_OVERRIDE, url);
+  },
+
+  clearBackendUrlOverride(): void {
+    this.removeItem(StorageKeys.BACKEND_URL_OVERRIDE);
   },
 };

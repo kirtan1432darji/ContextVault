@@ -181,7 +181,7 @@ export class CategoryRepository {
     let sql = `
       SELECT COUNT(*) as count FROM screenshots 
       WHERE (
-        category_id IN (${placeholders})
+        coalesce(folder_id, category_id) IN (${placeholders})
     `;
 
     if (cat && cat.name) {

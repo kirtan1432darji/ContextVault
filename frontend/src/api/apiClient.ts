@@ -14,6 +14,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useSettingsStore } from '../store/settings.store';
 import { StorageService } from '../utils/storage';
 import { DEVELOPER_MODE } from '../config/developerConfig';
+import { EnvironmentManager } from '../config/EnvironmentManager';
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
@@ -21,8 +22,9 @@ class ApiClient {
   private failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
 
   constructor() {
+    const initialUrl = EnvironmentManager.getApiUrl();
     this.axiosInstance = axios.create({
-      baseURL: ApiConstants.defaultBaseUrl,
+      baseURL: initialUrl,
       timeout: ApiConstants.connectTimeout,
       headers: {
         'Content-Type': 'application/json',
@@ -31,6 +33,10 @@ class ApiClient {
         'X-Client-Version': '1.0.0',
       },
     });
+
+    if (EnvironmentManager.isDeveloperModeAvailable()) {
+      console.log(`[ApiClient] Configured baseURL: ${initialUrl} [Env: ${EnvironmentManager.getEnvironment()}]`);
+    }
 
     this.setupInterceptors();
   }
@@ -51,13 +57,14 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // 1. Request Interceptor: Attach Bearer Token & Dynamic Base URL
+    // 1. Request Interceptor: Attach Bearer Token, Validate URL & Set Base URL
     this.axiosInstance.interceptors.request.use(
       (config) => {
-        const dynamicUrl = useSettingsStore.getState().backendUrl;
-        if (dynamicUrl && dynamicUrl !== config.baseURL) {
-          config.baseURL = dynamicUrl;
+        const dynamicUrl = EnvironmentManager.getApiUrl();
+        if (!EnvironmentManager.isValidUrl(dynamicUrl)) {
+          return Promise.reject(new Error(`Invalid ContextVault backend URL: ${dynamicUrl}`));
         }
+        config.baseURL = dynamicUrl;
 
         const token = useAuthStore.getState().accessToken || StorageService.getAccessToken();
         if (token) {
@@ -142,9 +149,9 @@ class ApiClient {
           }
         }
 
-        // Handle network unreachable / Docker host down or timeout errors with user-friendly messages
+        // Handle network unreachable or timeout errors with user-friendly messages
         if (!error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
-          error.message = `Cannot connect to ContextVault Docker backend at ${this.getBaseUrl()}. Please ensure container 'contextvault-api' is running on Ubuntu host.`;
+          error.message = `Cannot connect to ContextVault backend at ${this.getBaseUrl()}. Please ensure the backend server is running and reachable.`;
         } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
           error.message = 'Connection to ContextVault backend timed out after 30 seconds.';
         }
@@ -155,7 +162,17 @@ class ApiClient {
   }
 
   public getBaseUrl(): string {
-    return useSettingsStore.getState().backendUrl || ApiConstants.defaultBaseUrl;
+    return EnvironmentManager.getApiUrl();
+  }
+
+  public getRawBaseUrl(): string {
+    return EnvironmentManager.getApiBaseUrl();
+  }
+
+  public setBaseUrl(url: string): void {
+    EnvironmentManager.setCustomBackendUrl(url);
+    this.axiosInstance.defaults.baseURL = EnvironmentManager.getApiUrl();
+    useSettingsStore.getState().setBackendUrl(url);
   }
 
   private unwrap<T>(responseData: any): T {

@@ -3,20 +3,28 @@ import { PendingScreenshot, PendingScreenshotStatus } from '../../models';
 
 export class PendingScreenshotRepository {
   async insertPending(screenshot: PendingScreenshot): Promise<void> {
+    const localPath = screenshot.localPath || screenshot.filePath;
+    const contentUri = screenshot.contentUri || (screenshot.deviceAssetId && /^\d+$/.test(screenshot.deviceAssetId) ? `content://media/external/images/media/${screenshot.deviceAssetId}` : null);
+    const thumbnailUri = screenshot.thumbnailUri || null;
+
     const sql = `
       INSERT OR REPLACE INTO pending_screenshots (
-        id, device_asset_id, file_path, file_name, file_size,
+        id, device_asset_id, file_path, local_path, content_uri,
+        thumbnail_uri, file_name, file_size,
         file_hash, captured_at, status, retry_count,
         error_message, device_folder, mime_type, resolution,
         width, height, ocr_status, ocr_processing_time, extracted_text,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
       screenshot.id,
       screenshot.deviceAssetId || '',
       screenshot.filePath,
+      localPath,
+      contentUri,
+      thumbnailUri,
       screenshot.fileName,
       screenshot.fileSize,
       screenshot.fileHash,
@@ -266,10 +274,20 @@ export class PendingScreenshotRepository {
   }
 
   private mapRowToModel(row: any): PendingScreenshot {
+    const localPath = row.local_path || row.file_path;
+    let contentUri = row.content_uri;
+    if (!contentUri && row.device_asset_id && /^\d+$/.test(row.device_asset_id)) {
+      contentUri = `content://media/external/images/media/${row.device_asset_id}`;
+    }
+    const thumbnailUri = row.thumbnail_uri || undefined;
+
     return {
       id: row.id,
       deviceAssetId: row.device_asset_id || '',
       filePath: row.file_path,
+      localPath,
+      contentUri,
+      thumbnailUri,
       fileName: row.file_name,
       fileSize: row.file_size || 0,
       fileHash: row.file_hash,

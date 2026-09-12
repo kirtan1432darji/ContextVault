@@ -635,7 +635,11 @@ export const DashboardScreen: React.FC = () => {
               style={styles.lastItemRow}
             >
               <ScreenshotImageThumbnail
+                screenshot={lastScreenshot}
                 filePath={lastScreenshot.filePath}
+                localPath={lastScreenshot.localPath}
+                contentUri={lastScreenshot.contentUri}
+                thumbnailUri={lastScreenshot.thumbnailUri}
                 deviceAssetId={lastScreenshot.deviceAssetId}
                 style={styles.lastItemThumb}
                 borderRadius={8}
@@ -1106,7 +1110,11 @@ export const DashboardScreen: React.FC = () => {
                 style={styles.recentItem}
               >
                 <ScreenshotImageThumbnail
+                  screenshot={item}
                   filePath={item.filePath}
+                  localPath={item.localPath}
+                  contentUri={item.contentUri}
+                  thumbnailUri={item.thumbnailUri}
                   deviceAssetId={item.deviceAssetId}
                   style={styles.recentThumb}
                 />
@@ -1147,7 +1155,11 @@ export const DashboardScreen: React.FC = () => {
                 style={styles.reviewItem}
               >
                 <ScreenshotImageThumbnail
+                  screenshot={item}
                   filePath={item.filePath}
+                  localPath={item.localPath}
+                  contentUri={item.contentUri}
+                  thumbnailUri={item.thumbnailUri}
                   deviceAssetId={item.deviceAssetId}
                   style={styles.reviewThumb}
                 />

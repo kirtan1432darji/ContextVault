@@ -51,6 +51,7 @@ export type RootStackParamList = {
         categoryName?: string;
       }
     | undefined;
+  BackendSettings: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

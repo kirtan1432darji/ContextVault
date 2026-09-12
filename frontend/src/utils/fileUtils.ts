@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { MediaStorePathResolver } from './MediaStorePathResolver';
 
 export const FileUtils = {
   formatBytes(bytes: number, decimals = 1): string {
@@ -122,51 +123,7 @@ export const FileUtils = {
    * and provides graceful fallback to direct file:// URIs and vice versa.
    */
   getImageCandidateUris(filePath?: string, deviceAssetId?: string): string[] {
-    const candidates: string[] = [];
-    const cleanPath = (filePath || '').trim();
-    const cleanAssetId = (deviceAssetId || '').trim();
-
-    const addCandidate = (uri: string) => {
-      if (uri && !candidates.includes(uri)) {
-        candidates.push(uri);
-      }
-    };
-
-    // 1. If filePath is already a content URI, remote URL, or base64
-    if (
-      cleanPath.startsWith('content://') ||
-      cleanPath.startsWith('http://') ||
-      cleanPath.startsWith('https://') ||
-      cleanPath.startsWith('data:image/')
-    ) {
-      addCandidate(cleanPath);
-    }
-
-    // 2. If deviceAssetId is a numeric MediaStore ID, construct content URI
-    let mediaContentUri = '';
-    if (/^\d+$/.test(cleanAssetId)) {
-      mediaContentUri = `content://media/external/images/media/${cleanAssetId}`;
-    } else if (cleanAssetId.startsWith('content://')) {
-      mediaContentUri = cleanAssetId;
-    }
-
-    // 3. Direct normalized file URI (e.g. file:///storage/emulated/0/...)
-    let fileUri = '';
-    if (cleanPath && !cleanPath.startsWith('content://') && !cleanPath.startsWith('http')) {
-      fileUri = this.normalizeImageUri(cleanPath);
-    }
-
-    // On Android, MediaStore Content URI is the most reliable representation
-    // because Scoped Storage restricts direct file:// reads for external media in Fresco
-    if (Platform.OS === 'android') {
-      if (mediaContentUri) addCandidate(mediaContentUri);
-      if (fileUri) addCandidate(fileUri);
-    } else {
-      if (fileUri) addCandidate(fileUri);
-      if (mediaContentUri) addCandidate(mediaContentUri);
-    }
-
-    return candidates;
+    return MediaStorePathResolver.getCandidateUris({ filePath, deviceAssetId });
   },
 
   /**

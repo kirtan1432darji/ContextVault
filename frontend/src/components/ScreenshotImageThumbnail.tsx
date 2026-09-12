@@ -11,10 +11,17 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAppTheme } from '../theme';
-import { FileUtils } from '../utils/fileUtils';
+import { ScreenshotModel } from '../models';
+import { MediaStorePathResolver, ScreenshotSourceInput, getDisplayImageSource } from '../utils/MediaStorePathResolver';
+
+export { getDisplayImageSource };
 
 export interface ScreenshotImageThumbnailProps {
+  screenshot?: Partial<ScreenshotModel> | null;
   filePath?: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   deviceAssetId?: string;
   style?: StyleProp<ViewStyle>;
   imageStyle?: StyleProp<ImageStyle>;
@@ -29,7 +36,11 @@ export interface ScreenshotImageThumbnailProps {
 }
 
 const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
+  screenshot,
   filePath,
+  localPath,
+  contentUri,
+  thumbnailUri,
   deviceAssetId,
   style,
   imageStyle,
@@ -43,10 +54,25 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
   enableRetry = false,
 }) => {
   const theme = useAppTheme();
-  const candidateUris = useMemo(
-    () => FileUtils.getImageCandidateUris(filePath, deviceAssetId),
-    [filePath, deviceAssetId]
-  );
+
+  const candidateUris = useMemo(() => {
+    const input: ScreenshotSourceInput = screenshot
+      ? {
+          thumbnailUri: screenshot.thumbnailUri,
+          contentUri: screenshot.contentUri,
+          localPath: screenshot.localPath,
+          filePath: screenshot.filePath,
+          deviceAssetId: screenshot.deviceAssetId,
+        }
+      : {
+          thumbnailUri,
+          contentUri,
+          localPath,
+          filePath,
+          deviceAssetId,
+        };
+    return MediaStorePathResolver.getCandidateUris(input);
+  }, [screenshot, thumbnailUri, contentUri, localPath, filePath, deviceAssetId]);
 
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [hasError, setHasError] = useState(false);

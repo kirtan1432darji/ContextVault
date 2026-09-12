@@ -20,6 +20,7 @@ import {
   NotificationCenterScreen,
   RecycleBinScreen,
   FolderAnalyticsScreen,
+  BackendSettingsScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -45,6 +46,11 @@ export const RootNavigator: React.FC = () => {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen
+        name="BackendSettings"
+        component={BackendSettingsScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
 
       {/* 2. Protected Routes */}
       {canAccessProtected ? (

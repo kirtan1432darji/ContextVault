@@ -405,7 +405,11 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
                   style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
                 >
                   <ScreenshotImageThumbnail
+                    screenshot={item}
                     filePath={item.filePath}
+                    localPath={item.localPath}
+                    contentUri={item.contentUri}
+                    thumbnailUri={item.thumbnailUri}
                     deviceAssetId={item.deviceAssetId}
                     style={styles.screenshotThumb}
                     borderRadius={8}

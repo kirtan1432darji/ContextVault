@@ -17,11 +17,16 @@ export interface SmartFolderClassificationResult {
 
 export interface ScreenshotAssignmentPayload {
   screenshotId: string;
+  deviceAssetId?: string;
   fileName: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   ocrText: string;
   deviceFolder?: string;
   fileSize?: number;
+  mimeType?: string;
   width?: number;
   height?: number;
 }
@@ -350,16 +355,39 @@ export class SmartFolderService {
     // 4. Update or construct ScreenshotModel
     const existing = await screenshotRepository.getScreenshotById(payload.screenshotId);
 
+    const deviceAssetId = payload.deviceAssetId || existing?.deviceAssetId || '';
+    const localPath = payload.localPath || payload.filePath;
+    const contentUri =
+      payload.contentUri ||
+      existing?.contentUri ||
+      (deviceAssetId && /^\d+$/.test(deviceAssetId)
+        ? `content://media/external/images/media/${deviceAssetId}`
+        : undefined);
+
+    let thumbnailUri = payload.thumbnailUri || existing?.thumbnailUri;
+    if (!thumbnailUri) {
+      try {
+        const { thumbnailService } = await import('./ThumbnailService');
+        thumbnailUri = (await thumbnailService.getOrCreateThumbnail(contentUri || localPath, 300)) || undefined;
+      } catch {}
+    }
+
     const screenshotModel: ScreenshotModel = {
       id: payload.screenshotId,
-      deviceAssetId: existing?.deviceAssetId || `asset_${Date.now()}`,
+      deviceAssetId,
       filePath: payload.filePath,
+      localPath,
+      contentUri,
+      thumbnailUri,
       fileName: payload.fileName,
       createdAt: existing?.createdAt || new Date().toISOString(),
+      createdOn: existing?.createdOn || new Date().toISOString(),
       width: payload.width || existing?.width || 1080,
       height: payload.height || existing?.height || 2400,
       fileSize: payload.fileSize || existing?.fileSize || 0,
+      mimeType: payload.mimeType || existing?.mimeType,
       categoryId: assignedCategory.id,
+      folderId: assignedCategory.id,
       categoryName: assignedCategory.name,
       subcategory: classification.subcategory,
       confidence: classification.confidence,

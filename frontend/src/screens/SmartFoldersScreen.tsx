@@ -281,7 +281,11 @@ export const SmartFoldersScreen: React.FC = () => {
                       accessibilityLabel={`View screenshot ${shot.fileName}`}
                     >
                       <ScreenshotImageThumbnail
+                        screenshot={shot}
                         filePath={shot.filePath}
+                        localPath={shot.localPath}
+                        contentUri={shot.contentUri}
+                        thumbnailUri={shot.thumbnailUri}
                         deviceAssetId={shot.deviceAssetId}
                         style={styles.folderThumbImage}
                         borderRadius={8}

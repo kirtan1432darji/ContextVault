@@ -45,7 +45,11 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
         {/* Left Thumbnail */}
         <View style={[styles.thumbContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
           <ScreenshotImageThumbnail
+            screenshot={item}
             filePath={item.filePath}
+            localPath={item.localPath}
+            contentUri={item.contentUri}
+            thumbnailUri={item.thumbnailUri}
             deviceAssetId={item.deviceAssetId}
             style={styles.thumb}
           />

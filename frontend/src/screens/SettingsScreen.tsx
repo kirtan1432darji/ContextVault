@@ -26,6 +26,7 @@ import { loggerService } from '../services/loggerService';
 import { storageManagerService } from '../services/storageManagerService';
 import { demoModeService } from '../services/demoModeService';
 import { backupService } from '../services/backupService';
+import { EnvironmentManager } from '../config/EnvironmentManager';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -45,6 +46,24 @@ export const SettingsScreen: React.FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const isGuest = useAuthStore((s) => s.isGuest);
   const exitGuestMode = useAuthStore((s) => s.exitGuestMode);
+
+  const versionTapCountRef = React.useRef(0);
+  const versionTapTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleVersionTap = () => {
+    versionTapCountRef.current += 1;
+    if (versionTapTimerRef.current) {
+      clearTimeout(versionTapTimerRef.current);
+    }
+    if (versionTapCountRef.current >= 3) {
+      versionTapCountRef.current = 0;
+      navigation.navigate('BackendSettings');
+      return;
+    }
+    versionTapTimerRef.current = setTimeout(() => {
+      versionTapCountRef.current = 0;
+    }, 600);
+  };
 
   const handleSaveUrl = () => {
     useSettingsStore.getState().setBackendUrl(urlInput);
@@ -672,9 +691,31 @@ export const SettingsScreen: React.FC = () => {
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
           Diagnostics & Demo QA
         </Text>
+        {EnvironmentManager.isDeveloperModeAvailable() && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BackendSettings')}
+            style={styles.legalRow}
+            accessibilityRole="button"
+            accessibilityLabel="Open Developer Mode & Backend Settings"
+          >
+            <View style={styles.rowLabelGroup}>
+              <Icon name="server-outline" size={20} color="#3B82F6" />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                  Developer Mode & Backend Settings
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                  Configure local backend IP, latency tests & environment
+                </Text>
+              </View>
+            </View>
+            <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           onPress={() => navigation.navigate('QADebugPanel')}
-          style={styles.legalRow}
+          style={[styles.legalRow, EnvironmentManager.isDeveloperModeAvailable() ? { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 } : undefined]}
           accessibilityRole="button"
           accessibilityLabel="Open QA Debug Panel"
         >
@@ -769,11 +810,11 @@ export const SettingsScreen: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            navigation.navigate('QADebugPanel');
-          }}
+          onPress={handleVersionTap}
           style={styles.versionRow}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="App Version (Triple tap for Backend Settings)"
         >
           <Text style={[styles.versionLabel, { color: theme.colors.textSecondary }]}>
             {AppInfo.appName} Version

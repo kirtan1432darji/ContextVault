@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -16,6 +17,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useAuthStore } from '../store/auth.store';
+import { backendConnectionService } from '../services/BackendConnectionService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
@@ -58,6 +60,21 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     }
     if (password !== confirmPassword) {
       setLocalError('Passwords do not match.');
+      return;
+    }
+
+    // Pre-flight health check before registration
+    const health = await backendConnectionService.pingBackend();
+    if (!health.isHealthy) {
+      Alert.alert(
+        'Cannot connect to ContextVault backend',
+        `Unable to reach backend server at ${health.baseUrl}.\n\nPlease ensure your server is running or configure your host IP in Backend Settings.`,
+        [
+          { text: 'Backend Settings', onPress: () => navigation.navigate('BackendSettings') },
+          { text: 'Retry', onPress: () => handleRegister() },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
 
