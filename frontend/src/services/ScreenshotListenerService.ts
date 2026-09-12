@@ -9,6 +9,7 @@ import { ocrQueueService } from './OCRQueueService';
 import { useScannerStore } from '../store/scanner.store';
 import { FileUtils } from '../utils/fileUtils';
 import { loggerService } from './loggerService';
+import { databaseService } from '../database/database';
 import { notificationService } from './notificationService';
 import { performanceAuditService } from './performanceAuditService';
 
@@ -42,7 +43,8 @@ export class ScreenshotListenerService {
     // 2. Initialize Android notification channels
     await notificationService.createNotificationChannels();
 
-    // 3. Load existing queue stats and OCR metrics into store
+    // 3. Ensure database schema is ready and load existing queue stats
+    await databaseService.getDatabase();
     await this.refreshStoreCounts();
 
     // 4. Resume any interrupted or pending OCR jobs from SQLite database
