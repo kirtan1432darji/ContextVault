@@ -590,11 +590,31 @@ export const SettingsScreen: React.FC = () => {
       {/* Storage & Data Management (Sprint RN-10) */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Storage & Caches
+          Storage & Intelligence
         </Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('Storage')}
+          onPress={() => navigation.navigate('FolderAnalytics')}
           style={styles.legalRow}
+          accessibilityRole="button"
+          accessibilityLabel="Open Folder Analytics Dashboard"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="stats-chart-outline" size={20} color={theme.colors.accent} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Folder Analytics Dashboard
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Storage distribution, AI confidence & entity tally
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Storage')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
           accessibilityRole="button"
           accessibilityLabel="Open Storage and Cache Manager"
         >

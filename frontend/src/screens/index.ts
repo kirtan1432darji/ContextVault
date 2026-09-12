@@ -19,3 +19,4 @@ export * from './StorageScreen';
 export * from './QADebugPanelScreen';
 export * from './NotificationCenterScreen';
 export * from './RecycleBinScreen';
+export * from './FolderAnalyticsScreen';

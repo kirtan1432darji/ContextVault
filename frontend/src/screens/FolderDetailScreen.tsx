@@ -476,6 +476,17 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
               <Icon name="sparkles" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
               <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('FolderAnalytics', { categoryId, categoryName })}
+              style={[
+                styles.analyticsHeaderBtn,
+                { backgroundColor: `${theme.colors.accent}18`, borderColor: `${theme.colors.accent}40` },
+              ]}
+              accessibilityLabel="View Folder Analytics"
+            >
+              <Icon name="stats-chart-outline" size={15} color={theme.colors.accent} />
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -740,6 +751,15 @@ const styles = StyleSheet.create({
   aiBtnText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  analyticsHeaderBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   searchAndSortRow: {
     flexDirection: 'row',

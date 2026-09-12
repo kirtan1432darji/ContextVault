@@ -19,6 +19,7 @@ import {
   QADebugPanelScreen,
   NotificationCenterScreen,
   RecycleBinScreen,
+  FolderAnalyticsScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -102,6 +103,11 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="RecycleBin"
             component={RecycleBinScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="FolderAnalytics"
+            component={FolderAnalyticsScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>
