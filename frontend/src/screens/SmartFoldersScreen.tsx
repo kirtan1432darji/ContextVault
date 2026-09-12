@@ -282,6 +282,7 @@ export const SmartFoldersScreen: React.FC = () => {
                     >
                       <ScreenshotImageThumbnail
                         filePath={shot.filePath}
+                        deviceAssetId={shot.deviceAssetId}
                         style={styles.folderThumbImage}
                         borderRadius={8}
                       />

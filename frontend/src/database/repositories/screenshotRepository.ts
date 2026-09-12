@@ -50,12 +50,40 @@ export class ScreenshotRepository {
     return this.mapRowToModel(rows[0]);
   }
 
-  async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
-    const rows = await databaseService.executeQuery(
-      'SELECT * FROM screenshots WHERE category_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY created_at DESC',
-      [categoryId]
-    );
+  async getScreenshotsForCategory(
+    categoryId: string,
+    categoryName?: string,
+    descendantIds?: string[]
+  ): Promise<ScreenshotModel[]> {
+    const ids = descendantIds && descendantIds.length > 0 ? descendantIds : [categoryId];
+    const placeholders = ids.map(() => '?').join(',');
+    const params: any[] = [...ids];
+
+    let query = `
+      SELECT * FROM screenshots 
+      WHERE (
+        category_id IN (${placeholders})
+    `;
+
+    if (categoryName && categoryName.trim().length > 0) {
+      const cleanName = categoryName.trim();
+      query += ` OR LOWER(category_name) = LOWER(?) OR folder_path LIKE ?`;
+      params.push(cleanName);
+      params.push(`%"${cleanName}"%`);
+    }
+
+    query += `
+      )
+      AND (is_deleted = 0 OR is_deleted IS NULL)
+      ORDER BY created_at DESC
+    `;
+
+    const rows = await databaseService.executeQuery(query, params);
     return rows.map(this.mapRowToModel);
+  }
+
+  async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
+    return this.getScreenshotsForCategory(categoryId);
   }
 
   async getNeedsReviewCount(): Promise<number> {

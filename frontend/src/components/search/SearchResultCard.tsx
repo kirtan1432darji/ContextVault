@@ -44,7 +44,11 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.cardTouchable}>
         {/* Left Thumbnail */}
         <View style={[styles.thumbContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
-          <ScreenshotImageThumbnail filePath={item.filePath} style={styles.thumb} />
+          <ScreenshotImageThumbnail
+            filePath={item.filePath}
+            deviceAssetId={item.deviceAssetId}
+            style={styles.thumb}
+          />
           {item.isFavorite && (
             <View style={styles.favBadge}>
               <Icon name="heart" size={12} color="#EF4444" />

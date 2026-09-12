@@ -14,7 +14,8 @@ import { useAppTheme } from '../theme';
 import { FileUtils } from '../utils/fileUtils';
 
 export interface ScreenshotImageThumbnailProps {
-  filePath: string;
+  filePath?: string;
+  deviceAssetId?: string;
   style?: StyleProp<ViewStyle>;
   imageStyle?: StyleProp<ImageStyle>;
   borderRadius?: number;
@@ -24,10 +25,12 @@ export interface ScreenshotImageThumbnailProps {
   fallbackIconSize?: number;
   onPress?: () => void;
   onError?: () => void;
+  enableRetry?: boolean;
 }
 
 const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
   filePath,
+  deviceAssetId,
   style,
   imageStyle,
   borderRadius = 12,
@@ -37,26 +40,45 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
   fallbackIconSize = 24,
   onPress,
   onError,
+  enableRetry = false,
 }) => {
   const theme = useAppTheme();
-  const normalizedUri = useMemo(() => FileUtils.normalizeImageUri(filePath), [filePath]);
+  const candidateUris = useMemo(
+    () => FileUtils.getImageCandidateUris(filePath, deviceAssetId),
+    [filePath, deviceAssetId]
+  );
 
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    setCandidateIndex(0);
     setHasError(false);
-    if (filePath && filePath.trim().length > 0) {
+    if (candidateUris.length > 0) {
       setIsLoading(true);
     } else {
       setIsLoading(false);
     }
-  }, [filePath]);
+  }, [candidateUris]);
+
+  const activeUri = candidateUris[candidateIndex] || '';
 
   const handleImageError = () => {
-    setHasError(true);
-    setIsLoading(false);
-    onError?.();
+    if (candidateIndex + 1 < candidateUris.length) {
+      // Advance to next candidate URI (e.g. fallback from MediaStore Content URI to File URI or vice versa)
+      setCandidateIndex((prev) => prev + 1);
+    } else {
+      setHasError(true);
+      setIsLoading(false);
+      onError?.();
+    }
+  };
+
+  const handleRetry = () => {
+    setHasError(false);
+    setCandidateIndex(0);
+    setIsLoading(true);
   };
 
   const handleImageLoaded = () => {
@@ -74,10 +96,10 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
         style,
       ]}
     >
-      {normalizedUri && !hasError ? (
+      {activeUri && !hasError ? (
         <>
           <Image
-            source={{ uri: normalizedUri, cache: 'force-cache' }}
+            source={{ uri: activeUri, cache: 'force-cache' }}
             style={[styles.image, { borderRadius }, imageStyle]}
             resizeMode={resizeMode}
             onLoadStart={() => setIsLoading(true)}
@@ -93,13 +115,25 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
           )}
         </>
       ) : (
-        <View style={styles.fallbackContainer} testID="thumbnail-fallback">
+        <TouchableOpacity
+          disabled={!enableRetry}
+          onPress={handleRetry}
+          style={styles.fallbackContainer}
+          testID="thumbnail-fallback"
+          accessibilityLabel={enableRetry ? 'Retry loading image' : undefined}
+          accessibilityRole={enableRetry ? 'button' : undefined}
+        >
           <Icon
             name={fallbackIcon}
             size={fallbackIconSize}
             color={theme.isDark ? '#64748B' : '#94A3B8'}
           />
-        </View>
+          {enableRetry && (
+            <View style={styles.retryBadge}>
+              <Icon name="refresh" size={10} color={theme.colors.primary} />
+            </View>
+          )}
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -144,5 +178,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  retryBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 8,
+    padding: 2,
   },
 });

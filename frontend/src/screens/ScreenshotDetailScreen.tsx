@@ -129,9 +129,35 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   };
 
   const [imageError, setImageError] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
   const [lastTap, setLastTap] = useState(0);
+
+  const candidateUris = React.useMemo(
+    () => FileUtils.getImageCandidateUris(screenshot?.filePath, screenshot?.deviceAssetId),
+    [screenshot?.filePath, screenshot?.deviceAssetId]
+  );
+
+  useEffect(() => {
+    setImageError(false);
+    setCandidateIndex(0);
+  }, [candidateUris]);
+
+  const activeUri = candidateUris[candidateIndex] || '';
+
+  const handleImageError = () => {
+    if (candidateIndex + 1 < candidateUris.length) {
+      setCandidateIndex((prev) => prev + 1);
+    } else {
+      setImageError(true);
+    }
+  };
+
+  const handleRetryImage = () => {
+    setImageError(false);
+    setCandidateIndex(0);
+  };
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -145,7 +171,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const handleZoomOut = () => setZoomScale((s) => Math.max(1, +(s - 0.5).toFixed(1)));
   const handleZoomReset = () => setZoomScale(1);
 
-  const uri = FileUtils.normalizeImageUri(screenshot.filePath);
+  const uri = activeUri;
 
   const ocrText = screenshot.ocrText || ocrRecord?.extractedText || '';
   const processingDuration = ocrRecord?.processingTime || 0;
@@ -235,6 +261,15 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             <Text numberOfLines={2} style={[styles.imageErrorPath, { color: theme.colors.textMuted }]}>
               {screenshot.filePath}
             </Text>
+            <TouchableOpacity
+              onPress={handleRetryImage}
+              style={[styles.retryLoadBtn, { backgroundColor: `${theme.colors.primary}18`, borderColor: theme.colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading screenshot"
+            >
+              <Icon name="refresh-outline" size={16} color={theme.colors.primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.retryLoadBtnText, { color: theme.colors.primary }]}>Retry Loading</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
@@ -251,7 +286,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               source={{ uri, cache: 'force-cache' }}
               style={styles.image}
               resizeMode="contain"
-              onError={() => setImageError(true)}
+              onError={handleImageError}
             />
             <View style={styles.zoomHintPill}>
               <Icon name="scan-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
@@ -1012,6 +1047,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
     textAlign: 'center',
+    marginBottom: 12,
+  },
+  retryLoadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  retryLoadBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   zoomHintPill: {
     position: 'absolute',

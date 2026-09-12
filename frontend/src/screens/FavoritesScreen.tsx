@@ -52,7 +52,11 @@ export const FavoritesScreen: React.FC = () => {
               onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
               style={[styles.gridItem, { width: COLUMN_WIDTH }]}
             >
-              <ScreenshotImageThumbnail filePath={item.filePath} style={styles.gridThumb} />
+              <ScreenshotImageThumbnail
+                filePath={item.filePath}
+                deviceAssetId={item.deviceAssetId}
+                style={styles.gridThumb}
+              />
               <View style={styles.metaRow}>
                 <Text numberOfLines={1} style={[styles.titleText, { color: theme.colors.textPrimary }]}>
                   {item.categoryName}

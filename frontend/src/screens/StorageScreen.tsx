@@ -708,6 +708,7 @@ export const StorageScreen: React.FC = () => {
                             <View style={styles.dupThumbnailWrapper}>
                               <ScreenshotImageThumbnail
                                 filePath={group.original.filePath}
+                                deviceAssetId={group.original.deviceAssetId}
                                 style={styles.dupThumb}
                                 borderRadius={8}
                               />
@@ -719,6 +720,7 @@ export const StorageScreen: React.FC = () => {
                               <View key={dup.id} style={styles.dupThumbnailWrapper}>
                                 <ScreenshotImageThumbnail
                                   filePath={dup.filePath}
+                                  deviceAssetId={dup.deviceAssetId}
                                   style={styles.dupThumb}
                                   borderRadius={8}
                                 />

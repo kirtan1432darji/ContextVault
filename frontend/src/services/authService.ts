@@ -260,6 +260,13 @@ class AuthService {
       return Result.failure('Unable to process password reset request.', err);
     }
   }
+
+  /**
+   * Request password reset instructions (Sprint P0 Specification).
+   */
+  async forgotPassword(email: string): Promise<Result<boolean>> {
+    return this.requestPasswordReset(email);
+  }
 }
 
 export const authService = new AuthService();

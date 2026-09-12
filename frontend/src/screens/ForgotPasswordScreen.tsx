@@ -35,7 +35,7 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
     }
 
     setLoading(true);
-    const result = await authService.requestPasswordReset(cleanEmail);
+    const result = await authService.forgotPassword(cleanEmail);
     setLoading(false);
 
     if (result.isSuccess) {

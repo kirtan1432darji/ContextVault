@@ -129,9 +129,7 @@ export const DashboardScreen: React.FC = () => {
     loadSavedSearches();
     screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
-      if (items && items.length > 0) {
-        setScreenshots(items);
-      }
+      setScreenshots(items || []);
     });
   }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches]);
 
@@ -148,9 +146,7 @@ export const DashboardScreen: React.FC = () => {
         loadSavedSearches(),
         screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount),
         screenshotRepository.getAllScreenshots().then((items) => {
-          if (items && items.length > 0) {
-            setScreenshots(items);
-          }
+          setScreenshots(items || []);
         }),
         screenshotListenerService.refreshStoreCounts(),
       ]);
@@ -443,7 +439,7 @@ export const DashboardScreen: React.FC = () => {
                   style={[
                     styles.heroRecentChip,
                     {
-                      backgroundColor: theme.isDark ? '#1E293B80' : '#F1F5F9',
+                      backgroundColor: theme.colors.surfaceVariant,
                       borderColor: theme.colors.border,
                     },
                   ]}
@@ -487,6 +483,61 @@ export const DashboardScreen: React.FC = () => {
           </Text>
         </View>
       </ModernCard>
+
+      {/* Quick Action Hub (Sprint P0) */}
+      <View style={styles.quickActionsRow}>
+        <TouchableOpacity
+          style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => navigation.navigate('ScannerStatus')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIconWrap, { backgroundColor: theme.colors.primary + '15' }]}>
+            <Icon name="scan-outline" size={22} color={theme.colors.primary} />
+          </View>
+          <Text style={[styles.quickActionLabel, { color: theme.colors.textPrimary }]}>
+            Scan
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => navigation.navigate('GlobalAISearch', { autoFocus: false })}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIconWrap, { backgroundColor: theme.colors.info + '15' }]}>
+            <Icon name="search-outline" size={22} color={theme.colors.info} />
+          </View>
+          <Text style={[styles.quickActionLabel, { color: theme.colors.textPrimary }]}>
+            Search
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Folders' })}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIconWrap, { backgroundColor: theme.colors.warning + '15' }]}>
+            <Icon name="folder-outline" size={22} color={theme.colors.warning} />
+          </View>
+          <Text style={[styles.quickActionLabel, { color: theme.colors.textPrimary }]}>
+            Folders
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => navigation.navigate('FolderAnalytics')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIconWrap, { backgroundColor: theme.colors.success + '15' }]}>
+            <Icon name="analytics-outline" size={22} color={theme.colors.success} />
+          </View>
+          <Text style={[styles.quickActionLabel, { color: theme.colors.textPrimary }]}>
+            Analytics
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* 3. Automatic Screenshot Detection Engine Hero Card (Sprint RN-03) */}
       <ModernCard style={styles.heroEngineCard}>
@@ -563,7 +614,7 @@ export const DashboardScreen: React.FC = () => {
         <View
           style={[
             styles.lastDetectedContainer,
-            { backgroundColor: theme.isDark ? '#1E293B60' : '#F8FAFC' },
+            { backgroundColor: theme.colors.surfaceVariant },
           ]}
         >
           <View style={styles.lastDetectedHeader}>
@@ -585,9 +636,11 @@ export const DashboardScreen: React.FC = () => {
             >
               <ScreenshotImageThumbnail
                 filePath={lastScreenshot.filePath}
+                deviceAssetId={lastScreenshot.deviceAssetId}
                 style={styles.lastItemThumb}
                 borderRadius={8}
                 showLoadingIndicator
+                enableRetry
               />
               <View style={styles.lastItemDetails}>
                 <Text
@@ -696,7 +749,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
 
         <View style={styles.ocrMetricsGrid}>
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
               <AnimatedCounter value={ocrCompletedToday} />
             </Text>
@@ -705,7 +758,7 @@ export const DashboardScreen: React.FC = () => {
             </Text>
           </View>
 
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text style={[styles.ocrMetricValue, { color: theme.colors.accent }]}>
               <AnimatedCounter value={ocrPending} />
             </Text>
@@ -714,7 +767,7 @@ export const DashboardScreen: React.FC = () => {
             </Text>
           </View>
 
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text
               style={[
                 styles.ocrMetricValue,
@@ -772,7 +825,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
 
         <View style={styles.ocrMetricsGrid}>
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text style={[styles.ocrMetricValue, { color: theme.colors.primary }]}>
               <AnimatedCounter value={contextsGeneratedToday} />
             </Text>
@@ -781,7 +834,7 @@ export const DashboardScreen: React.FC = () => {
             </Text>
           </View>
 
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
               <AnimatedCounter value={aiSyncedToday} />
             </Text>
@@ -790,7 +843,7 @@ export const DashboardScreen: React.FC = () => {
             </Text>
           </View>
 
-          <View style={[styles.ocrMetricBox, { backgroundColor: theme.isDark ? '#1E293B50' : '#F1F5F9' }]}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Text
               style={[
                 styles.ocrMetricValue,
@@ -848,7 +901,7 @@ export const DashboardScreen: React.FC = () => {
             style={[
               styles.chatPrimaryBox,
               {
-                backgroundColor: theme.isDark ? '#1E293B60' : '#F8FAFC',
+                backgroundColor: theme.colors.surfaceVariant,
                 borderColor: theme.colors.border,
               },
             ]}
@@ -922,7 +975,7 @@ export const DashboardScreen: React.FC = () => {
                     style={[
                       styles.miniChatChip,
                       {
-                        backgroundColor: theme.isDark ? '#1E293B80' : '#F1F5F9',
+                        backgroundColor: theme.colors.surfaceVariant,
                         borderColor: theme.colors.border,
                       },
                     ]}
@@ -1051,6 +1104,7 @@ export const DashboardScreen: React.FC = () => {
               >
                 <ScreenshotImageThumbnail
                   filePath={item.filePath}
+                  deviceAssetId={item.deviceAssetId}
                   style={styles.recentThumb}
                 />
                 <Text
@@ -1089,6 +1143,7 @@ export const DashboardScreen: React.FC = () => {
               >
                 <ScreenshotImageThumbnail
                   filePath={item.filePath}
+                  deviceAssetId={item.deviceAssetId}
                   style={styles.reviewThumb}
                 />
                 <Text
@@ -1390,6 +1445,37 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 36,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 8,
+  },
+  quickActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  quickActionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  quickActionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   heroEngineCard: {
     marginBottom: 16,

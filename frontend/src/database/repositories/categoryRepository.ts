@@ -173,12 +173,30 @@ export class CategoryRepository {
   }
 
   async updateScreenshotCount(categoryId: string): Promise<number> {
+    const cat = await this.getCategoryById(categoryId);
     const descendantIds = await this.getDescendantCategoryIds(categoryId);
     const placeholders = descendantIds.map(() => '?').join(',');
-    const rows = await databaseService.executeQuery(
-      `SELECT COUNT(*) as count FROM screenshots WHERE category_id IN (${placeholders}) AND (is_deleted = 0 OR is_deleted IS NULL)`,
-      descendantIds
-    );
+    const params: any[] = [...descendantIds];
+
+    let sql = `
+      SELECT COUNT(*) as count FROM screenshots 
+      WHERE (
+        category_id IN (${placeholders})
+    `;
+
+    if (cat && cat.name) {
+      const cleanName = cat.name.trim();
+      sql += ` OR LOWER(category_name) = LOWER(?) OR folder_path LIKE ?`;
+      params.push(cleanName);
+      params.push(`%"${cleanName}"%`);
+    }
+
+    sql += `
+      )
+      AND (is_deleted = 0 OR is_deleted IS NULL)
+    `;
+
+    const rows = await databaseService.executeQuery(sql, params);
     const count = rows.length > 0 ? rows[0].count : 0;
 
     await databaseService.executeCommand(

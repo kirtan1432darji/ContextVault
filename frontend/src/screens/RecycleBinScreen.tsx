@@ -152,6 +152,7 @@ export const RecycleBinScreen: React.FC = () => {
         <View style={styles.cardRow}>
           <ScreenshotImageThumbnail
             filePath={item.filePath}
+            deviceAssetId={item.deviceAssetId}
             style={styles.thumbnail}
             borderRadius={10}
           />

@@ -20,6 +20,7 @@ import { useAppTheme } from '../theme';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
 import { smartFolderService } from '../services/SmartFolderService';
+import { screenshotRepository, categoryRepository } from '../database/repositories';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { EmptyStateView } from '../components/EmptyStateView';
@@ -68,13 +69,31 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   // Multi-Select State (Sprint P2-3)
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [dbScreenshots, setDbScreenshots] = useState<ScreenshotModel[]>([]);
+
+  const loadFolderScreenshots = React.useCallback(async () => {
+    try {
+      const descendantIds = useCategoryStore.getState().getDescendantCategoryIds(categoryId);
+      const items = await screenshotRepository.getScreenshotsForCategory(
+        categoryId,
+        categoryName,
+        descendantIds
+      );
+      setDbScreenshots(items);
+      // Ensure folder count is kept in sync
+      await categoryRepository.updateScreenshotCount(categoryId);
+    } catch (err) {
+      console.warn('[FolderDetail] Failed to query SQLite category screenshots:', err);
+    }
+  }, [categoryId, categoryName]);
 
   // Real-time synchronization when screen is focused
   useFocusEffect(
     React.useCallback(() => {
       useCategoryStore.getState().loadCategories();
       useScreenshotStore.getState().loadScreenshots();
-    }, [])
+      loadFolderScreenshots();
+    }, [loadFolderScreenshots])
   );
 
   // All screenshots that belong to this folder or any nested subcategories
@@ -84,23 +103,48 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   }, [categoryId, categories]);
 
   const folderScreenshots = useMemo(() => {
-    return allScreenshots.filter(
-      (s) =>
-        folderCategoryIds.has(s.categoryId) ||
-        s.categoryName.toLowerCase() === categoryName.toLowerCase()
-    );
-  }, [allScreenshots, folderCategoryIds, categoryName]);
+    const map = new Map<string, ScreenshotModel>();
+
+    // 1. Primary from SQLite
+    dbScreenshots.forEach((s) => map.set(s.id, s));
+
+    // 2. Supplement from in-memory store
+    const cleanCatName = categoryName.toLowerCase();
+    allScreenshots.forEach((s) => {
+      const isDescendant = folderCategoryIds.has(s.categoryId);
+      const nameMatches = s.categoryName.toLowerCase() === cleanCatName;
+      const pathMatches = s.folderPath && s.folderPath.some((p) => p.toLowerCase() === cleanCatName);
+      if (isDescendant || nameMatches || pathMatches) {
+        if (!map.has(s.id)) {
+          map.set(s.id, s);
+        }
+      }
+    });
+
+    return Array.from(map.values()).filter((s) => !s.isDeleted);
+  }, [dbScreenshots, allScreenshots, folderCategoryIds, categoryName]);
 
   // Distinct subcategory tags and child folders from screenshots
   const distinctSubcategories = useMemo(() => {
-    const fromScreenshots = folderScreenshots
-      .map((s) => s.subcategory)
-      .filter((sub): sub is string => Boolean(sub && sub.trim().length > 0));
-    const childCategories = categories
+    const subcats = new Set<string>();
+    folderScreenshots.forEach((s) => {
+      if (s.subcategory && s.subcategory.trim().length > 0) {
+        subcats.add(s.subcategory.trim());
+      }
+      if (s.folderPath && Array.isArray(s.folderPath)) {
+        s.folderPath.forEach((p) => {
+          if (p.toLowerCase() !== categoryName.toLowerCase()) {
+            subcats.add(p);
+          }
+        });
+      }
+    });
+    categories
       .filter((c) => c.parentId === categoryId || c.parentCategoryId === categoryId)
-      .map((c) => c.name);
-    return Array.from(new Set([...fromScreenshots, ...childCategories]));
-  }, [folderScreenshots, categories, categoryId]);
+      .forEach((c) => subcats.add(c.name));
+
+    return Array.from(subcats);
+  }, [folderScreenshots, categories, categoryId, categoryName]);
 
   // Filtered and sorted screenshots
   const displayedScreenshots = useMemo(() => {
@@ -121,7 +165,8 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         (s) =>
           (targetDescendants && targetDescendants.has(s.categoryId)) ||
           (s.subcategory && s.subcategory.toLowerCase() === selectedSubcat.toLowerCase()) ||
-          s.categoryName.toLowerCase() === selectedSubcat.toLowerCase()
+          s.categoryName.toLowerCase() === selectedSubcat.toLowerCase() ||
+          (s.folderPath && s.folderPath.some((p) => p.toLowerCase() === selectedSubcat.toLowerCase()))
       );
     }
 
@@ -212,6 +257,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           style: 'destructive',
           onPress: async () => {
             await useScreenshotStore.getState().bulkSoftDelete(ids);
+            await loadFolderScreenshots();
             handleCancelSelect();
             Alert.alert(
               'Recycle Bin',
@@ -260,10 +306,12 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         setMoveModalVisible(false);
         setIsBulkMove(false);
         handleCancelSelect();
+        await loadFolderScreenshots();
         Alert.alert('Moved', `Successfully moved ${count} screenshots.`);
       } else if (targetScreenshot) {
         await smartFolderService.moveScreenshot(targetScreenshot.id, targetCategoryId);
         setMoveModalVisible(false);
+        await loadFolderScreenshots();
         Alert.alert('Moved', 'Screenshot moved to destination folder.');
       }
     } catch (err: any) {
@@ -313,6 +361,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.thumbWrapper}>
             <ScreenshotImageThumbnail
               filePath={item.filePath}
+              deviceAssetId={item.deviceAssetId}
               style={[styles.thumbnail, { height: itemHeight }]}
               borderRadius={8}
               showLoadingIndicator
@@ -368,7 +417,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           {!isSelectMode && (
             <TouchableOpacity
               onPress={() => handleOpenMove(item)}
-              style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+              style={[styles.moveIconBtn, { backgroundColor: theme.colors.surfaceVariant }]}
               accessibilityLabel="Move to another folder"
             >
               <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
@@ -387,7 +436,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           <View style={styles.selectionBarLeft}>
             <TouchableOpacity
               onPress={handleCancelSelect}
-              style={[styles.closeSelectBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+              style={[styles.closeSelectBtn, { backgroundColor: theme.colors.surfaceVariant }]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel="Exit select mode"
             >

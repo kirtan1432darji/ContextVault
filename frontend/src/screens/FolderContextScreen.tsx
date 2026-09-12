@@ -406,6 +406,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
                 >
                   <ScreenshotImageThumbnail
                     filePath={item.filePath}
+                    deviceAssetId={item.deviceAssetId}
                     style={styles.screenshotThumb}
                     borderRadius={8}
                     showLoadingIndicator
