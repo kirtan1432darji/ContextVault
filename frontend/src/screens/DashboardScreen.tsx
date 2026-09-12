@@ -1097,6 +1097,9 @@ export const DashboardScreen: React.FC = () => {
             showsHorizontalScrollIndicator={false}
             data={screenshots.slice(0, 10)}
             keyExtractor={(item) => item.id}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={5}
             renderItem={({ item }) => (
               <TouchableOpacity
                 onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
@@ -1109,18 +1112,17 @@ export const DashboardScreen: React.FC = () => {
                 />
                 <Text
                   numberOfLines={1}
-                  style={[styles.recentCategory, { color: theme.colors.textPrimary }]}
+                  style={[styles.recentCategory, { color: theme.colors.textSecondary }]}
                 >
-                  {item.categoryName}
+                  {item.fileName}
                 </Text>
-                <ConfidenceBadge confidence={item.confidence} showPercent={false} />
               </TouchableOpacity>
             )}
           />
         </View>
       )}
 
-      {/* 6. Needs Review Strip */}
+      {/* 8. Needs Review Queue */}
       {needsReviewList.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1136,6 +1138,9 @@ export const DashboardScreen: React.FC = () => {
             showsHorizontalScrollIndicator={false}
             data={needsReviewList.slice(0, 6)}
             keyExtractor={(item) => item.id}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={5}
             renderItem={({ item }) => (
               <TouchableOpacity
                 onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}

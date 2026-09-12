@@ -11,6 +11,7 @@ import {
   Alert,
   ScrollView,
   Share,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -609,7 +610,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                     styles.chip,
                     isSelected
                       ? { backgroundColor: theme.colors.primary }
-                      : { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' },
+                      : { backgroundColor: theme.colors.surfaceVariant },
                   ]}
                 >
                   <Text
@@ -645,6 +646,10 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           numColumns={2}
           contentContainerStyle={styles.gridContent}
           renderItem={renderScreenshotGridItem}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
         />
       )}
 
