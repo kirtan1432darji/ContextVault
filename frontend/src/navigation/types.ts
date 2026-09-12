@@ -52,6 +52,7 @@ export type RootStackParamList = {
       }
     | undefined;
   BackendSettings: undefined;
+  VisionDebug: { screenshotId?: string } | undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

@@ -21,6 +21,7 @@ import {
   RecycleBinScreen,
   FolderAnalyticsScreen,
   BackendSettingsScreen,
+  VisionDebugScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -114,6 +115,11 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="FolderAnalytics"
             component={FolderAnalyticsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="VisionDebug"
+            component={VisionDebugScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>

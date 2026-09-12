@@ -1,0 +1,30 @@
+[
+  {
+    "id": "groq_primary",
+    "provider": "groq",
+    "apiKey": "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",
+    "model": "qwen/qwen3.8-27b",
+    "enabled": true
+  },
+  {
+    "id": "groq_secondary",
+    "provider": "groq",
+    "apiKey": "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",
+    "model": "qwen/qwen3.8-27b",
+    "enabled": true
+  },
+  {
+    "id": "groq_tertiary",
+    "provider": "groq",
+    "apiKey": "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",
+    "model": "qwen/qwen3.8-27b",
+    "enabled": true
+  },
+  {
+    "id": "gemini_flash",
+    "provider": "gemini",
+    "apiKey": "AQ.Ab8RN6KCiC6sBptwl9lMuZtuPP7IiaRQu-YAoB1tuG7lK68FHg",
+    "model": "models/gemini-3.5-flash",
+    "enabled": true
+  }
+]

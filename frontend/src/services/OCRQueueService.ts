@@ -222,6 +222,21 @@ export class OCRQueueService {
         const wordCount = result.rawText ? result.rawText.trim().split(/\s+/).length : 0;
         notificationService.notifyOCRCompleted(item.fileName, wordCount).catch(() => {});
 
+        // 8. Queue Vision AI Foundation Processing (Sprint V01)
+        // OCR completed first; Vision AI processes visually in background without blocking UI
+        try {
+          const { visionInferenceQueue } = await import('../vision/VisionInferenceQueue');
+          visionInferenceQueue.enqueue({
+            screenshotId: item.id,
+            filePath: item.localPath || item.filePath,
+            fileName: item.fileName,
+            ocrText: result.rawText,
+            deviceFolder: item.deviceFolder,
+          });
+        } catch (visionErr) {
+          loggerService.warn('OCR', `Failed to enqueue Vision AI for ${item.fileName}`, visionErr);
+        }
+
         loggerService.info(
           'OCR',
           `Completed OCR for ${item.fileName} in ${processingTimeMs}ms (${result.blocks.length} blocks, ${wordCount} words)`

@@ -1,6 +1,7 @@
 import SQLite, { SQLiteDatabase } from 'react-native-sqlite-storage';
 import { DATABASE_NAME, SCHEMA_SQL } from './schema';
 import { DEFAULT_CATEGORIES } from '../models/category.model';
+import { VISION_CACHE_TABLE_SQL, VISION_CACHE_INDEXES_SQL } from './visionCacheMigration';
 
 SQLite.enablePromise(true);
 
@@ -102,6 +103,10 @@ class DatabaseService {
       'ALTER TABLE pending_screenshots ADD COLUMN local_path TEXT',
       'ALTER TABLE pending_screenshots ADD COLUMN content_uri TEXT',
       'ALTER TABLE pending_screenshots ADD COLUMN thumbnail_uri TEXT',
+
+      // Sprint V01 Vision AI Cache
+      VISION_CACHE_TABLE_SQL,
+      ...VISION_CACHE_INDEXES_SQL,
     ];
 
     for (const alterSql of alterStatements) {

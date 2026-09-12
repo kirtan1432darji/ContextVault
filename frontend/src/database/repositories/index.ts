@@ -8,3 +8,4 @@ export * from './folderContextRepository';
 export * from './classificationCacheRepository';
 export * from './chatRepository';
 export * from './searchRepository';
+export * from './VisionRepository';

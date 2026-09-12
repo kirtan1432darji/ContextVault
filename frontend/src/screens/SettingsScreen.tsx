@@ -713,6 +713,28 @@ export const SettingsScreen: React.FC = () => {
           </TouchableOpacity>
         )}
 
+        {EnvironmentManager.isDeveloperModeAvailable() && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('VisionDebug')}
+            style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open Vision AI Debugger"
+          >
+            <View style={styles.rowLabelGroup}>
+              <Icon name="sparkles-outline" size={20} color="#8B5CF6" />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                  Vision AI Debugger (v1.1)
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                  Multi-key failover, visual scenes & offline heuristics
+                </Text>
+              </View>
+            </View>
+            <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           onPress={() => navigation.navigate('QADebugPanel')}
           style={[styles.legalRow, EnvironmentManager.isDeveloperModeAvailable() ? { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 } : undefined]}

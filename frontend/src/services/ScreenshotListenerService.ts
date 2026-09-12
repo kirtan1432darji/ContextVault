@@ -50,6 +50,14 @@ export class ScreenshotListenerService {
     // 4. Resume any interrupted or pending OCR jobs from SQLite database
     await ocrQueueService.resumePendingOnStartup();
 
+    // 4b. Initialize Vision AI inference queue (Sprint V01)
+    try {
+      const { visionInferenceQueue } = await import('../vision/VisionInferenceQueue');
+      await visionInferenceQueue.resumePendingOnStartup();
+    } catch (visionErr) {
+      loggerService.warn('Scanner', 'Failed to initialize vision queue on startup', visionErr);
+    }
+
     // 5. Check if listener should automatically resume after app launch
     const savedState = await AsyncStorage.getItem(STORAGE_KEY_SCANNER_ENABLED);
     const shouldAutoStart = savedState === null || savedState === 'true';

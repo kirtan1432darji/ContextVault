@@ -21,3 +21,4 @@ export * from './NotificationCenterScreen';
 export * from './RecycleBinScreen';
 export * from './FolderAnalyticsScreen';
 export * from './BackendSettingsScreen';
+export * from './VisionDebugScreen';

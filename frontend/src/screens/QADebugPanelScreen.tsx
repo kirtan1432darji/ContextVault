@@ -430,6 +430,29 @@ export const QADebugPanelScreen: React.FC = () => {
           </View>
         </ModernCard>
 
+        {/* Vision AI Foundation Card (Sprint V01) */}
+        <ModernCard style={styles.card}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, marginBottom: 0 }]}>
+              Vision AI Foundation (v1.1)
+            </Text>
+            <View style={[styles.badgePill, { backgroundColor: '#8B5CF620' }]}>
+              <Text style={[styles.badgeText, { color: '#8B5CF6' }]}>Offline + 4 API Keys</Text>
+            </View>
+          </View>
+          <Text style={[styles.tileMeta, { color: theme.colors.textSecondary, marginTop: 4, marginBottom: 12 }]}>
+            Visual scene intelligence, dynamic multi-key failover pool (Groq + Gemini), and offline heuristic pipeline.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.simBtn, { width: '100%', backgroundColor: '#8B5CF6' }]}
+            onPress={() => navigation.navigate('VisionDebug')}
+          >
+            <Icon name="sparkles" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.btnText}>Open Vision AI Debugger</Text>
+          </TouchableOpacity>
+        </ModernCard>
+
         {/* Hackathon Demo Mode Card (Sprint RN-11) */}
         <ModernCard style={styles.card}>
           <View style={styles.titleRow}>

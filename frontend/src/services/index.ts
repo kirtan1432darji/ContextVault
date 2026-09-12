@@ -30,3 +30,5 @@ export * from './recycleBinService';
 export * from './folderContextExportService';
 export * from './voiceSearchService';
 export * from './crashReportingService';
+export * from './EntityMergeService';
+export * from '../vision';

@@ -1,7 +1,8 @@
 import { DEFAULT_CATEGORIES } from '../models/category.model';
+import { VISION_CACHE_TABLE_SQL, VISION_CACHE_INDEXES_SQL } from './visionCacheMigration';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 5;
+export const DATABASE_VERSION = 6;
 
 export const SCHEMA_SQL = [
   // 1. Categories (Sprint RN-05 Dynamic Smart Folder Hierarchy)
@@ -227,4 +228,8 @@ export const SCHEMA_SQL = [
     created_at TEXT NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_saved_searches_created ON saved_searches(created_at);`,
+
+  // 15. Vision AI Cache (Sprint V01)
+  VISION_CACHE_TABLE_SQL,
+  ...VISION_CACHE_INDEXES_SQL,
 ];
