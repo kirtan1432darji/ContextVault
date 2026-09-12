@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   ScrollView,
+  Share,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -26,6 +27,7 @@ import { ModernCard } from '../components/ModernCard';
 import { ScreenshotModel } from '../models';
 import { useAuthStore } from '../store/auth.store';
 import { GuestUpgradeBottomSheet } from '../components/GuestUpgradeBottomSheet';
+import { BulkActionBar } from '../components/BulkActionBar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderDetail'>;
 
@@ -61,6 +63,11 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   // Move Modal State
   const [moveModalVisible, setMoveModalVisible] = useState(false);
   const [targetScreenshot, setTargetScreenshot] = useState<ScreenshotModel | null>(null);
+  const [isBulkMove, setIsBulkMove] = useState(false);
+
+  // Multi-Select State (Sprint P2-3)
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Real-time synchronization when screen is focused
   useFocusEffect(
@@ -137,17 +144,128 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     });
   }, [folderScreenshots, selectedSubcat, searchInFolder, sortOrder]);
 
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      if (next.size === 0) {
+        setIsSelectMode(false);
+      }
+      return next;
+    });
+  };
+
+  const handleStartSelect = (initialId?: string) => {
+    setIsSelectMode(true);
+    if (initialId) {
+      setSelectedIds(new Set([initialId]));
+    } else if (displayedScreenshots.length > 0) {
+      setSelectedIds(new Set([displayedScreenshots[0].id]));
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === displayedScreenshots.length) {
+      setSelectedIds(new Set());
+      setIsSelectMode(false);
+    } else {
+      setSelectedIds(new Set(displayedScreenshots.map((s) => s.id)));
+    }
+  };
+
+  const handleCancelSelect = () => {
+    setIsSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const isAllSelectedFavorite = useMemo(() => {
+    if (selectedIds.size === 0) return false;
+    const selected = displayedScreenshots.filter((s) => selectedIds.has(s.id));
+    return selected.length > 0 && selected.every((s) => s.isFavorite);
+  }, [selectedIds, displayedScreenshots]);
+
+  const handleBulkFavorite = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const newStatus = !isAllSelectedFavorite;
+    await useScreenshotStore.getState().bulkSetFavorite(ids, newStatus);
+    Alert.alert(
+      'Favorites Updated',
+      `${newStatus ? 'Starred' : 'Unstarred'} ${ids.length} screenshot${ids.length !== 1 ? 's' : ''}.`
+    );
+  };
+
+  const handleBulkDelete = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    Alert.alert(
+      'Move to Recycle Bin',
+      `Move ${ids.length} screenshot${ids.length !== 1 ? 's' : ''} to the Recycle Bin? You can restore them anytime.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move to Bin',
+          style: 'destructive',
+          onPress: async () => {
+            await useScreenshotStore.getState().bulkSoftDelete(ids);
+            handleCancelSelect();
+            Alert.alert(
+              'Recycle Bin',
+              `Moved ${ids.length} screenshot${ids.length !== 1 ? 's' : ''} to Recycle Bin.`
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenBulkMove = () => {
+    setIsBulkMove(true);
+    setTargetScreenshot(null);
+    setMoveModalVisible(true);
+  };
+
+  const handleBulkShare = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const selected = displayedScreenshots.filter((s) => selectedIds.has(s.id));
+    const summary = selected
+      .map((s, idx) => `${idx + 1}. ${s.fileName} (${s.categoryName})`)
+      .join('\n');
+    try {
+      await Share.share({
+        title: `ContextVault Screenshots (${ids.length})`,
+        message: `ContextVault Shared Screenshots:\n${summary}`,
+      });
+    } catch (err) {
+      console.warn('Share error:', err);
+    }
+  };
+
   const handleOpenMove = (item: ScreenshotModel) => {
+    setIsBulkMove(false);
     setTargetScreenshot(item);
     setMoveModalVisible(true);
   };
 
   const handleExecuteMove = async (targetCategoryId: string) => {
-    if (!targetScreenshot) return;
     try {
-      await smartFolderService.moveScreenshot(targetScreenshot.id, targetCategoryId);
-      setMoveModalVisible(false);
-      Alert.alert('Moved', 'Screenshot moved to destination folder.');
+      if (isBulkMove) {
+        const ids = Array.from(selectedIds);
+        const count = await smartFolderService.bulkMoveScreenshots(ids, targetCategoryId);
+        setMoveModalVisible(false);
+        setIsBulkMove(false);
+        handleCancelSelect();
+        Alert.alert('Moved', `Successfully moved ${count} screenshots.`);
+      } else if (targetScreenshot) {
+        await smartFolderService.moveScreenshot(targetScreenshot.id, targetCategoryId);
+        setMoveModalVisible(false);
+        Alert.alert('Moved', 'Screenshot moved to destination folder.');
+      }
     } catch (err: any) {
       Alert.alert('Move Error', err?.message || 'Failed to move screenshot.');
     }
@@ -162,11 +280,35 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       itemHeight = index % 3 === 0 ? 190 : index % 2 === 0 ? 150 : 170;
     }
 
+    const isSelected = selectedIds.has(item.id);
+
     return (
-      <ModernCard style={styles.gridCard}>
+      <ModernCard
+        style={[
+          styles.gridCard,
+          isSelectMode && isSelected && {
+            borderColor: theme.colors.primary,
+            borderWidth: 2,
+          },
+        ]}
+      >
         <TouchableOpacity
-          onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+          onPress={() => {
+            if (isSelectMode) {
+              handleToggleSelect(item.id);
+            } else {
+              navigation.navigate('ScreenshotDetail', { id: item.id });
+            }
+          }}
+          onLongPress={() => {
+            if (!isSelectMode) {
+              handleStartSelect(item.id);
+            } else {
+              handleToggleSelect(item.id);
+            }
+          }}
           style={styles.cardTouch}
+          activeOpacity={0.8}
         >
           <View style={styles.thumbWrapper}>
             <ScreenshotImageThumbnail
@@ -178,6 +320,17 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             {item.isFavorite && (
               <View style={styles.favBadgeOverlay}>
                 <Icon name="heart" size={12} color="#EF4444" />
+              </View>
+            )}
+
+            {/* Multi-select indicator badge */}
+            {isSelectMode && (
+              <View style={[styles.selectCheckboxOverlay, isSelected && { backgroundColor: `${theme.colors.primary}30` }]}>
+                <Icon
+                  name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={22}
+                  color={isSelected ? theme.colors.primary : '#FFFFFF'}
+                />
               </View>
             )}
           </View>
@@ -211,14 +364,16 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           ) : null}
 
-          {/* Move button */}
-          <TouchableOpacity
-            onPress={() => handleOpenMove(item)}
-            style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
-            accessibilityLabel="Move to another folder"
-          >
-            <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
+          {/* Move button (shown when not in select mode) */}
+          {!isSelectMode && (
+            <TouchableOpacity
+              onPress={() => handleOpenMove(item)}
+              style={[styles.moveIconBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+              accessibilityLabel="Move to another folder"
+            >
+              <Icon name="swap-horizontal" size={13} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       </ModernCard>
     );
@@ -226,56 +381,104 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* 1. Top Bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-        >
-          <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
-
-        <View style={styles.titleBox}>
-          <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
-            {categoryName}
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {folderScreenshots.length} screenshots
-          </Text>
-        </View>
-
-        <View style={styles.topActionsRow}>
-          <TouchableOpacity
-            onPress={() => {
-              if (isGuest) {
-                handleRestrictedAction('Context AI Chat');
-                return;
-              }
-              navigation.navigate('ContextAIChat', { categoryId, categoryName });
-            }}
-            style={[styles.askAiBtn, { backgroundColor: theme.colors.primary }]}
-            accessibilityLabel="Ask Context AI about this folder"
-          >
-            <Icon name="chatbubbles" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.askAiBtnText}>Ask AI</Text>
-          </TouchableOpacity>
+      {/* 1. Top Bar / Selection Bar */}
+      {isSelectMode ? (
+        <View style={[styles.selectionBar, { backgroundColor: theme.colors.card, borderBottomColor: theme.colors.border }]}>
+          <View style={styles.selectionBarLeft}>
+            <TouchableOpacity
+              onPress={handleCancelSelect}
+              style={[styles.closeSelectBtn, { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' }]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Exit select mode"
+            >
+              <Icon name="close" size={18} color={theme.colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.selectionCountTitle, { color: theme.colors.textPrimary }]}>
+              {selectedIds.size} Selected
+            </Text>
+          </View>
 
           <TouchableOpacity
-            onPress={() => {
-              if (isGuest) {
-                handleRestrictedAction('Folder Context');
-                return;
-              }
-              navigation.navigate('FolderContext', { categoryId, categoryName });
-            }}
-            style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
-            accessibilityLabel="View Living AI Context"
+            onPress={handleSelectAll}
+            style={[styles.selectAllBtn, { backgroundColor: `${theme.colors.primary}18` }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Select or deselect all screenshots"
           >
-            <Icon name="sparkles" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
-            <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
+            <Text style={[styles.selectAllBtnText, { color: theme.colors.primary }]}>
+              {selectedIds.size === displayedScreenshots.length && displayedScreenshots.length > 0
+                ? 'Deselect All'
+                : 'Select All'}
+            </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      ) : (
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+          >
+            <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+
+          <View style={styles.titleBox}>
+            <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
+              {categoryName}
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+              {folderScreenshots.length} screenshots
+            </Text>
+          </View>
+
+          <View style={styles.topActionsRow}>
+            {displayedScreenshots.length > 0 && (
+              <TouchableOpacity
+                onPress={() => handleStartSelect()}
+                style={[
+                  styles.selectModeBtn,
+                  {
+                    backgroundColor: `${theme.colors.primary}15`,
+                    borderColor: `${theme.colors.primary}30`,
+                  },
+                ]}
+                accessibilityLabel="Enter selection mode"
+              >
+                <Icon name="checkmark-done" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                <Text style={[styles.selectModeBtnText, { color: theme.colors.primary }]}>Select</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => {
+                if (isGuest) {
+                  handleRestrictedAction('Context AI Chat');
+                  return;
+                }
+                navigation.navigate('ContextAIChat', { categoryId, categoryName });
+              }}
+              style={[styles.askAiBtn, { backgroundColor: theme.colors.primary }]}
+              accessibilityLabel="Ask Context AI about this folder"
+            >
+              <Icon name="chatbubbles" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.askAiBtnText}>Ask AI</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                if (isGuest) {
+                  handleRestrictedAction('Folder Context');
+                  return;
+                }
+                navigation.navigate('FolderContext', { categoryId, categoryName });
+              }}
+              style={[styles.aiContextBtn, { backgroundColor: `${theme.colors.primary}20` }]}
+              accessibilityLabel="View Living AI Context"
+            >
+              <Icon name="sparkles" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.aiBtnText, { color: theme.colors.primary }]}>AI Context</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* 2. Search & Sort Bar */}
       <View style={styles.searchAndSortRow}>
@@ -395,10 +598,10 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
-              Move Screenshot
+              {isBulkMove ? `Move ${selectedIds.size} Screenshots` : 'Move Screenshot'}
             </Text>
             <Text numberOfLines={1} style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
-              {targetScreenshot?.fileName}
+              {isBulkMove ? 'Select destination smart folder for all selected items' : targetScreenshot?.fileName}
             </Text>
 
             <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>
@@ -455,6 +658,19 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* 6. Floating Bulk Action Bar */}
+      {isSelectMode && (
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          onMove={handleOpenBulkMove}
+          onFavorite={handleBulkFavorite}
+          onDelete={handleBulkDelete}
+          onShare={handleBulkShare}
+          onCancel={handleCancelSelect}
+          isAllFavorite={isAllSelectedFavorite}
+        />
+      )}
 
       <GuestUpgradeBottomSheet
         visible={guestModalVisible}
@@ -701,5 +917,59 @@ const styles = StyleSheet.create({
   closeModalBtnText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  selectionBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  closeSelectBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  selectionCountTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  selectAllBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  selectAllBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectModeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  selectModeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectCheckboxOverlay: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    borderRadius: 12,
+    padding: 1,
   },
 });

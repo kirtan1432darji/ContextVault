@@ -37,6 +37,10 @@ interface ScreenshotState {
   restoreAllScreenshots: () => Promise<number>;
   permanentDeleteScreenshot: (id: string) => Promise<void>;
   emptyRecycleBin: () => Promise<number>;
+
+  // Bulk Actions
+  bulkSetFavorite: (ids: string[], isFavorite: boolean) => Promise<number>;
+  bulkSoftDelete: (ids: string[]) => Promise<number>;
 }
 
 export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
@@ -244,6 +248,27 @@ export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
   emptyRecycleBin: async () => {
     const count = await recycleBinService.emptyRecycleBin();
     set({ recycleBinScreenshots: [] });
+    return count;
+  },
+
+  bulkSetFavorite: async (ids: string[], isFavorite: boolean) => {
+    if (!ids || ids.length === 0) return 0;
+    const count = await screenshotRepository.bulkSetFavorite(ids, isFavorite);
+    const idSet = new Set(ids);
+    const list = get().screenshots.map((s) =>
+      idSet.has(s.id) ? { ...s, isFavorite } : s
+    );
+    get().setScreenshots(list);
+    return count;
+  },
+
+  bulkSoftDelete: async (ids: string[]) => {
+    if (!ids || ids.length === 0) return 0;
+    const count = await recycleBinService.bulkSoftDelete(ids);
+    const idSet = new Set(ids);
+    const list = get().screenshots.filter((s) => !idSet.has(s.id));
+    get().setScreenshots(list);
+    await get().loadRecycleBin();
     return count;
   },
 }));

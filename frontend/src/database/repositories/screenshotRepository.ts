@@ -231,6 +231,42 @@ export class ScreenshotRepository {
     await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
   }
 
+  async bulkSoftDelete(ids: string[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const now = new Date().toISOString();
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET is_deleted = 1, deleted_at = ? WHERE id IN (${placeholders})`,
+      [now, ...ids]
+    );
+    return ids.length;
+  }
+
+  async bulkSetFavorite(ids: string[], isFavorite: boolean): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET is_favorite = ? WHERE id IN (${placeholders})`,
+      [isFavorite ? 1 : 0, ...ids]
+    );
+    return ids.length;
+  }
+
+  async bulkUpdateCategory(
+    ids: string[],
+    categoryId: string,
+    categoryName: string,
+    subcategory = ''
+  ): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET category_id = ?, category_name = ?, subcategory = ?, is_auto_categorized = 0 WHERE id IN (${placeholders})`,
+      [categoryId, categoryName, subcategory, ...ids]
+    );
+    return ids.length;
+  }
+
   private mapRowToModel = (row: any): ScreenshotModel => {
     let keywords: string[] = [];
     try {

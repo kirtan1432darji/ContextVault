@@ -457,6 +457,55 @@ export class SmartFolderService {
     const allCategories = await categoryRepository.getAllCategories();
     useCategoryStore.getState().setCategories(allCategories);
   }
+
+  /**
+   * Moves multiple screenshots in bulk to a destination smart folder.
+   */
+  async bulkMoveScreenshots(
+    screenshotIds: string[],
+    targetCategoryId: string,
+    targetSubcategory?: string
+  ): Promise<number> {
+    if (!screenshotIds || screenshotIds.length === 0) return 0;
+    const targetCat = await categoryRepository.getCategoryById(targetCategoryId);
+    if (!targetCat) return 0;
+
+    const oldCategoryIds = new Set<string>();
+    let movedCount = 0;
+
+    for (const id of screenshotIds) {
+      const existing = await screenshotRepository.getScreenshotById(id);
+      if (!existing) continue;
+
+      if (existing.categoryId) {
+        oldCategoryIds.add(existing.categoryId);
+      }
+
+      const updated: ScreenshotModel = {
+        ...existing,
+        categoryId: targetCat.id,
+        categoryName: targetCat.name,
+        subcategory: targetSubcategory || targetCat.name,
+        isAutoCategorized: false,
+      };
+
+      await screenshotRepository.updateScreenshot(updated);
+      useScreenshotStore.getState().addOrUpdateScreenshot(updated);
+      movedCount++;
+    }
+
+    // Update counts for target and all old categories
+    await categoryRepository.updateScreenshotCount(targetCat.id);
+    for (const oldCatId of oldCategoryIds) {
+      if (oldCatId !== targetCat.id) {
+        await categoryRepository.updateScreenshotCount(oldCatId);
+      }
+    }
+
+    const allCategories = await categoryRepository.getAllCategories();
+    useCategoryStore.getState().setCategories(allCategories);
+    return movedCount;
+  }
 }
 
 export const smartFolderService = new SmartFolderService();

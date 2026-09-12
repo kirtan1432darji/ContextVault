@@ -11,3 +11,4 @@ export * from './search';
 export * from './DeveloperModeBanner';
 export * from './FeatureLockCard';
 export * from './GuestUpgradeBottomSheet';
+export * from './BulkActionBar';

@@ -32,6 +32,22 @@ export class RecycleBinService {
   }
 
   /**
+   * Soft-deletes multiple screenshots in bulk by moving them to the Recycle Bin.
+   */
+  async bulkSoftDelete(ids: string[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    try {
+      const count = await screenshotRepository.bulkSoftDelete(ids);
+      await categoryRepository.recalculateAllCounts();
+      loggerService.info('Storage', `Moved ${count} screenshots to Recycle Bin.`);
+      return count;
+    } catch (err) {
+      loggerService.error('Storage', 'Failed in bulkSoftDelete', err);
+      throw err;
+    }
+  }
+
+  /**
    * Restores a soft-deleted screenshot back to active status in its smart folder.
    */
   async restoreScreenshot(id: string): Promise<void> {
