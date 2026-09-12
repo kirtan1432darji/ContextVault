@@ -22,6 +22,7 @@ import { classificationCacheRepository } from '../database/repositories/classifi
 import { OCRCacheRecord, ClassificationCacheRecord, ExtractedEntitiesDto } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
+import { ReclassifyModal } from '../components/ReclassifyModal';
 import { DateFormatter } from '../utils/dateFormatter';
 import { FileUtils } from '../utils/fileUtils';
 
@@ -39,6 +40,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const [cacheRecord, setCacheRecord] = useState<ClassificationCacheRecord | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isReclassifyModalOpen, setIsReclassifyModalOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -148,7 +150,9 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const ocrText = screenshot.ocrText || ocrRecord?.extractedText || '';
   const processingDuration = ocrRecord?.processingTime || 0;
   const ocrConfidence = ocrRecord?.confidence || screenshot.confidence || 0.88;
-  const isBackendAI = (screenshot.classificationSource === 'backend') || (cacheRecord?.source === 'backend');
+  const isManual = screenshot.classificationSource === 'manual' || (!screenshot.isAutoCategorized && screenshot.isReviewed);
+  const isBackendAI = !isManual && ((screenshot.classificationSource === 'backend') || (cacheRecord?.source === 'backend'));
+  const needsHumanReview = !screenshot.isReviewed && (screenshot.confidence < 0.7 || screenshot.categoryId === 'unsorted');
 
   // Parse extracted entities from backend cache
   let extractedEntities: ExtractedEntitiesDto = {
@@ -256,6 +260,37 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </TouchableOpacity>
         )}
 
+        {/* Needs Human Review Alert Banner */}
+        {needsHumanReview && (
+          <View
+            style={[
+              styles.needsReviewBanner,
+              {
+                backgroundColor: theme.isDark ? '#78350F35' : '#FFFBEB',
+                borderColor: theme.isDark ? '#92400E' : '#FDE68A',
+              },
+            ]}
+          >
+            <Icon name="alert-circle" size={20} color="#F59E0B" style={{ marginRight: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.needsReviewBannerTitle, { color: theme.isDark ? '#FCD34D' : '#92400E' }]}>
+                Action Required: Human Review
+              </Text>
+              <Text style={[styles.needsReviewBannerSubtext, { color: theme.isDark ? '#FDE68A' : '#B45309' }]}>
+                AI confidence is low or category is unsorted.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsReclassifyModalOpen(true)}
+              style={styles.needsReviewActionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Review and Reclassify"
+            >
+              <Text style={styles.needsReviewActionBtnText}>Review</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 1. Category, AI Source & Confidence Card */}
         <ModernCard style={styles.card}>
           <View style={styles.categoryRow}>
@@ -292,37 +327,96 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             <View
               style={[
                 styles.sourceBadge,
-                { backgroundColor: isBackendAI ? `${theme.colors.success}18` : `${theme.colors.accent}18` },
+                {
+                  backgroundColor: isManual
+                    ? `${theme.colors.primary}18`
+                    : isBackendAI
+                    ? `${theme.colors.success}18`
+                    : `${theme.colors.accent}18`,
+                },
               ]}
             >
               <Icon
-                name={isBackendAI ? 'cloud-done-outline' : 'phone-portrait-outline'}
+                name={
+                  isManual
+                    ? 'checkmark-circle-outline'
+                    : isBackendAI
+                    ? 'cloud-done-outline'
+                    : 'phone-portrait-outline'
+                }
                 size={14}
-                color={isBackendAI ? theme.colors.success : theme.colors.accent}
+                color={
+                  isManual
+                    ? theme.colors.primary
+                    : isBackendAI
+                    ? theme.colors.success
+                    : theme.colors.accent
+                }
                 style={{ marginRight: 5 }}
               />
               <Text
                 style={[
                   styles.sourceBadgeText,
-                  { color: isBackendAI ? theme.colors.success : theme.colors.accent },
+                  {
+                    color: isManual
+                      ? theme.colors.primary
+                      : isBackendAI
+                      ? theme.colors.success
+                      : theme.colors.accent,
+                  },
                 ]}
               >
-                {isBackendAI ? 'Backend AI Synchronized' : 'On-Device Heuristic'}
+                {isManual
+                  ? 'Manually Verified & Reclassified'
+                  : isBackendAI
+                  ? 'Backend AI Synchronized'
+                  : 'On-Device Heuristic'}
               </Text>
             </View>
           </View>
 
-          {/* Sync / Re-analyze CTA */}
-          <TouchableOpacity
-            onPress={handleSyncWithBackendAI}
-            disabled={isSyncing}
-            style={[styles.reclassifyBtn, { borderColor: theme.colors.primary }]}
-          >
-            <Icon name="sync-outline" size={16} color={theme.colors.primary} />
-            <Text style={[styles.reclassifyText, { color: theme.colors.primary }]}>
-              {isSyncing ? 'Synchronizing with AI Engine...' : 'Sync with Backend AI'}
-            </Text>
-          </TouchableOpacity>
+          {/* Dual CTAs: Manual Reclassify and Backend AI Sync */}
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              onPress={() => setIsReclassifyModalOpen(true)}
+              style={[
+                styles.reclassifyBtn,
+                {
+                  flex: 1,
+                  backgroundColor: `${theme.colors.primary}15`,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Manually Reclassify Screenshot"
+            >
+              <Icon name="color-wand-outline" size={16} color={theme.colors.primary} />
+              <Text style={[styles.reclassifyText, { color: theme.colors.primary }]}>
+                Reclassify
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSyncWithBackendAI}
+              disabled={isSyncing}
+              style={[
+                styles.reclassifyBtn,
+                {
+                  flex: 1,
+                  borderColor: theme.colors.border,
+                  marginLeft: 10,
+                  opacity: isSyncing ? 0.6 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Sync with Backend AI"
+            >
+              <Icon name="sync-outline" size={16} color={theme.colors.textPrimary} />
+              <Text style={[styles.reclassifyText, { color: theme.colors.textPrimary }]}>
+                {isSyncing ? 'Syncing...' : 'Sync AI'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ModernCard>
 
         {/* 2. Extracted Entities Card */}
@@ -636,6 +730,13 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </View>
         </View>
       </Modal>
+
+      {/* Manual Reclassification Modal */}
+      <ReclassifyModal
+        visible={isReclassifyModalOpen}
+        screenshot={screenshot}
+        onClose={() => setIsReclassifyModalOpen(false)}
+      />
     </View>
   );
 };
@@ -737,6 +838,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
   reclassifyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -750,6 +856,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  needsReviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  needsReviewBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  needsReviewBannerSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  needsReviewActionBtn: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  needsReviewActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardHeader: {
     flexDirection: 'row',

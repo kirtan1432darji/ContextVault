@@ -506,6 +506,71 @@ export class SmartFolderService {
     useCategoryStore.getState().setCategories(allCategories);
     return movedCount;
   }
+
+  /**
+   * Overrides AI classification for a screenshot manually.
+   * Updates category, subcategory, confidence to 1.0, tags, marks isAutoCategorized=false,
+   * clears review requirement (isReviewed=true), and recalculates category counts.
+   */
+  async reclassifyScreenshot(params: {
+    screenshotId: string;
+    targetCategoryId: string;
+    targetSubcategory?: string;
+    tags?: string[];
+  }): Promise<ScreenshotModel | null> {
+    const { screenshotId, targetCategoryId, targetSubcategory, tags } = params;
+    const targetCat = await categoryRepository.getCategoryById(targetCategoryId);
+    if (!targetCat) return null;
+
+    const existing = await screenshotRepository.getScreenshotById(screenshotId);
+    if (!existing) return null;
+
+    const oldCategoryId = existing.categoryId;
+    const subcategory = targetSubcategory !== undefined ? targetSubcategory.trim() : existing.subcategory;
+    const finalTagsList = tags !== undefined ? tags : (existing.keywords || []);
+    const folderPath = [targetCat.name, subcategory].filter(Boolean);
+
+    await screenshotRepository.reclassifyScreenshot(
+      screenshotId,
+      targetCat.id,
+      targetCat.name,
+      subcategory,
+      finalTagsList,
+      folderPath
+    );
+
+    const updatedTags = finalTagsList.slice(0, 10).map((kw) => ({
+      id: `tag_${kw.toLowerCase().replace(/\s+/g, '_')}`,
+      name: kw,
+      colorHex: '#6366F1',
+    }));
+
+    const updated: ScreenshotModel = {
+      ...existing,
+      categoryId: targetCat.id,
+      categoryName: targetCat.name,
+      subcategory,
+      folderPath,
+      confidence: 1.0,
+      keywords: finalTagsList,
+      tags: updatedTags,
+      isAutoCategorized: false,
+      isReviewed: true,
+      classificationSource: 'manual',
+    };
+
+    useScreenshotStore.getState().addOrUpdateScreenshot(updated);
+
+    // Recalculate counts
+    await categoryRepository.updateScreenshotCount(targetCat.id);
+    if (oldCategoryId && oldCategoryId !== targetCat.id) {
+      await categoryRepository.updateScreenshotCount(oldCategoryId);
+    }
+    const allCategories = await categoryRepository.getAllCategories();
+    useCategoryStore.getState().setCategories(allCategories);
+
+    return updated;
+  }
 }
 
 export const smartFolderService = new SmartFolderService();

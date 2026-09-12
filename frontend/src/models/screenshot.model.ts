@@ -29,7 +29,7 @@ export interface ScreenshotModel {
   tags: TagModel[];
   lastScannedAt?: string;
   isMock?: boolean;
-  classificationSource?: 'backend' | 'local';
+  classificationSource?: 'backend' | 'local' | 'manual';
   entities?: ExtractedEntitiesDto;
   isDeleted?: boolean;
   deletedAt?: string;

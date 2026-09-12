@@ -200,7 +200,7 @@ export class ScreenshotRepository {
     subcategory: string,
     confidence: number,
     tags: string[],
-    source: 'backend' | 'local' = 'backend',
+    source: 'backend' | 'local' | 'manual' = 'backend',
     folderPath?: string[]
   ): Promise<void> {
     await databaseService.executeCommand(
@@ -222,6 +222,40 @@ export class ScreenshotRepository {
         JSON.stringify(tags),
         source,
         folderPath ? JSON.stringify(folderPath) : null,
+        id,
+      ]
+    );
+  }
+
+  async reclassifyScreenshot(
+    id: string,
+    categoryId: string,
+    categoryName: string,
+    subcategory: string,
+    tags: string[] = [],
+    folderPath?: string[]
+  ): Promise<void> {
+    const folderJson = folderPath
+      ? JSON.stringify(folderPath)
+      : JSON.stringify([categoryName, subcategory].filter(Boolean));
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET 
+        category_id = ?, 
+        category_name = ?, 
+        subcategory = ?, 
+        confidence = 1.0, 
+        keywords_json = ?, 
+        is_auto_categorized = 0,
+        is_reviewed = 1,
+        classification_source = 'manual',
+        folder_path = ?
+       WHERE id = ?`,
+      [
+        categoryId,
+        categoryName,
+        subcategory,
+        JSON.stringify(tags),
+        folderJson,
         id,
       ]
     );
