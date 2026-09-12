@@ -31,4 +31,5 @@ export * from './folderContextExportService';
 export * from './voiceSearchService';
 export * from './crashReportingService';
 export * from './EntityMergeService';
+export * from './BackendConnectionManager';
 export * from '../vision';

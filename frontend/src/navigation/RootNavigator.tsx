@@ -21,6 +21,7 @@ import {
   RecycleBinScreen,
   FolderAnalyticsScreen,
   BackendSettingsScreen,
+  BackendConnectionScreen,
   VisionDebugScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
@@ -48,8 +49,13 @@ export const RootNavigator: React.FC = () => {
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <Stack.Screen
+        name="BackendConnection"
+        component={BackendConnectionScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
         name="BackendSettings"
-        component={BackendSettingsScreen}
+        component={BackendConnectionScreen}
         options={{ animation: 'slide_from_bottom' }}
       />
 

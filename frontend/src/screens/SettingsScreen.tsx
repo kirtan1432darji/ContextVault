@@ -27,6 +27,7 @@ import { storageManagerService } from '../services/storageManagerService';
 import { demoModeService } from '../services/demoModeService';
 import { backupService } from '../services/backupService';
 import { EnvironmentManager } from '../config/EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -66,8 +67,13 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleSaveUrl = () => {
-    useSettingsStore.getState().setBackendUrl(urlInput);
-    Alert.alert('Settings Saved', `Backend URL updated to ${urlInput}`);
+    try {
+      BackendConnectionManager.setBaseUrl(urlInput);
+      apiClient.setBaseUrl(urlInput);
+      Alert.alert('Settings Saved', `Backend URL updated to ${BackendConnectionManager.getBaseUrl()}`);
+    } catch (e: any) {
+      Alert.alert('Invalid URL', e?.message || 'Failed to save URL');
+    }
   };
 
   const handleExitGuestMode = () => {
@@ -686,26 +692,26 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* Developer & Diagnostics (Sprint RN-10) */}
+      {/* Developer & Diagnostics */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Diagnostics & Demo QA
+          Developer Options & Diagnostics
         </Text>
         {EnvironmentManager.isDeveloperModeAvailable() && (
           <TouchableOpacity
-            onPress={() => navigation.navigate('BackendSettings')}
+            onPress={() => navigation.navigate('BackendConnection')}
             style={styles.legalRow}
             accessibilityRole="button"
-            accessibilityLabel="Open Developer Mode & Backend Settings"
+            accessibilityLabel="Open Developer Options - Backend Connection"
           >
             <View style={styles.rowLabelGroup}>
               <Icon name="server-outline" size={20} color="#3B82F6" />
               <View style={{ marginLeft: 10 }}>
                 <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
-                  Developer Mode & Backend Settings
+                  Backend Connection
                 </Text>
                 <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
-                  Configure local backend IP, latency tests & environment
+                  Configure backend IP, ping latency, version & environment
                 </Text>
               </View>
             </View>

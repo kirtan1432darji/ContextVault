@@ -1,5 +1,6 @@
 import { UserModel } from '../models/auth.model';
 import { ENV } from './environment';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 /**
  * Single source of truth for Developer Mode in ContextVault.
@@ -11,6 +12,14 @@ import { ENV } from './environment';
  * - Defaults to false ensuring strict authentication and security
  */
 export const DEVELOPER_MODE = ENV.debugFlags.enableDeveloperMode;
+
+/**
+ * Checks if runtime backend connection settings are accessible.
+ * Available in development mode and local release builds.
+ */
+export const isBackendConfigAvailable = (): boolean => {
+  return !ENV.isProduction || DEVELOPER_MODE;
+};
 
 /**
  * Mock authenticated user profile provided when DEVELOPER_MODE = true.

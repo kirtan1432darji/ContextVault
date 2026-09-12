@@ -15,6 +15,7 @@ import { useSettingsStore } from '../store/settings.store';
 import { StorageService } from '../utils/storage';
 import { DEVELOPER_MODE } from '../config/developerConfig';
 import { EnvironmentManager } from '../config/EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
@@ -22,7 +23,7 @@ class ApiClient {
   private failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
 
   constructor() {
-    const initialUrl = EnvironmentManager.getApiUrl();
+    const initialUrl = BackendConnectionManager.getApiUrl();
     this.axiosInstance = axios.create({
       baseURL: initialUrl,
       timeout: ApiConstants.connectTimeout,
@@ -60,8 +61,8 @@ class ApiClient {
     // 1. Request Interceptor: Attach Bearer Token, Validate URL & Set Base URL
     this.axiosInstance.interceptors.request.use(
       (config) => {
-        const dynamicUrl = EnvironmentManager.getApiUrl();
-        if (!EnvironmentManager.isValidUrl(dynamicUrl)) {
+        const dynamicUrl = BackendConnectionManager.getApiUrl();
+        if (!BackendConnectionManager.isValidUrl(dynamicUrl)) {
           return Promise.reject(new Error(`Invalid ContextVault backend URL: ${dynamicUrl}`));
         }
         config.baseURL = dynamicUrl;
@@ -162,17 +163,23 @@ class ApiClient {
   }
 
   public getBaseUrl(): string {
-    return EnvironmentManager.getApiUrl();
+    return BackendConnectionManager.getApiUrl();
   }
 
   public getRawBaseUrl(): string {
-    return EnvironmentManager.getApiBaseUrl();
+    return BackendConnectionManager.getBaseUrl();
   }
 
   public setBaseUrl(url: string): void {
-    EnvironmentManager.setCustomBackendUrl(url);
-    this.axiosInstance.defaults.baseURL = EnvironmentManager.getApiUrl();
+    BackendConnectionManager.setBaseUrl(url);
+    this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
     useSettingsStore.getState().setBackendUrl(url);
+  }
+
+  public resetBaseUrl(): void {
+    BackendConnectionManager.resetBaseUrl();
+    this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
+    useSettingsStore.getState().setBackendUrl(BackendConnectionManager.getBaseUrl());
   }
 
   private unwrap<T>(responseData: any): T {

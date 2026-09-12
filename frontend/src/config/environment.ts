@@ -13,10 +13,12 @@ import {
   LocalReleaseEnvironment,
   ProductionEnvironment,
 } from './EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 export type { EnvironmentConfig, AppEnvironment };
 export {
   EnvironmentManager,
+  BackendConnectionManager,
   DevelopmentEnvironment,
   LocalReleaseEnvironment,
   ProductionEnvironment,

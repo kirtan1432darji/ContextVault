@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { EnvironmentManager } from '../config/EnvironmentManager';
+import { BackendConnectionManager } from './BackendConnectionManager';
 
 export type ConnectionStatus = 'Connected' | 'Offline' | 'Timeout' | 'Unauthorized';
 
@@ -18,7 +19,7 @@ class BackendConnectionServiceClass {
    * Pings the backend health endpoint (e.g. GET /api/health) and measures response time.
    */
   async pingBackend(targetUrl?: string): Promise<ConnectionStatusResult> {
-    const rawBaseUrl = targetUrl || EnvironmentManager.getApiBaseUrl();
+    const rawBaseUrl = targetUrl || BackendConnectionManager.getBaseUrl();
     const cleanBaseUrl = rawBaseUrl.trim().replace(/\/+$/, '');
     const healthUrl = cleanBaseUrl.endsWith('/api')
       ? `${cleanBaseUrl}/health`

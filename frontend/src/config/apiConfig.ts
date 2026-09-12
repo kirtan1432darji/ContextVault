@@ -1,4 +1,4 @@
-import { EnvironmentManager } from './EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 /**
  * ContextVault Central API Configuration
@@ -13,11 +13,11 @@ function resolveBaseUrl(): string {
     return globalEnv.trim().replace(/\/+$/, '');
   }
 
-  return EnvironmentManager.getApiBaseUrl();
+  return BackendConnectionManager.getBaseUrl();
 }
 
 /**
- * Normalized FastAPI Backend Host URL (e.g. "http://10.122.196.152:8000")
+ * Normalized FastAPI Backend Host URL (e.g. "http://10.122.196.96:8000")
  */
 export const API_BASE_URL: string = resolveBaseUrl();
 
@@ -32,18 +32,19 @@ export const REQUEST_TIMEOUT_MS = 30000;
 export const API_V1_PREFIX = '/api';
 
 /**
- * Helper to generate a fully qualified API endpoint URL.
+ * Helper to generate a fully qualified API endpoint URL dynamically.
  *
  * @example
- * getEndpointUrl('/health') // -> "http://10.193.167.152:8000/api/health"
- * getEndpointUrl('/auth/login') // -> "http://10.193.167.152:8000/api/auth/login"
+ * getEndpointUrl('/health') // -> "http://10.122.196.96:8000/api/health"
+ * getEndpointUrl('/auth/login') // -> "http://10.122.196.96:8000/api/auth/login"
  */
 export function getEndpointUrl(path: string): string {
+  const currentBase = resolveBaseUrl();
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   if (cleanPath.startsWith('/api/')) {
-    return `${API_BASE_URL}${cleanPath}`;
+    return `${currentBase}${cleanPath}`;
   }
-  return `${API_BASE_URL}${API_V1_PREFIX}${cleanPath}`;
+  return `${currentBase}${API_V1_PREFIX}${cleanPath}`;
 }
 
 /**
