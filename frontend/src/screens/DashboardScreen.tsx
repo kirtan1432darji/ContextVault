@@ -26,8 +26,7 @@ import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
 import { smartFolderService } from '../services/SmartFolderService';
 import { screenshotListenerService } from '../services/ScreenshotListenerService';
-import { screenshotRepository } from '../database/repositories/screenshotRepository';
-import { chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem } from '../database/repositories';
+import { screenshotRepository, chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem, SavedSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
 import { useAuthStore } from '../store/auth.store';
 import { useNotificationStore } from '../store/notification.store';
@@ -55,6 +54,7 @@ export const DashboardScreen: React.FC = () => {
 
   // Sprint RN-08 Global AI Search State
   const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearchItem[]>([]);
 
   // Sprint P0 Guest Mode State
   const isGuest = useAuthStore((s) => s.isGuest);
@@ -102,12 +102,22 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
-  // Reload chats and recent searches whenever the dashboard comes into focus
+  const loadSavedSearches = useCallback(async () => {
+    try {
+      const items = await searchRepository.getSavedSearches();
+      setSavedSearches(items || []);
+    } catch (err) {
+      console.warn('Failed to load saved searches for dashboard:', err);
+    }
+  }, []);
+
+  // Reload chats, recent searches, and saved searches whenever dashboard comes into focus
   useFocusEffect(
     useCallback(() => {
       loadRecentChats();
       loadRecentSearches();
-    }, [loadRecentChats, loadRecentSearches])
+      loadSavedSearches();
+    }, [loadRecentChats, loadRecentSearches, loadSavedSearches])
   );
 
   // Load fresh categories & screenshots & context stats on mount
@@ -116,13 +126,14 @@ export const DashboardScreen: React.FC = () => {
     loadStatsAndRecents();
     loadRecentChats();
     loadRecentSearches();
+    loadSavedSearches();
     screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
       if (items && items.length > 0) {
         setScreenshots(items);
       }
     });
-  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches]);
+  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -134,6 +145,7 @@ export const DashboardScreen: React.FC = () => {
         loadStatsAndRecents(),
         loadRecentChats(),
         loadRecentSearches(),
+        loadSavedSearches(),
         screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount),
         screenshotRepository.getAllScreenshots().then((items) => {
           if (items && items.length > 0) {
@@ -147,7 +159,7 @@ export const DashboardScreen: React.FC = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [loadCategories, loadStatsAndRecents, loadRecentChats, loadRecentSearches, setScreenshots]);
+  }, [loadCategories, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches, setScreenshots]);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
@@ -385,6 +397,39 @@ export const DashboardScreen: React.FC = () => {
             <Icon name="mic" size={16} color={theme.colors.primary} />
           </TouchableOpacity>
         </TouchableOpacity>
+
+        {/* Saved Searches Chips under hero bar */}
+        {savedSearches.length > 0 && (
+          <View style={styles.heroRecentStrip}>
+            <Icon name="bookmark" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroRecentScroll}>
+              {savedSearches.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => navigation.navigate('GlobalAISearch', { initialQuery: item.query })}
+                  style={[
+                    styles.heroSavedChip,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: `${item.colorHex || theme.colors.primary}40`,
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Icon
+                    name={item.iconName || 'bookmark'}
+                    size={11}
+                    color={item.colorHex || theme.colors.primary}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text numberOfLines={1} style={[styles.heroSavedChipText, { color: theme.colors.textPrimary }]}>
+                    {item.title || item.query}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Recent Search Chips under hero bar */}
         {recentSearches.length > 0 && (
@@ -2013,6 +2058,20 @@ const styles = StyleSheet.create({
   heroRecentChipText: {
     fontSize: 11,
     fontWeight: '600',
+    maxWidth: 140,
+  },
+  heroSavedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  heroSavedChipText: {
+    fontSize: 11,
+    fontWeight: '700',
     maxWidth: 140,
   },
   guestBanner: {

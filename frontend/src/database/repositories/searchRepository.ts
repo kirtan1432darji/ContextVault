@@ -174,6 +174,103 @@ export class SearchRepository {
   }
 
   /**
+   * Updates an existing saved search entry (title, icon, color).
+   */
+  async updateSavedSearch(
+    id: string,
+    updates: { title?: string; iconName?: string; colorHex?: string }
+  ): Promise<void> {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.title !== undefined) {
+      fields.push('title = ?');
+      values.push(updates.title.trim());
+    }
+    if (updates.iconName !== undefined) {
+      fields.push('icon_name = ?');
+      values.push(updates.iconName);
+    }
+    if (updates.colorHex !== undefined) {
+      fields.push('color_hex = ?');
+      values.push(updates.colorHex);
+    }
+
+    if (fields.length === 0) return;
+
+    values.push(id);
+    try {
+      await databaseService.executeCommand(
+        `UPDATE saved_searches SET ${fields.join(', ')} WHERE id = ?`,
+        values
+      );
+    } catch (err) {
+      console.warn('[SearchRepository] Failed to update saved search:', err);
+    }
+  }
+
+  /**
+   * Retrieves a saved search by exact query text.
+   */
+  async getSavedSearchByQuery(query: string): Promise<SavedSearchItem | null> {
+    const trimmed = (query || '').trim();
+    if (!trimmed) return null;
+
+    try {
+      const rows = await databaseService.executeQuery(
+        `SELECT id, query, title, icon_name, color_hex, created_at
+         FROM saved_searches
+         WHERE query = ?
+         LIMIT 1`,
+        [trimmed]
+      );
+      if (!rows || rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        id: r.id,
+        query: r.query,
+        title: r.title || r.query,
+        iconName: r.icon_name || 'bookmark-outline',
+        colorHex: r.color_hex || '#6366F1',
+        createdAt: r.created_at,
+      };
+    } catch (err) {
+      console.warn('[SearchRepository] Error getSavedSearchByQuery:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Retrieves a saved search by ID.
+   */
+  async getSavedSearchById(id: string): Promise<SavedSearchItem | null> {
+    if (!id) return null;
+
+    try {
+      const rows = await databaseService.executeQuery(
+        `SELECT id, query, title, icon_name, color_hex, created_at
+         FROM saved_searches
+         WHERE id = ?
+         LIMIT 1`,
+        [id]
+      );
+      if (!rows || rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        id: r.id,
+        query: r.query,
+        title: r.title || r.query,
+        iconName: r.icon_name || 'bookmark-outline',
+        colorHex: r.color_hex || '#6366F1',
+        createdAt: r.created_at,
+      };
+    } catch (err) {
+      console.warn('[SearchRepository] Error getSavedSearchById:', err);
+      return null;
+    }
+  }
+
+  /**
    * Checks whether a query is already saved / pinned.
    */
   async isSearchSaved(query: string): Promise<boolean> {

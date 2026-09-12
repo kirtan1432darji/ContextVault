@@ -23,11 +23,12 @@ import {
   SearchFilterBar,
   VoiceSearchModal,
   RecentAndSavedSearches,
+  SaveSearchModal,
 } from '../components/search';
 import { EmptyStateView } from '../components/EmptyStateView';
 import { FeatureLockCard } from '../components/FeatureLockCard';
 import { useAuthStore } from '../store/auth.store';
-import { GlobalSearchResultItem } from '../models';
+import { GlobalSearchResultItem, SavedSearchItem } from '../models';
 
 type RouteProps = RouteProp<RootStackParamList, 'GlobalAISearch'>;
 
@@ -49,6 +50,9 @@ export const GlobalAISearchScreen: React.FC = () => {
   const savedSearches = useSearchStore((s) => s.savedSearches);
   const isVoiceModalOpen = useSearchStore((s) => s.isVoiceModalOpen);
   const lastVoiceQuery = useSearchStore((s) => s.lastVoiceQuery);
+  const isSaveModalOpen = useSearchStore((s) => s.isSaveModalOpen);
+  const editingSavedSearch = useSearchStore((s) => s.editingSavedSearch);
+  const saveModalInitialQuery = useSearchStore((s) => s.saveModalInitialQuery);
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const setQuery = useSearchStore((s) => s.setQuery);
@@ -60,6 +64,11 @@ export const GlobalAISearchScreen: React.FC = () => {
   const deleteRecentSearch = useSearchStore((s) => s.deleteRecentSearch);
   const clearAllRecentSearches = useSearchStore((s) => s.clearAllRecentSearches);
   const toggleSaveSearch = useSearchStore((s) => s.toggleSaveSearch);
+  const savePinnedSearch = useSearchStore((s) => s.savePinnedSearch);
+  const updateSavedSearch = useSearchStore((s) => s.updateSavedSearch);
+  const deleteSavedSearch = useSearchStore((s) => s.deleteSavedSearch);
+  const openSaveModal = useSearchStore((s) => s.openSaveModal);
+  const closeSaveModal = useSearchStore((s) => s.closeSaveModal);
   const setVoiceModalOpen = useSearchStore((s) => s.setVoiceModalOpen);
 
   const [viewMode, setViewMode] = useState<'relevance' | 'grouped'>('relevance');
@@ -95,8 +104,10 @@ export const GlobalAISearchScreen: React.FC = () => {
   };
 
   const handleTogglePin = () => {
-    if (!query.trim()) return;
-    toggleSaveSearch(query.trim());
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const existing = savedSearches.find((s) => s.query.toLowerCase() === trimmed.toLowerCase());
+    openSaveModal(trimmed, existing || null);
   };
 
   const renderGroupedResults = () => {
@@ -270,7 +281,8 @@ export const GlobalAISearchScreen: React.FC = () => {
             onSelectQuery={handleSelectSuggestion}
             onDeleteRecent={deleteRecentSearch}
             onClearAllRecent={clearAllRecentSearches}
-            onDeleteSaved={(id) => toggleSaveSearch(savedSearches.find((s) => s.id === id)?.query || '')}
+            onDeleteSaved={deleteSavedSearch}
+            onOpenSaveModal={(q, existing) => openSaveModal(q, existing)}
           />
         </ScrollView>
       ) : (
@@ -413,6 +425,28 @@ export const GlobalAISearchScreen: React.FC = () => {
         visible={isVoiceModalOpen}
         onClose={() => setVoiceModalOpen(false)}
         onSpeechResult={executeVoiceSearch}
+      />
+
+      {/* 4. Save Search Modal */}
+      <SaveSearchModal
+        visible={isSaveModalOpen}
+        query={saveModalInitialQuery || query}
+        existingItem={editingSavedSearch}
+        onClose={closeSaveModal}
+        onSave={async (q, saveTitle, iconName, colorHex) => {
+          if (editingSavedSearch) {
+            await updateSavedSearch(editingSavedSearch.id, {
+              title: saveTitle,
+              iconName,
+              colorHex,
+            });
+          } else {
+            await savePinnedSearch(q, saveTitle, iconName, colorHex);
+          }
+        }}
+        onDelete={async (id) => {
+          await deleteSavedSearch(id);
+        }}
       />
     </SafeAreaView>
   );
