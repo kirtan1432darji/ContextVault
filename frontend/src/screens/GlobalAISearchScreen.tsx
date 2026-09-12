@@ -48,12 +48,14 @@ export const GlobalAISearchScreen: React.FC = () => {
   const recentSearches = useSearchStore((s) => s.recentSearches);
   const savedSearches = useSearchStore((s) => s.savedSearches);
   const isVoiceModalOpen = useSearchStore((s) => s.isVoiceModalOpen);
+  const lastVoiceQuery = useSearchStore((s) => s.lastVoiceQuery);
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const setQuery = useSearchStore((s) => s.setQuery);
   const setFilter = useSearchStore((s) => s.setFilter);
   const resetFilters = useSearchStore((s) => s.resetFilters);
   const executeSearch = useSearchStore((s) => s.executeSearch);
+  const executeVoiceSearch = useSearchStore((s) => s.executeVoiceSearch);
   const loadRecentAndSavedSearches = useSearchStore((s) => s.loadRecentAndSavedSearches);
   const deleteRecentSearch = useSearchStore((s) => s.deleteRecentSearch);
   const clearAllRecentSearches = useSearchStore((s) => s.clearAllRecentSearches);
@@ -238,6 +240,24 @@ export const GlobalAISearchScreen: React.FC = () => {
             </Text>
           </View>
         )}
+
+        {/* Voice Search Origin Pill */}
+        {lastVoiceQuery && query.trim().length > 0 && (
+          <View
+            style={[
+              styles.voiceSearchPill,
+              {
+                backgroundColor: `${theme.colors.primary}15`,
+                borderColor: `${theme.colors.primary}30`,
+              },
+            ]}
+          >
+            <Icon name="mic" size={13} color={theme.colors.primary} style={{ marginRight: 6 }} />
+            <Text numberOfLines={1} style={[styles.voiceSearchPillText, { color: theme.colors.primary }]}>
+              Voice recognized: "{lastVoiceQuery}"
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* 2. Main Content Area */}
@@ -392,7 +412,7 @@ export const GlobalAISearchScreen: React.FC = () => {
       <VoiceSearchModal
         visible={isVoiceModalOpen}
         onClose={() => setVoiceModalOpen(false)}
-        onSpeechResult={handleSelectSuggestion}
+        onSpeechResult={executeVoiceSearch}
       />
     </SafeAreaView>
   );
@@ -538,4 +558,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 12,
   },
+  voiceSearchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  voiceSearchPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
 });
+

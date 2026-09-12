@@ -8,6 +8,7 @@ import {
 } from '../models';
 import { globalSearchService } from '../services/GlobalSearchService';
 import { searchRepository } from '../database/repositories/searchRepository';
+import { voiceSearchService } from '../services/voiceSearchService';
 
 interface SearchState {
   query: string;
@@ -20,6 +21,7 @@ interface SearchState {
   recentSearches: RecentSearchItem[];
   savedSearches: SavedSearchItem[];
   isVoiceModalOpen: boolean;
+  lastVoiceQuery: string | null;
 
   // Actions
   setQuery: (q: string) => void;
@@ -31,6 +33,7 @@ interface SearchState {
   clearAllRecentSearches: () => Promise<void>;
   toggleSaveSearch: (query: string, title?: string) => Promise<void>;
   setVoiceModalOpen: (open: boolean) => void;
+  executeVoiceSearch: (recognizedText: string) => Promise<void>;
 }
 
 const DEFAULT_FILTERS: SearchFilterState = {
@@ -55,6 +58,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   recentSearches: [],
   savedSearches: [],
   isVoiceModalOpen: false,
+  lastVoiceQuery: null,
 
   setQuery: (q: string) => {
     set({ query: q });
@@ -179,4 +183,15 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   setVoiceModalOpen: (open: boolean) => {
     set({ isVoiceModalOpen: open });
   },
+
+  executeVoiceSearch: async (recognizedText: string) => {
+    const normalized = voiceSearchService.normalizeVoiceQuery(recognizedText);
+    set({
+      query: normalized,
+      lastVoiceQuery: recognizedText,
+      isVoiceModalOpen: false,
+    });
+    await get().executeSearch(normalized);
+  },
 }));
+

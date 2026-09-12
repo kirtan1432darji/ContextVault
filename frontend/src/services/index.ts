@@ -28,3 +28,4 @@ export * from './backupService';
 export * from './performanceAuditService';
 export * from './recycleBinService';
 export * from './folderContextExportService';
+export * from './voiceSearchService';

@@ -177,6 +177,51 @@ export class PermissionService {
   }
 
   /**
+   * Checks microphone / audio record permission status.
+   */
+  async checkAudioPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+    try {
+      const hasPermission = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      );
+      return hasPermission;
+    } catch (err) {
+      loggerService.warn('App', 'Error checking audio permission', err);
+      return false;
+    }
+  }
+
+  /**
+   * Requests microphone / audio record permission for voice search.
+   */
+  async requestAudioPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+    try {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'ContextVault Voice Search Permission',
+          message:
+            'ContextVault needs microphone access to recognize voice commands and search queries.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Cancel',
+        }
+      );
+      const granted = result === PermissionsAndroid.RESULTS.GRANTED;
+      loggerService.info('App', `Audio permission result: ${result}`);
+      return granted;
+    } catch (err) {
+      loggerService.warn('App', 'Error requesting audio permission', err);
+      return false;
+    }
+  }
+
+  /**
    * Requests all necessary permissions in a clean sequence.
    */
   async requestAllPermissions(): Promise<boolean> {

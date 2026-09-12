@@ -18,6 +18,7 @@ import { useAppTheme } from '../theme';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
 import { useScannerStore } from '../store/scanner.store';
+import { useSearchStore } from '../store/search.store';
 import { ModernCard } from '../components/ModernCard';
 import { AnimatedCounter } from '../components/AnimatedCounter';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
@@ -373,9 +374,13 @@ export const DashboardScreen: React.FC = () => {
           </View>
 
           <TouchableOpacity
-            onPress={() => navigation.navigate('GlobalAISearch', { autoFocus: false })}
+            onPress={() => {
+              useSearchStore.getState().setVoiceModalOpen(true);
+              navigation.navigate('GlobalAISearch', { autoFocus: false });
+            }}
             style={[styles.heroMicBtn, { backgroundColor: `${theme.colors.primary}18` }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Search by Voice"
           >
             <Icon name="mic" size={16} color={theme.colors.primary} />
           </TouchableOpacity>
