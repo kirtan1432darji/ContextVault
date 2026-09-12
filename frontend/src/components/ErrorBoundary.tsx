@@ -14,6 +14,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { loggerService } from '../services/loggerService';
+import { crashReportingService } from '../services/crashReportingService';
 
 export const STORAGE_KEY_FATAL_CRASH = '@contextvault_fatal_crashes';
 
@@ -60,6 +61,12 @@ export class ErrorBoundary extends Component<Props, State> {
     loggerService.error('UI', `Unhandled Render Crash: ${error.message}`, {
       stack: error.stack,
       componentStack: errorInfo.componentStack,
+    });
+
+    // Record crash to Crashlytics in production
+    crashReportingService.recordError(error, {
+      componentStack: errorInfo.componentStack,
+      isRenderCrash: true,
     });
 
     // Persist crash report to local storage

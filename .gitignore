@@ -21,6 +21,11 @@ android/.idea/
 local.properties
 *.keystore
 !debug.keystore
+keystore.properties
+*/keystore.properties
+frontend/android/keystore.properties
+frontend/android/app/*.keystore
+!frontend/android/app/debug.keystore
 
 # iOS
 ios/Pods/
@@ -69,6 +74,10 @@ wheels/
 .env
 .env.*
 !.env.example
+!.env.development
+!.env.production
+!frontend/.env.development
+!frontend/.env.production
 .env.local
 .env.*.local
 

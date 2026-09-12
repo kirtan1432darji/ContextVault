@@ -38,6 +38,8 @@ class MainApplication : Application(), ReactApplication {
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       load()
     }
-    ReactNativeFlipper.initializeFlipper(this, reactNativeHost.reactInstanceManager)
+    if (BuildConfig.DEBUG) {
+      ReactNativeFlipper.initializeFlipper(this, reactNativeHost.reactInstanceManager)
+    }
   }
 }

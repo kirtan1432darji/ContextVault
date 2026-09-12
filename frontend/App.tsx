@@ -7,6 +7,7 @@ import { ThemeProvider, useAppTheme, getNavigationTheme } from './src/theme';
 import { screenshotListenerService } from './src/services/ScreenshotListenerService';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { performanceAuditService } from './src/services/performanceAuditService';
+import { crashReportingService } from './src/services/crashReportingService';
 import { AuthProvider } from './src/context/AuthContext';
 import { DeveloperModeBanner } from './src/components/DeveloperModeBanner';
 
@@ -31,6 +32,9 @@ const MainAppContent: React.FC = () => {
 
 export const App: React.FC = () => {
   useEffect(() => {
+    // Initialize crash reporting (active in production release builds)
+    crashReportingService.init();
+
     // Benchmark cold start completion
     performanceAuditService.initColdStart();
 

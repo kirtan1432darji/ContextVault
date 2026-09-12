@@ -1,10 +1,12 @@
+import { ENV } from './environment';
+
 /**
  * ContextVault Central API Configuration
  *
- * Configured for Docker FastAPI backend running on Ubuntu laptop (10.193.167.152:8000).
- * Decoupled from native modules to ensure seamless operation on both physical devices and debug APKs.
+ * Configured with dynamic environment resolution (development vs production).
+ * Decoupled from native modules to ensure seamless operation on both physical devices and release APKs.
  */
-const DEFAULT_HOST_URL = 'http://10.193.167.152:8000';
+const DEFAULT_HOST_URL = ENV.apiBaseUrl;
 
 function resolveBaseUrl(): string {
   // Allow optional global or environment overrides if defined

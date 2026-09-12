@@ -1,18 +1,16 @@
 import { UserModel } from '../models/auth.model';
+import { ENV } from './environment';
 
 /**
  * Single source of truth for Developer Mode in ContextVault.
  * 
- * When set to true:
- * - Login screen is completely bypassed on startup
- * - App navigates directly into Main App / Dashboard
- * - Provides mock authenticated session without network calls
- * - Skips auth API calls and token refreshes
+ * In development builds (__DEV__ = true):
+ * - Defaults to true for rapid testing and navigation bypass
  * 
- * When set to false:
- * - Standard production authentication flow is fully active
+ * In production release builds (!__DEV__ = true):
+ * - Defaults to false ensuring strict authentication and security
  */
-export const DEVELOPER_MODE = true;
+export const DEVELOPER_MODE = ENV.debugFlags.enableDeveloperMode;
 
 /**
  * Mock authenticated user profile provided when DEVELOPER_MODE = true.
