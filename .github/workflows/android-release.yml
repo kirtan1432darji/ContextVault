@@ -104,6 +104,51 @@ jobs:
           path: frontend/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
+      - name: Publish or Update Latest GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG_NAME="latest"
+          RELEASE_TITLE="Latest ContextVault Release APK"
+          SOURCE_APK="frontend/android/app/build/outputs/apk/release/app-release.apk"
+          TARGET_APK="frontend/ContextVault.apk"
+          cp "$SOURCE_APK" "$TARGET_APK"
+
+          echo "Configuring Git identity..."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Moving Git tag '$TAG_NAME' to commit ${{ github.sha }}..."
+          git tag -f "$TAG_NAME" "${{ github.sha }}"
+          git push -f origin "$TAG_NAME"
+
+          BUILD_TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/releases/latest/download/ContextVault.apk"
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          RELEASE_BODY=$(printf "### ContextVault Android Production Release (Latest Build)\n\n- **Branch**: \`frontend-dev\`\n- **Commit**: [%s](%s)\n- **Built At**: %s\n- **Direct Download**: [%s](%s)\n\n*Features Backend Connection Manager, runtime Wi-Fi IP configuration, offline health detection, and Vision AI foundation.*" "${{ github.sha }}" "$COMMIT_URL" "$BUILD_TIMESTAMP" "ContextVault.apk" "$DOWNLOAD_URL")
+
+          echo "Checking if GitHub Release '$TAG_NAME' exists..."
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release '$TAG_NAME' exists. Updating title, notes, and latest status..."
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+
+            echo "Uploading and overwriting $TARGET_APK asset..."
+            gh release upload "$TAG_NAME" "$TARGET_APK" --clobber
+          else
+            echo "Release '$TAG_NAME' does not exist. Creating new release..."
+            gh release create "$TAG_NAME" "$TARGET_APK" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+          fi
+
+          echo "Verifying published release assets..."
+          gh release view "$TAG_NAME"
+
       - name: Build Android App Bundle (.aab) on Tag
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: frontend/android

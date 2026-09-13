@@ -25,7 +25,7 @@ try {
   generatedEnv = require('../config/env.generated.json');
 } catch {}
 
-const DEFAULT_DEV_FALLBACK_URL = 'http://10.122.196.96:8000';
+const DEFAULT_DEV_FALLBACK_URL = 'http://10.33.95.96:8000';
 
 export class BackendConnectionManagerClass {
   private defaultUrl: string;
