@@ -506,12 +506,12 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          FastAPI backend running inside Docker (e.g., http://10.193.167.152:8000/api)
+          FastAPI backend running inside Docker (e.g., http://10.122.196.152:8000/api)
         </Text>
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}
-          placeholder="http://10.193.167.152:8000/api"
+          placeholder="http://10.122.196.152:8000/api"
           placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}

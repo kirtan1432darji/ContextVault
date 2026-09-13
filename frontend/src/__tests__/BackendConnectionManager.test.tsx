@@ -33,14 +33,14 @@ describe('BackendConnectionManager Suite (BugFix-03)', () => {
 
   describe('1. URL Validation & Normalization', () => {
     it('validates http and https URLs correctly', () => {
-      expect(BackendConnectionManager.isValidUrl('http://10.122.196.96:8000')).toBe(true);
+      expect(BackendConnectionManager.isValidUrl('http://10.122.196.152:8000')).toBe(true);
       expect(BackendConnectionManager.isValidUrl('https://api.contextvault.app')).toBe(true);
       expect(BackendConnectionManager.isValidUrl('http://192.168.1.100:8000/api')).toBe(true);
       expect(BackendConnectionManager.isValidUrl('http://localhost:8000')).toBe(true);
     });
 
     it('rejects invalid or missing protocol URLs', () => {
-      expect(BackendConnectionManager.isValidUrl('10.122.196.96:8000')).toBe(false);
+      expect(BackendConnectionManager.isValidUrl('10.122.196.152:8000')).toBe(false);
       expect(BackendConnectionManager.isValidUrl('ftp://server.local')).toBe(false);
       expect(BackendConnectionManager.isValidUrl('')).toBe(false);
       expect(BackendConnectionManager.isValidUrl(null as any)).toBe(false);
@@ -48,14 +48,14 @@ describe('BackendConnectionManager Suite (BugFix-03)', () => {
     });
 
     it('normalizes trailing slashes and /api prefixes', () => {
-      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.96:8000/')).toBe(
-        'http://10.122.196.96:8000'
+      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.152:8000/')).toBe(
+        'http://10.122.196.152:8000'
       );
-      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.96:8000/api')).toBe(
-        'http://10.122.196.96:8000'
+      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.152:8000/api')).toBe(
+        'http://10.122.196.152:8000'
       );
-      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.96:8000/api/')).toBe(
-        'http://10.122.196.96:8000'
+      expect(BackendConnectionManager.normalizeUrl('http://10.122.196.152:8000/api/')).toBe(
+        'http://10.122.196.152:8000'
       );
     });
 
@@ -116,7 +116,7 @@ describe('BackendConnectionManager Suite (BugFix-03)', () => {
         },
       });
 
-      const result = await BackendConnectionManager.ping('http://10.122.196.96:8000');
+      const result = await BackendConnectionManager.ping('http://10.122.196.152:8000');
 
       expect(result.isHealthy).toBe(true);
       expect(result.status).toBe('Connected');
@@ -130,7 +130,7 @@ describe('BackendConnectionManager Suite (BugFix-03)', () => {
       netErr.code = 'ERR_NETWORK';
       mockedAxios.get.mockRejectedValueOnce(netErr);
 
-      const result = await BackendConnectionManager.ping('http://10.122.196.96:8000');
+      const result = await BackendConnectionManager.ping('http://10.122.196.152:8000');
 
       expect(result.isHealthy).toBe(false);
       expect(result.status).toBe('Offline');
@@ -142,7 +142,7 @@ describe('BackendConnectionManager Suite (BugFix-03)', () => {
       timeoutErr.code = 'ECONNABORTED';
       mockedAxios.get.mockRejectedValueOnce(timeoutErr);
 
-      const result = await BackendConnectionManager.ping('http://10.122.196.96:8000');
+      const result = await BackendConnectionManager.ping('http://10.122.196.152:8000');
 
       expect(result.isHealthy).toBe(false);
       expect(result.status).toBe('Timeout');

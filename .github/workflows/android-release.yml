@@ -47,6 +47,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Synchronize Environment Configuration
+        working-directory: frontend
+        run: npm run sync-env
+
       - name: Run TypeScript Typecheck (Strict Validation)
         working-directory: frontend
         run: npm run typecheck

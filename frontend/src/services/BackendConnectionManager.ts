@@ -25,7 +25,7 @@ try {
   generatedEnv = require('../config/env.generated.json');
 } catch {}
 
-const DEFAULT_DEV_FALLBACK_URL = 'http://10.33.95.96:8000';
+const DEFAULT_DEV_FALLBACK_URL = 'http://10.122.196.152:8000';
 
 export class BackendConnectionManagerClass {
   private defaultUrl: string;
@@ -55,7 +55,7 @@ export class BackendConnectionManagerClass {
   /**
    * Normalizes backend URL:
    * Trims whitespace, removes trailing slashes, strips trailing '/api'.
-   * Example: "http://10.122.196.96:8000/api/" -> "http://10.122.196.96:8000"
+   * Example: "http://10.122.196.152:8000/api/" -> "http://10.122.196.152:8000"
    */
   public normalizeUrl(url: string): string {
     if (!url || typeof url !== 'string') return this.defaultUrl;
@@ -87,7 +87,7 @@ export class BackendConnectionManagerClass {
 
   /**
    * Returns currently active API URL (with '/api' suffix).
-   * Example: "http://10.122.196.96:8000/api"
+   * Example: "http://10.122.196.152:8000/api"
    */
   public getApiUrl(): string {
     const base = this.getBaseUrl();

@@ -24,7 +24,7 @@ export const DevelopmentEnvironment: EnvironmentConfig = {
   appName: 'ContextVault (Dev)',
   appVersion: '1.0.0',
   buildNumber: 1,
-  apiBaseUrl: 'http://10.33.95.96:8000',
+  apiBaseUrl: 'http://10.122.196.152:8000',
   debugFlags: {
     enableDeveloperMode: true,
     enableDemoMode: true,
@@ -40,7 +40,7 @@ export const LocalReleaseEnvironment: EnvironmentConfig = {
   appName: 'ContextVault',
   appVersion: '1.0.0',
   buildNumber: 1,
-  apiBaseUrl: 'http://10.33.95.96:8000',
+  apiBaseUrl: 'http://10.122.196.152:8000',
   debugFlags: {
     enableDeveloperMode: false,
     enableDemoMode: false,

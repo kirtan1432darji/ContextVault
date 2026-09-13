@@ -8,6 +8,7 @@ import {
   UserModel,
 } from '../models/auth.model';
 import { apiClient } from '../api/apiClient';
+import { BackendConnectionManager } from './BackendConnectionManager';
 
 class AuthService {
   /**
@@ -15,9 +16,9 @@ class AuthService {
    */
   async login(payload: LoginPayload): Promise<Result<AuthResponseModel>> {
     try {
-      const baseUrl = apiClient.getBaseUrl();
+      const apiUrl = BackendConnectionManager.getApiUrl();
       const response = await axios.post(
-        `${baseUrl}${ApiConstants.authLogin}`,
+        `${apiUrl}${ApiConstants.authLogin}`,
         {
           emailOrUsername: payload.emailOrUsername.trim(),
           password: payload.password,
@@ -64,7 +65,7 @@ class AuthService {
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
         (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
-          ? `Cannot connect to ContextVault backend at ${apiClient.getBaseUrl()}. Please verify your network and backend server.`
+          ? `Cannot connect to ContextVault backend at ${BackendConnectionManager.getBaseUrl()}. Please verify your network and backend server.`
           : null) ||
         err.message ||
         'Authentication failed. Please verify your credentials.';
@@ -77,9 +78,9 @@ class AuthService {
    */
   async register(payload: RegisterPayload): Promise<Result<AuthResponseModel>> {
     try {
-      const baseUrl = apiClient.getBaseUrl();
+      const apiUrl = BackendConnectionManager.getApiUrl();
       const response = await axios.post(
-        `${baseUrl}${ApiConstants.authRegister}`,
+        `${apiUrl}${ApiConstants.authRegister}`,
         {
           username: payload.username.trim(),
           email: payload.email.trim().toLowerCase(),
@@ -127,7 +128,7 @@ class AuthService {
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
         (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
-          ? `Cannot connect to ContextVault backend at ${apiClient.getBaseUrl()}. Please verify your network and backend server.`
+          ? `Cannot connect to ContextVault backend at ${BackendConnectionManager.getBaseUrl()}. Please verify your network and backend server.`
           : null) ||
         err.message ||
         'Registration failed. Please try again.';
@@ -173,9 +174,9 @@ class AuthService {
    */
   async refreshToken(refreshToken: string): Promise<Result<AuthResponseModel>> {
     try {
-      const baseUrl = apiClient.getBaseUrl();
+      const apiUrl = BackendConnectionManager.getApiUrl();
       const response = await axios.post(
-        `${baseUrl}${ApiConstants.authRefresh}`,
+        `${apiUrl}${ApiConstants.authRefresh}`,
         { refreshToken },
         {
           timeout: ApiConstants.connectTimeout,
@@ -212,9 +213,9 @@ class AuthService {
   async logout(refreshToken?: string): Promise<Result<boolean>> {
     try {
       if (refreshToken) {
-        const baseUrl = apiClient.getBaseUrl();
+        const apiUrl = BackendConnectionManager.getApiUrl();
         await axios.post(
-          `${baseUrl}${ApiConstants.authLogout}`,
+          `${apiUrl}${ApiConstants.authLogout}`,
           { refreshToken },
           { timeout: 5000 }
         );
@@ -234,10 +235,10 @@ class AuthService {
   async requestPasswordReset(email: string): Promise<Result<boolean>> {
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const baseUrl = apiClient.getBaseUrl();
+      const apiUrl = BackendConnectionManager.getApiUrl();
       try {
         await axios.post(
-          `${baseUrl}${ApiConstants.authForgotPassword}`,
+          `${apiUrl}${ApiConstants.authForgotPassword}`,
           { email: cleanEmail },
           {
             timeout: 5000,
