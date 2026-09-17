@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api"
     ENVIRONMENT: str = "development"
 
+    # Local Vision AI Server Gateway (RTX 4050 Laptop GPU)
+    VISION_SERVER_URL: str = "http://127.0.0.1:9000"
+    VISION_TIMEOUT: int = 120
+    VISION_HEALTH_TIMEOUT: int = 5
+
     # SQL Server Database Configuration
     DB_SERVER: str = "localhost"
     DB_DATABASE: str = "ContextVault"
