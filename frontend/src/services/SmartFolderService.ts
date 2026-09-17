@@ -4,6 +4,7 @@ import { CategoryModel, ScreenshotModel } from '../models';
 import { useCategoryStore } from '../store/category.store';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { searchIndexService } from './searchIndexService';
+import { smartFolderClassificationService } from './SmartFolderClassificationService';
 
 export interface SmartFolderClassificationResult {
   categoryName: string;
@@ -325,103 +326,17 @@ export class SmartFolderService {
   async assignScreenshotToSmartFolder(
     payload: ScreenshotAssignmentPayload
   ): Promise<ScreenshotModel> {
-    console.log(`[SmartFolderService] Classifying: ${payload.fileName}`);
-
-    // 1. Run local heuristic rule classification
-    const classification = this.classifyScreenshot({
+    return smartFolderClassificationService.assignScreenshotToSmartFolder({
+      screenshotId: payload.screenshotId,
       fileName: payload.fileName,
       filePath: payload.filePath,
+      localPath: payload.localPath,
+      contentUri: payload.contentUri,
+      thumbnailUri: payload.thumbnailUri,
       ocrText: payload.ocrText,
       deviceFolder: payload.deviceFolder,
+      fileSize: payload.fileSize,
     });
-
-    // 2. Create or reuse dynamic nested category tree in SQLite
-    const assignedCategory = await categoryRepository.createNestedCategoryHierarchy(
-      classification.folderHierarchy,
-      classification.suggestedIcon,
-      classification.suggestedColor
-    );
-
-    // 3. Prepare search index and keywords
-    const searchResult = searchIndexService.prepareIndex(payload.ocrText);
-    const combinedKeywords = Array.from(
-      new Set([
-        ...classification.tags,
-        ...classification.folderHierarchy.map((h) => h.toLowerCase()),
-        ...searchResult.keywords,
-      ])
-    );
-
-    // 4. Update or construct ScreenshotModel
-    const existing = await screenshotRepository.getScreenshotById(payload.screenshotId);
-
-    const deviceAssetId = payload.deviceAssetId || existing?.deviceAssetId || '';
-    const localPath = payload.localPath || payload.filePath;
-    const contentUri =
-      payload.contentUri ||
-      existing?.contentUri ||
-      (deviceAssetId && /^\d+$/.test(deviceAssetId)
-        ? `content://media/external/images/media/${deviceAssetId}`
-        : undefined);
-
-    let thumbnailUri = payload.thumbnailUri || existing?.thumbnailUri;
-    if (!thumbnailUri) {
-      try {
-        const { thumbnailService } = await import('./ThumbnailService');
-        thumbnailUri = (await thumbnailService.getOrCreateThumbnail(contentUri || localPath, 300)) || undefined;
-      } catch {}
-    }
-
-    const screenshotModel: ScreenshotModel = {
-      id: payload.screenshotId,
-      deviceAssetId,
-      filePath: payload.filePath,
-      localPath,
-      contentUri,
-      thumbnailUri,
-      fileName: payload.fileName,
-      createdAt: existing?.createdAt || new Date().toISOString(),
-      createdOn: existing?.createdOn || new Date().toISOString(),
-      width: payload.width || existing?.width || 1080,
-      height: payload.height || existing?.height || 2400,
-      fileSize: payload.fileSize || existing?.fileSize || 0,
-      mimeType: payload.mimeType || existing?.mimeType,
-      categoryId: assignedCategory.id,
-      folderId: assignedCategory.id,
-      categoryName: assignedCategory.name,
-      subcategory: classification.subcategory,
-      confidence: classification.confidence,
-      isAutoCategorized: true,
-      isFavorite: existing?.isFavorite || false,
-      isReviewed: classification.confidence >= 0.85,
-      isSynced: false,
-      ocrStatus: 'completed',
-      ocrText: payload.ocrText,
-      keywords: combinedKeywords,
-      tags: combinedKeywords.slice(0, 4).map((kw) => ({
-        id: `tag_${kw.toLowerCase().replace(/\s+/g, '_')}`,
-        name: kw,
-        colorHex: classification.suggestedColor,
-      })),
-      lastScannedAt: new Date().toISOString(),
-    };
-
-    // 5. Save locally to SQLite
-    await screenshotRepository.insertScreenshot(screenshotModel);
-    await categoryRepository.updateAllAncestorCounts(assignedCategory.id);
-
-    // 6. Synchronize Zustand stores
-    useScreenshotStore.getState().addOrUpdateScreenshot(screenshotModel);
-
-    // Refresh categories in store
-    const allCategories = await categoryRepository.getAllCategories();
-    useCategoryStore.getState().setCategories(allCategories);
-
-    console.log(
-      `[SmartFolderService] Filed '${payload.fileName}' into: ${classification.folderHierarchy.join(' > ')} (${Math.round(classification.confidence * 100)}% conf)`
-    );
-
-    return screenshotModel;
   }
 
   /**
@@ -430,23 +345,8 @@ export class SmartFolderService {
   async organizeAllUnsorted(): Promise<number> {
     const unsorted = await screenshotRepository.getAllScreenshots({ categoryId: 'unsorted' });
     console.log(`[SmartFolderService] Batch organizing ${unsorted.length} unsorted screenshots...`);
-
-    let count = 0;
-    for (const item of unsorted) {
-      if (item.ocrText && item.ocrText.trim().length > 0) {
-        await this.assignScreenshotToSmartFolder({
-          screenshotId: item.id,
-          fileName: item.fileName,
-          filePath: item.filePath,
-          ocrText: item.ocrText,
-          fileSize: item.fileSize,
-          width: item.width,
-          height: item.height,
-        });
-        count++;
-      }
-    }
-    return count;
+    const result = await smartFolderClassificationService.classifyBatch(unsorted);
+    return result.processed;
   }
 
   /**

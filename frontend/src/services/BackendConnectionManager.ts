@@ -60,7 +60,7 @@ export class BackendConnectionManagerClass {
   public normalizeUrl(url: string): string {
     if (!url || typeof url !== 'string') return this.defaultUrl;
     let clean = url.trim().replace(/\/+$/, '');
-    if (clean.toLowerCase().endsWith('/api')) {
+    while (clean.toLowerCase().endsWith('/api')) {
       clean = clean.slice(0, -4).replace(/\/+$/, '');
     }
     return clean;

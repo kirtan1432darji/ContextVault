@@ -1,5 +1,6 @@
 import { databaseService } from '../database';
-import { VisionCacheRecord } from '../../vision/types';
+import { VisionCacheRecord, VisionStructuredOutput } from '../../vision/types';
+import { classificationCacheRepository } from './classificationCacheRepository';
 
 export class VisionRepository {
   /**
@@ -36,6 +37,58 @@ export class VisionRepository {
   }
 
   /**
+   * Saves a structured vision output simultaneously to vision_cache and classification_cache.
+   */
+  async saveStructuredResult(params: {
+    screenshotId: string;
+    fileHash?: string;
+    structured: VisionStructuredOutput;
+    modelVersion?: string;
+  }): Promise<void> {
+    const { screenshotId, structured, modelVersion = 'local:Qwen2.5-VL-3B-Instruct' } = params;
+    const now = new Date().toISOString();
+
+    const entities = structured.entities || {};
+    const tags = structured.tags || [];
+    const appName =
+      entities.merchant ||
+      entities.platform ||
+      entities.application ||
+      entities.airline ||
+      structured.category ||
+      'Unknown';
+
+    // 1. Save to vision_cache
+    const cacheRecord: VisionCacheRecord = {
+      screenshot_id: screenshotId,
+      screen_type: structured.category.toLowerCase(),
+      application_name: appName,
+      summary: structured.summary || '',
+      detected_objects: JSON.stringify(tags),
+      detected_entities: JSON.stringify(entities),
+      detected_logos: JSON.stringify(entities.merchant ? [entities.merchant] : []),
+      confidence: structured.confidence > 1 ? structured.confidence / 100 : structured.confidence,
+      processed_at: now,
+      model_version: modelVersion,
+    };
+    await this.saveVisionResult(cacheRecord);
+
+    // 2. Save to classification_cache so existing search and context components see it
+    await classificationCacheRepository.setCache({
+      id: `cache_${screenshotId}`,
+      screenshotId,
+      category: structured.category,
+      subcategory: String(entities.merchant || entities.airline || 'General'),
+      tagsJson: JSON.stringify(tags),
+      entitiesJson: JSON.stringify(entities),
+      confidence: structured.confidence > 1 ? structured.confidence / 100 : structured.confidence,
+      summary: structured.summary,
+      source: 'local',
+      cachedAt: now,
+    });
+  }
+
+  /**
    * Retrieves a vision result for a specific screenshot from the SQLite vision_cache table.
    */
   async getVisionResult(screenshotId: string): Promise<VisionCacheRecord | null> {
@@ -43,6 +96,32 @@ export class VisionRepository {
     const rows = await databaseService.executeQuery(sql, [screenshotId]);
     if (rows.length === 0) return null;
     return this.mapRowToRecord(rows[0]);
+  }
+
+  /**
+   * Checks if an image with the exact same SHA-256 hash was already analyzed.
+   * If so, returns the existing cached result without requiring a re-analysis.
+   */
+  async getByFileHash(fileHash: string): Promise<VisionCacheRecord | null> {
+    if (!fileHash) return null;
+
+    // Check if there is a pending screenshot with this hash that has a cached vision result
+    const sql = `
+      SELECT v.* FROM vision_cache v
+      JOIN pending_screenshots p ON p.id = v.screenshot_id OR p.file_path = v.screenshot_id
+      WHERE p.file_hash = ?
+      ORDER BY v.processed_at DESC
+      LIMIT 1
+    `;
+    try {
+      const rows = await databaseService.executeQuery(sql, [fileHash]);
+      if (rows.length > 0) {
+        return this.mapRowToRecord(rows[0]);
+      }
+    } catch {
+      // Ignore join error if table not yet initialized
+    }
+    return null;
   }
 
   /**
@@ -86,6 +165,16 @@ export class VisionRepository {
   }
 
   /**
+   * Clears the entire vision cache.
+   */
+  async clearCache(): Promise<void> {
+    await databaseService.executeCommand('DELETE FROM vision_cache');
+    try {
+      await databaseService.executeCommand("DELETE FROM classification_cache WHERE source = 'local'");
+    } catch {}
+  }
+
+  /**
    * Retrieves all cached vision results.
    */
   async getAllVisionResults(limit = 100): Promise<VisionCacheRecord[]> {
@@ -114,6 +203,24 @@ export class VisionRepository {
     const todayCount = todayRows.length > 0 ? todayRows[0].count || 0 : 0;
 
     return { totalCount, todayCount };
+  }
+
+  /**
+   * Helper for Context Chat: find cached analyses mentioning a keyword in summary or entities.
+   */
+  async findByKeyword(keyword: string): Promise<VisionCacheRecord[]> {
+    const term = `%${keyword.toLowerCase()}%`;
+    const sql = `
+      SELECT * FROM vision_cache
+      WHERE LOWER(summary) LIKE ?
+         OR LOWER(detected_entities) LIKE ?
+         OR LOWER(detected_objects) LIKE ?
+         OR LOWER(application_name) LIKE ?
+      ORDER BY processed_at DESC
+      LIMIT 20
+    `;
+    const rows = await databaseService.executeQuery(sql, [term, term, term, term]);
+    return rows.map(this.mapRowToRecord);
   }
 
   private mapRowToRecord(row: any): VisionCacheRecord {

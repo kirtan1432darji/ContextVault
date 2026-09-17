@@ -150,10 +150,10 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
         <View style={{ marginLeft: 12, flex: 1 }}>
           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
-            Vision AI Debugger
+            Vision AI Debugger (RTX 4050)
           </Text>
           <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-            Version 1.1 Foundation • Offline + Multi-Key Failover
+            Local Qwen2.5-VL-3B • LAN Proxy Gateway • Zero Cloud Keys
           </Text>
         </View>
         <TouchableOpacity
@@ -166,22 +166,22 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Dynamic API Keys Status Card */}
+        {/* Local Vision Server Gateway Card */}
         <ModernCard style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleRow}>
-              <Icon name="key-outline" size={18} color="#8B5CF6" />
+              <Icon name="server-outline" size={18} color="#8B5CF6" />
               <Text style={[styles.cardTitle, { color: theme.colors.textPrimary, marginLeft: 8 }]}>
-                Dynamic API Key Failover Pool ({apiKeys.length} Keys)
+                Local Vision AI Gateway
               </Text>
             </View>
             <View style={styles.liveTag}>
               <View style={styles.liveDot} />
-              <Text style={styles.liveText}>AUTO FAILOVER</Text>
+              <Text style={styles.liveText}>LAN PROXY</Text>
             </View>
           </View>
           <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
-            Configured in <Text style={{ fontFamily: 'monospace' }}>vision_api_keys.json</Text>. If Key 1 fails or rates limit, the engine automatically falls over to Key 2, 3, 4, then Local Offline Heuristics.
+            Screenshots are streamed in-memory to the Ubuntu FastAPI gateway which forwards to the local Qwen2.5-VL-3B server on your NVIDIA RTX 4050 Laptop GPU.
           </Text>
 
           <View style={styles.keysList}>
@@ -204,7 +204,7 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
                       {k.provider.toUpperCase()} • {k.model}
                     </Text>
                     <Text style={[styles.keyMasked, { color: theme.colors.textMuted }]}>
-                      {k.apiKey.substring(0, 8)}••••••••{k.apiKey.substring(k.apiKey.length - 6)}
+                      {k.endpoint || 'http://10.122.196.152:8000/api/vision/analyze'}
                     </Text>
                   </View>
                 </View>
@@ -212,8 +212,7 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
                   style={[
                     styles.statusBadge,
                     {
-                      backgroundColor:
-                        (k.errorCount || 0) > 0 ? '#EF444420' : '#10B98120',
+                      backgroundColor: '#10B98120',
                     },
                   ]}
                 >
@@ -221,10 +220,10 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
                     style={{
                       fontSize: 10,
                       fontWeight: '700',
-                      color: (k.errorCount || 0) > 0 ? '#EF4444' : '#10B981',
+                      color: '#10B981',
                     }}
                   >
-                    {(k.errorCount || 0) > 0 ? `${k.errorCount} ERR` : 'READY'}
+                    READY
                   </Text>
                 </View>
               </View>

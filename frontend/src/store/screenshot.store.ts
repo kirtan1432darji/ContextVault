@@ -41,6 +41,9 @@ interface ScreenshotState {
   // Bulk Actions
   bulkSetFavorite: (ids: string[], isFavorite: boolean) => Promise<number>;
   bulkSoftDelete: (ids: string[]) => Promise<number>;
+  bulkMoveScreenshots: (ids: string[], targetFolderId: string) => Promise<number>;
+  bulkReanalyzeScreenshots: (ids: string[]) => Promise<number>;
+  restoreAIClassification: (id: string) => Promise<void>;
 }
 
 export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
@@ -270,5 +273,52 @@ export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
     get().setScreenshots(list);
     await get().loadRecycleBin();
     return count;
+  },
+
+  bulkMoveScreenshots: async (ids: string[], targetFolderId: string) => {
+    if (!ids || ids.length === 0) return 0;
+    const { categoryRepository } = await import('../database/repositories/categoryRepository');
+    const { useCategoryStore } = await import('./category.store');
+
+    for (const id of ids) {
+      await categoryRepository.moveScreenshot(id, targetFolderId);
+    }
+
+    await get().loadScreenshots();
+    await useCategoryStore.getState().loadCategories();
+    return ids.length;
+  },
+
+  bulkReanalyzeScreenshots: async (ids: string[]) => {
+    if (!ids || ids.length === 0) return 0;
+    const { smartFolderClassificationService } = await import('../services/SmartFolderClassificationService');
+    const { useCategoryStore } = await import('./category.store');
+
+    const targetScreenshots = get().screenshots.filter((s) => ids.includes(s.id));
+    for (const sc of targetScreenshots) {
+      await smartFolderClassificationService.assignScreenshotToSmartFolder({
+        screenshotId: sc.id,
+        fileName: sc.fileName,
+        filePath: sc.filePath,
+        localPath: sc.localPath,
+        contentUri: sc.contentUri,
+        thumbnailUri: sc.thumbnailUri,
+        ocrText: sc.ocrText,
+        fileSize: sc.fileSize,
+        forceRefresh: true,
+      });
+    }
+
+    await get().loadScreenshots();
+    await useCategoryStore.getState().loadCategories();
+    return ids.length;
+  },
+
+  restoreAIClassification: async (id: string) => {
+    const { smartFolderClassificationService } = await import('../services/SmartFolderClassificationService');
+    const { useCategoryStore } = await import('./category.store');
+    await smartFolderClassificationService.restoreAIClassification(id);
+    await get().loadScreenshots();
+    await useCategoryStore.getState().loadCategories();
   },
 }));

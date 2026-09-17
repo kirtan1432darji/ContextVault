@@ -1,4 +1,5 @@
 import { StorageService } from '../utils/storage';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 export type AppEnvironment = 'development' | 'local_release' | 'production';
 
@@ -66,7 +67,13 @@ export const ProductionEnvironment: EnvironmentConfig = {
   },
 };
 
-let generatedEnv: { apiBaseUrl?: string; environment?: string } = {};
+let generatedEnv: {
+  apiBaseUrl?: string;
+  environment?: string;
+  visionProvider?: string;
+  visionServerUrl?: string;
+  visionTimeout?: number;
+} = {};
 try {
   generatedEnv = require('./env.generated.json');
 } catch {}
@@ -137,40 +144,26 @@ class EnvironmentManagerClass {
 
   /**
    * Returns active base URL (e.g. "http://10.122.196.152:8000").
-   * Prioritizes MMKV runtime override in dev / local_release.
+   * Delegates directly to BackendConnectionManager as the single source of truth.
    */
   public getApiBaseUrl(): string {
-    if (this.isDeveloperModeAvailable()) {
-      const override = StorageService.getBackendUrlOverride();
-      if (override && override.trim().length > 0) {
-        return this.normalizeUrl(override.trim());
-      }
-    }
-    return this.normalizeUrl(this.baseConfig.apiBaseUrl);
+    return BackendConnectionManager.getBaseUrl();
   }
 
   /**
    * Returns normalized API URL with /api suffix (e.g. "http://10.122.196.152:8000/api").
+   * Delegates directly to BackendConnectionManager as the single source of truth.
    */
   public getApiUrl(): string {
-    const base = this.getApiBaseUrl();
-    if (base.endsWith('/api')) {
-      return base;
-    }
-    return `${base}/api`;
+    return BackendConnectionManager.getApiUrl();
   }
 
   public setCustomBackendUrl(url: string): void {
-    const trimmed = url.trim();
-    if (!this.isValidUrl(trimmed)) {
-      throw new Error('Invalid backend URL. Please ensure it starts with http:// or https://');
-    }
-    const cleanUrl = this.normalizeUrl(trimmed);
-    StorageService.setBackendUrlOverride(cleanUrl);
+    BackendConnectionManager.setBaseUrl(url);
   }
 
   public resetToDefaultUrl(): void {
-    StorageService.clearBackendUrlOverride();
+    BackendConnectionManager.resetBaseUrl();
   }
 
   public isDeveloperModeAvailable(): boolean {
@@ -189,6 +182,18 @@ class EnvironmentManagerClass {
       clean = clean.slice(0, -4);
     }
     return clean;
+  }
+
+  public getVisionServerUrl(): string {
+    return `${this.getApiBaseUrl()}/api/vision`;
+  }
+
+  public isLocalVisionEnabled(): boolean {
+    return true;
+  }
+
+  public getVisionTimeout(): number {
+    return (generatedEnv.visionTimeout || 120) * 1000;
   }
 
   public getConfig(): EnvironmentConfig {

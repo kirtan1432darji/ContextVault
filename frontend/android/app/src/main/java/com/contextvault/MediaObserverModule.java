@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.util.Size;
 import androidx.annotation.NonNull;
 
 import com.facebook.react.bridge.Arguments;
@@ -146,16 +147,25 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void queryRecentScreenshots(int limit, Promise promise) {
+        queryScreenshotsPaged(limit, 0, promise);
+    }
+
+    @ReactMethod
+    public void queryScreenshotsPaged(int limit, int offset, Promise promise) {
         try {
             WritableArray array = Arguments.createArray();
             String[] projection = getProjection();
-            String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT " + Math.max(1, limit);
+            String selection = getScreenshotSelection();
+            String[] selectionArgs = getScreenshotSelectionArgs();
+            int safeLimit = Math.max(1, limit);
+            int safeOffset = Math.max(0, offset);
+            String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT " + safeLimit + " OFFSET " + safeOffset;
 
             try (Cursor cursor = reactContext.getContentResolver().query(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     projection,
-                    null,
-                    null,
+                    selection,
+                    selectionArgs,
                     sortOrder
             )) {
                 if (cursor != null) {
@@ -166,22 +176,86 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                         }
                     }
                 }
+            } catch (Exception ignored) {
             }
+
+            // Fallback without SQL selection if strict selection returned 0 on older Android or custom OEM
+            if (array.size() == 0 && safeOffset == 0) {
+                try (Cursor fallbackCursor = reactContext.getContentResolver().query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        projection,
+                        null,
+                        null,
+                        MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT " + Math.max(50, safeLimit * 2)
+                )) {
+                    if (fallbackCursor != null) {
+                        while (fallbackCursor.moveToNext() && array.size() < safeLimit) {
+                            WritableMap map = parseCursorRow(fallbackCursor);
+                            if (map != null) {
+                                array.pushMap(map);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
             promise.resolve(array);
         } catch (Exception e) {
             promise.reject("QUERY_ERROR", e.getMessage());
         }
     }
 
+    private String getScreenshotSelection() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return "(" +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.RELATIVE_PATH + " LIKE ? OR " +
+                    MediaStore.Images.Media.RELATIVE_PATH + " LIKE ?" +
+                    ") AND " + MediaStore.Images.Media.SIZE + " > 0";
+        } else {
+            return "(" +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DISPLAY_NAME + " LIKE ? OR " +
+                    MediaStore.Images.Media.DATA + " LIKE ? OR " +
+                    MediaStore.Images.Media.DATA + " LIKE ?" +
+                    ") AND " + MediaStore.Images.Media.SIZE + " > 0";
+        }
+    }
+
+    private String[] getScreenshotSelectionArgs() {
+        return new String[]{
+                "%screenshot%",
+                "%screen_shot%",
+                "%screencap%",
+                "%screenshot%",
+                "%screen_shot%",
+                "%screencap%",
+                "%Screenshots%",
+                "%screencapture%"
+        };
+    }
+
     private WritableMap queryLatestScreenshot() {
         String[] projection = getProjection();
+        String selection = getScreenshotSelection();
+        String[] selectionArgs = getScreenshotSelectionArgs();
         String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT 5";
 
         try (Cursor cursor = reactContext.getContentResolver().query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                null,
-                null,
+                selection,
+                selectionArgs,
                 sortOrder
         )) {
             if (cursor != null) {
@@ -191,7 +265,6 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                         String assetId = map.getString("deviceAssetId");
                         long now = System.currentTimeMillis();
 
-                        // Avoid duplicate event burst within 1.5 seconds for identical asset
                         if (assetId != null && assetId.equals(lastEmittedAssetId) && (now - lastEmittedTimestamp < 1500)) {
                             continue;
                         }
@@ -219,6 +292,8 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     MediaStore.Images.Media.DATE_ADDED,
                     MediaStore.Images.Media.DATE_TAKEN,
                     MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+                    MediaStore.Images.Media.BUCKET_ID,
+                    MediaStore.Images.Media.MIME_TYPE,
                     MediaStore.Images.Media.RELATIVE_PATH
             };
         } else {
@@ -231,7 +306,9 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     MediaStore.Images.Media.HEIGHT,
                     MediaStore.Images.Media.DATE_ADDED,
                     MediaStore.Images.Media.DATE_TAKEN,
-                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME
+                    MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+                    MediaStore.Images.Media.BUCKET_ID,
+                    MediaStore.Images.Media.MIME_TYPE
             };
         }
     }
@@ -239,22 +316,28 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
     private WritableMap parseCursorRow(Cursor cursor) {
         try {
             int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-            int dataCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
-            int nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-            int sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-            int widthCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH);
-            int heightCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT);
-            int dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED);
+            int dataCol = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+            int nameCol = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME);
+            int sizeCol = cursor.getColumnIndex(MediaStore.Images.Media.SIZE);
+            int widthCol = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH);
+            int heightCol = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT);
+            int dateAddedCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED);
+            int dateTakenCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN);
             int bucketCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME);
+            int bucketIdCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_ID);
+            int mimeCol = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE);
 
             long id = cursor.getLong(idCol);
-            String filePath = cursor.getString(dataCol);
-            String fileName = cursor.getString(nameCol);
-            long fileSize = cursor.getLong(sizeCol);
-            int width = cursor.getInt(widthCol);
-            int height = cursor.getInt(heightCol);
-            long dateAdded = cursor.getLong(dateAddedCol);
+            String filePath = dataCol >= 0 ? cursor.getString(dataCol) : "";
+            String fileName = nameCol >= 0 ? cursor.getString(nameCol) : "";
+            long fileSize = sizeCol >= 0 ? cursor.getLong(sizeCol) : 0;
+            int width = widthCol >= 0 ? cursor.getInt(widthCol) : 1080;
+            int height = heightCol >= 0 ? cursor.getInt(heightCol) : 2400;
+            long dateAdded = dateAddedCol >= 0 ? cursor.getLong(dateAddedCol) : 0;
+            long dateTaken = dateTakenCol >= 0 ? cursor.getLong(dateTakenCol) : 0;
             String bucketName = bucketCol >= 0 ? cursor.getString(bucketCol) : "";
+            String bucketId = bucketIdCol >= 0 ? cursor.getString(bucketIdCol) : "";
+            String mimeType = mimeCol >= 0 ? cursor.getString(mimeCol) : "image/png";
             String relativePath = "";
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -264,10 +347,9 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // Must have valid path and not 0 bytes (wait until image is actually written)
-            if (filePath == null || fileSize <= 0) {
-                return null;
-            }
+            if (bucketName == null) bucketName = "";
+            if (relativePath == null) relativePath = "";
+            if (filePath == null) filePath = "";
 
             // Check if item qualifies as a screenshot
             if (!isScreenshotPath(filePath, fileName, bucketName, relativePath)) {
@@ -277,18 +359,26 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
             Uri contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
             String fileHash = computeSHA256Hash(contentUri, filePath, fileSize, dateAdded);
 
-            long timestamp = dateAdded > 0 ? dateAdded * 1000 : System.currentTimeMillis();
+            long timestamp = dateTaken > 0 ? dateTaken : (dateAdded > 0 ? dateAdded * 1000 : System.currentTimeMillis());
 
             WritableMap params = Arguments.createMap();
+            params.putString("id", String.valueOf(id));
             params.putString("deviceAssetId", String.valueOf(id));
+            params.putString("uri", contentUri.toString());
+            params.putString("contentUri", contentUri.toString());
+            params.putString("displayName", fileName != null && !fileName.isEmpty() ? fileName : "Screenshot_" + id + ".png");
+            params.putString("fileName", fileName != null && !fileName.isEmpty() ? fileName : "Screenshot_" + id + ".png");
             params.putString("filePath", filePath);
-            params.putString("fileName", fileName != null ? fileName : new File(filePath).getName());
+            params.putDouble("size", (double) fileSize);
             params.putDouble("fileSize", (double) fileSize);
             params.putInt("width", width > 0 ? width : 1080);
             params.putInt("height", height > 0 ? height : 2400);
+            params.putDouble("dateTaken", (double) timestamp);
             params.putDouble("timestamp", (double) timestamp);
+            params.putString("mimeType", mimeType != null ? mimeType : "image/png");
+            params.putString("folderName", !bucketName.isEmpty() ? bucketName : "Screenshots");
+            params.putString("bucketId", bucketId != null ? bucketId : "");
             params.putString("fileHash", fileHash);
-            params.putString("uri", contentUri.toString());
 
             return params;
         } catch (Exception e) {
@@ -438,7 +528,29 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     return;
                 }
 
-                // 1. Decode bounds to determine sample size
+                // 1. Android 10+ (API 29+) hardware-accelerated ContentResolver thumbnail loader
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && "content".equals(sourceUri.getScheme())) {
+                    try {
+                        Bitmap thumbBitmap = reactContext.getContentResolver().loadThumbnail(
+                                sourceUri,
+                                new Size(size, size),
+                                null
+                        );
+                        if (thumbBitmap != null) {
+                            try (FileOutputStream fos = new FileOutputStream(thumbFile)) {
+                                thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos);
+                                fos.flush();
+                            }
+                            thumbBitmap.recycle();
+                            promise.resolve(Uri.fromFile(thumbFile).toString());
+                            return;
+                        }
+                    } catch (Exception ignored) {
+                        // Fallback to manual stream sampling below
+                    }
+                }
+
+                // 2. Decode bounds to determine sample size
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
 
@@ -447,9 +559,17 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     if ("content".equals(sourceUri.getScheme())) {
                         is = reactContext.getContentResolver().openInputStream(sourceUri);
                     } else {
-                        is = new FileInputStream(sourceUri.getPath());
+                        String filePath = sourceUri.getPath();
+                        if (filePath != null) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                is = new FileInputStream(f);
+                            }
+                        }
                     }
-                    BitmapFactory.decodeStream(is, null, options);
+                    if (is != null) {
+                        BitmapFactory.decodeStream(is, null, options);
+                    }
                 } finally {
                     if (is != null) {
                         try { is.close(); } catch (Exception ignored) {}
@@ -461,7 +581,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     return;
                 }
 
-                // 2. Calculate inSampleSize
+                // 3. Calculate inSampleSize
                 int inSampleSize = 1;
                 int maxDim = Math.max(options.outWidth, options.outHeight);
                 while (maxDim / (inSampleSize * 2) >= size) {
@@ -477,9 +597,17 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     if ("content".equals(sourceUri.getScheme())) {
                         is = reactContext.getContentResolver().openInputStream(sourceUri);
                     } else {
-                        is = new FileInputStream(sourceUri.getPath());
+                        String filePath = sourceUri.getPath();
+                        if (filePath != null) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                is = new FileInputStream(f);
+                            }
+                        }
                     }
-                    bitmap = BitmapFactory.decodeStream(is, null, options);
+                    if (is != null) {
+                        bitmap = BitmapFactory.decodeStream(is, null, options);
+                    }
                 } finally {
                     if (is != null) {
                         try { is.close(); } catch (Exception ignored) {}
@@ -491,7 +619,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     return;
                 }
 
-                // 3. Scale down if still larger than targetSize
+                // 4. Scale down if still larger than targetSize
                 int width = bitmap.getWidth();
                 int height = bitmap.getHeight();
                 float scale = Math.min((float) size / width, (float) size / height);
@@ -507,16 +635,11 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     }
                 }
 
-                // 4. Compress to JPEG
-                FileOutputStream fos = null;
-                try {
-                    fos = new FileOutputStream(thumbFile);
+                // 5. Compress to JPEG
+                try (FileOutputStream fos = new FileOutputStream(thumbFile)) {
                     finalBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos);
                     fos.flush();
                 } finally {
-                    if (fos != null) {
-                        try { fos.close(); } catch (Exception ignored) {}
-                    }
                     if (finalBitmap != null && !finalBitmap.isRecycled()) {
                         finalBitmap.recycle();
                     }

@@ -23,3 +23,4 @@ export * from './FolderAnalyticsScreen';
 export * from './BackendSettingsScreen';
 export * from './BackendConnectionScreen';
 export * from './VisionDebugScreen';
+export * from './ScreenshotDiagnosticsScreen';

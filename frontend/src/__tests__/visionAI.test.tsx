@@ -186,38 +186,38 @@ describe('ContextVault Sprint V01 — Vision AI Foundation Suite', () => {
   });
 
   // =========================================================================
-  // Task 2: Vision Model Manager & Dynamic Failover
+  // Task 2: Vision Model Manager & Local Vision Server Gateway
   // =========================================================================
-  describe('Task 2: VisionModelManager & Failover Chain', () => {
-    it('loads dynamic API keys correctly from config and normalizes raw keys', () => {
-      const keys = [
-        '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',
-        'AQ.Ab8RN6KCiC6sBptwl9lMuZtuPP7IiaRQu-YAoB1tuG7lK68FHg',
-      ];
-      visionModelManager.loadApiKeys(keys);
-
+  describe('Task 2: VisionModelManager & Local Vision Server Gateway', () => {
+    it('configures Local Vision Server (RTX 4050) endpoint and model without cloud keys', () => {
       const loaded = visionModelManager.getApiKeys();
-      expect(loaded.length).toBe(2);
-      expect(loaded[0].provider).toBe('groq');
-      expect(loaded[0].model).toBe('qwen/qwen3.8-27b');
-      expect(loaded[1].provider).toBe('gemini');
-      expect(loaded[1].model).toBe('models/gemini-3.5-flash');
+      expect(loaded.length).toBe(1);
+      expect(loaded[0].provider).toBe('local');
+      expect(loaded[0].model).toBe('Qwen2.5-VL-3B-Instruct');
+      expect(loaded[0].endpoint).toContain('/vision/analyze');
+      expect(loaded[0].enabled).toBe(true);
     });
 
-    it('executes sequential failover: if key 1 fails, calls key 2', async () => {
-      const keys = [
-        { id: 'k1', provider: 'groq', apiKey: 'gsk_fail', model: 'qwen', enabled: true },
-        { id: 'k2', provider: 'groq', apiKey: 'gsk_success', model: 'qwen', enabled: true },
-      ];
-      visionModelManager.loadApiKeys(keys);
+    it('checks vision server health via gateway endpoint', async () => {
+      const getSpy = jest.spyOn(axios, 'get').mockResolvedValueOnce({
+        data: {
+          status: 'healthy',
+          modelLoaded: true,
+          device: 'cuda',
+          gpuName: 'NVIDIA GeForce RTX 4050 Laptop GPU',
+        },
+      });
 
-      const postSpy = jest.spyOn(axios, 'post')
-        .mockRejectedValueOnce(new Error('Rate limit 429'))
-        .mockResolvedValueOnce({
-          data: {
-            choices: [{ message: { content: '{"screenType":"shopping_receipt","application":"Amazon"}' } }],
-          },
-        });
+      const health = await visionModelManager.checkHealth();
+      expect(health.status).toBe('healthy');
+      expect(health.modelLoaded).toBe(true);
+      getSpy.mockRestore();
+    });
+
+    it('executes inference through Local Vision Server gateway and returns structured response', async () => {
+      const postSpy = jest.spyOn(axios, 'post').mockResolvedValueOnce({
+        data: { screenType: 'shopping_receipt', application: 'Amazon' },
+      });
 
       const preprocessed = await visionImagePreprocessor.preprocess('test.png');
       const res = await visionModelManager.executeWithFailover({
@@ -225,19 +225,15 @@ describe('ContextVault Sprint V01 — Vision AI Foundation Suite', () => {
         prompt: { system: 'sys', user: 'usr' },
       });
 
-      expect(postSpy).toHaveBeenCalledTimes(2);
-      expect(res.provider).toBe('groq');
+      expect(postSpy).toHaveBeenCalledTimes(1);
+      expect(res.provider).toBe('local');
+      expect(res.modelVersion).toBe('Qwen2.5-VL-3B-Instruct');
       expect(res.rawResponse).toContain('Amazon');
       postSpy.mockRestore();
     });
 
-    it('falls back to LocalVisionFallbackAdapter when all remote API keys fail', async () => {
-      const keys = [
-        { id: 'k1', provider: 'groq', apiKey: 'gsk_fail1', model: 'qwen', enabled: true },
-      ];
-      visionModelManager.loadApiKeys(keys);
-
-      const postSpy = jest.spyOn(axios, 'post').mockRejectedValue(new Error('Network offline'));
+    it('falls back to LocalVisionFallbackAdapter when Local Vision Server is offline', async () => {
+      const postSpy = jest.spyOn(axios, 'post').mockRejectedValueOnce(new Error('Network offline'));
 
       const preprocessed = await visionImagePreprocessor.preprocess('test.png');
       const res = await visionModelManager.executeWithFailover({

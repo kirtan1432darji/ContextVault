@@ -2,7 +2,7 @@ import { DEFAULT_CATEGORIES } from '../models/category.model';
 import { VISION_CACHE_TABLE_SQL, VISION_CACHE_INDEXES_SQL } from './visionCacheMigration';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 6;
+export const DATABASE_VERSION = 7;
 
 export const SCHEMA_SQL = [
   // 1. Categories (Sprint RN-05 Dynamic Smart Folder Hierarchy)
@@ -232,4 +232,17 @@ export const SCHEMA_SQL = [
   // 15. Vision AI Cache (Sprint V01)
   VISION_CACHE_TABLE_SQL,
   ...VISION_CACHE_INDEXES_SQL,
+
+  // 16. Thumbnail Cache (Sprint P0-B)
+  `CREATE TABLE IF NOT EXISTS thumbnail_cache (
+    id TEXT PRIMARY KEY,
+    screenshot_id TEXT NOT NULL,
+    file_hash TEXT,
+    thumbnail_path TEXT NOT NULL,
+    width INTEGER NOT NULL DEFAULT 300,
+    height INTEGER NOT NULL DEFAULT 300,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_thumbnail_screenshot ON thumbnail_cache(screenshot_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_thumbnail_hash ON thumbnail_cache(file_hash);`,
 ];

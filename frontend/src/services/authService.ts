@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { ApiConstants } from '../api/apiConstants';
 import { Result } from '../utils/result';
 import {
@@ -7,18 +6,17 @@ import {
   RegisterPayload,
   UserModel,
 } from '../models/auth.model';
-import { apiClient } from '../api/apiClient';
-import { BackendConnectionManager } from './BackendConnectionManager';
+import { apiClient, formatApiErrorMessage } from '../api/apiClient';
 
 class AuthService {
   /**
    * Authenticate user with Email/Username and Password against FastAPI backend.
+   * Routes strictly through centralized apiClient instance.
    */
   async login(payload: LoginPayload): Promise<Result<AuthResponseModel>> {
     try {
-      const apiUrl = BackendConnectionManager.getApiUrl();
-      const response = await axios.post(
-        `${apiUrl}${ApiConstants.authLogin}`,
+      const response = await apiClient.getAxiosInstance().post(
+        ApiConstants.authLogin,
         {
           emailOrUsername: payload.emailOrUsername.trim(),
           password: payload.password,
@@ -61,26 +59,23 @@ class AuthService {
       return Result.failure('Invalid server response during authentication.');
     } catch (err: any) {
       const errMsg =
+        err.userMessage ||
         err.response?.data?.message ||
+        err.response?.data?.detail ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
-        (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
-        (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
-          ? `Cannot connect to ContextVault backend at ${BackendConnectionManager.getBaseUrl()}. Please verify your network and backend server.`
-          : null) ||
-        err.message ||
-        'Authentication failed. Please verify your credentials.';
+        formatApiErrorMessage(err, apiClient.getBaseUrl());
       return Result.failure(errMsg, err);
     }
   }
 
   /**
    * Register a new account on ContextVault backend.
+   * Routes strictly through centralized apiClient instance.
    */
   async register(payload: RegisterPayload): Promise<Result<AuthResponseModel>> {
     try {
-      const apiUrl = BackendConnectionManager.getApiUrl();
-      const response = await axios.post(
-        `${apiUrl}${ApiConstants.authRegister}`,
+      const response = await apiClient.getAxiosInstance().post(
+        ApiConstants.authRegister,
         {
           username: payload.username.trim(),
           email: payload.email.trim().toLowerCase(),
@@ -124,14 +119,11 @@ class AuthService {
       return Result.failure('Registration completed but no access token was returned.');
     } catch (err: any) {
       const errMsg =
+        err.userMessage ||
         err.response?.data?.message ||
+        err.response?.data?.detail ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
-        (err.code === 'ECONNABORTED' ? 'Connection timed out. Please check your network.' : null) ||
-        (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')
-          ? `Cannot connect to ContextVault backend at ${BackendConnectionManager.getBaseUrl()}. Please verify your network and backend server.`
-          : null) ||
-        err.message ||
-        'Registration failed. Please try again.';
+        formatApiErrorMessage(err, apiClient.getBaseUrl());
       return Result.failure(errMsg, err);
     }
   }
@@ -141,7 +133,6 @@ class AuthService {
    */
   async profile(token?: string): Promise<Result<UserModel>> {
     try {
-      const baseUrl = apiClient.getBaseUrl();
       const authHeader = token ? `Bearer ${token}` : undefined;
       const response = await apiClient.getAxiosInstance().get(ApiConstants.authProfile, {
         headers: authHeader ? { Authorization: authHeader } : undefined,
@@ -161,7 +152,9 @@ class AuthService {
       return Result.failure('Unable to load profile data.');
     } catch (err: any) {
       const errMsg =
+        err.userMessage ||
         err.response?.data?.message ||
+        err.response?.data?.detail ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         err.message ||
         'Failed to fetch user profile.';
@@ -171,12 +164,12 @@ class AuthService {
 
   /**
    * Refresh expired JWT session using cryptographically signed refresh token.
+   * Routes strictly through centralized apiClient instance.
    */
   async refreshToken(refreshToken: string): Promise<Result<AuthResponseModel>> {
     try {
-      const apiUrl = BackendConnectionManager.getApiUrl();
-      const response = await axios.post(
-        `${apiUrl}${ApiConstants.authRefresh}`,
+      const response = await apiClient.getAxiosInstance().post(
+        ApiConstants.authRefresh,
         { refreshToken },
         {
           timeout: ApiConstants.connectTimeout,
@@ -200,7 +193,9 @@ class AuthService {
       return Result.failure('Token refresh returned invalid payload.');
     } catch (err: any) {
       const errMsg =
+        err.userMessage ||
         err.response?.data?.message ||
+        err.response?.data?.detail ||
         (Array.isArray(err.response?.data?.errors) && err.response.data.errors[0]) ||
         'Session expired. Please log in again.';
       return Result.failure(errMsg, err);
@@ -213,9 +208,8 @@ class AuthService {
   async logout(refreshToken?: string): Promise<Result<boolean>> {
     try {
       if (refreshToken) {
-        const apiUrl = BackendConnectionManager.getApiUrl();
-        await axios.post(
-          `${apiUrl}${ApiConstants.authLogout}`,
+        await apiClient.getAxiosInstance().post(
+          ApiConstants.authLogout,
           { refreshToken },
           { timeout: 5000 }
         );
@@ -235,10 +229,9 @@ class AuthService {
   async requestPasswordReset(email: string): Promise<Result<boolean>> {
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const apiUrl = BackendConnectionManager.getApiUrl();
       try {
-        await axios.post(
-          `${apiUrl}${ApiConstants.authForgotPassword}`,
+        await apiClient.getAxiosInstance().post(
+          ApiConstants.authForgotPassword,
           { email: cleanEmail },
           {
             timeout: 5000,
@@ -257,8 +250,8 @@ class AuthService {
           await new Promise((resolve) => setTimeout(resolve, 600));
           return Result.success(true);
         }
-        if (apiErr.response?.data?.message) {
-          return Result.failure(apiErr.response.data.message);
+        if (apiErr.response?.data?.message || apiErr.userMessage) {
+          return Result.failure(apiErr.response?.data?.message || apiErr.userMessage);
         }
         await new Promise((resolve) => setTimeout(resolve, 600));
         return Result.success(true);

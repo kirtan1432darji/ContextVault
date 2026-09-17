@@ -42,6 +42,31 @@ export class ScreenshotRepository {
     return rows.map(this.mapRowToModel);
   }
 
+  async countScreenshots(filter: ScreenshotFilter = {}): Promise<number> {
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (filter.isDeleted === true) {
+      conditions.push('is_deleted = 1');
+    } else {
+      conditions.push('(is_deleted = 0 OR is_deleted IS NULL)');
+    }
+
+    if (filter.categoryId && filter.categoryId !== 'all') {
+      conditions.push('category_id = ?');
+      params.push(filter.categoryId);
+    }
+
+    if (filter.isFavorite) {
+      conditions.push('is_favorite = 1');
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `SELECT COUNT(*) as count FROM screenshots ${whereClause}`;
+    const rows = await databaseService.executeQuery(sql, params);
+    return rows.length > 0 ? rows[0].count : 0;
+  }
+
   async getScreenshotById(id: string): Promise<ScreenshotModel | null> {
     const rows = await databaseService.executeQuery(
       'SELECT * FROM screenshots WHERE id = ? LIMIT 1',

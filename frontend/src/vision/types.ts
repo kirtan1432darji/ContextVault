@@ -29,18 +29,46 @@ export interface VisionScene {
   language: string;
 }
 
-export type VisionApiProvider = 'groq' | 'gemini' | 'openai_compatible';
+export type VisionApiProvider = 'local' | 'backend_gateway' | 'heuristic_offline' | 'sqlite_cache';
+
+export interface VisionStructuredOutput {
+  category: string;
+  confidence: number;
+  summary: string;
+  tags: string[];
+  entities: Record<string, any>;
+}
+
+export interface VisionServerHealth {
+  status: string;
+  modelLoaded: boolean;
+  provider?: string;
+  model?: string;
+  device?: string;
+  gpu?: string;
+  uptime?: string;
+  version?: string;
+  error?: string;
+  detail?: string;
+}
+
+export interface VisionModelInfo {
+  modelName: string;
+  huggingFaceId?: string;
+  precision?: string;
+  device?: string;
+  vramUsage?: string;
+  maxResolution?: number;
+}
 
 export interface VisionApiKeyEntry {
   id: string;
   provider: VisionApiProvider;
-  apiKey: string;
   model: string;
   enabled: boolean;
   endpoint?: string;
   errorCount?: number;
   lastUsedAt?: string;
-  cooldownUntil?: number;
 }
 
 export interface VisionModelConfig {

@@ -18,6 +18,8 @@ import { useAppTheme } from '../theme';
 import { ModernCard } from '../components/ModernCard';
 import { BackendConnectionManager, PingResult } from '../services/BackendConnectionManager';
 import { apiClient } from '../api/apiClient';
+import { EnvironmentManager } from '../config/EnvironmentManager';
+import { useAuthStore } from '../store/auth.store';
 
 export const BackendConnectionScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -320,14 +322,35 @@ export const BackendConnectionScreen: React.FC = () => {
             </View>
 
             <View style={styles.diagItem}>
-              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Status</Text>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Internet / Connection</Text>
               <Text
                 style={[
                   styles.diagVal,
                   { color: pingResult.isHealthy ? '#10B981' : '#EF4444', fontWeight: '700' },
                 ]}
               >
-                {pingResult.status}
+                {pingResult.isHealthy ? 'Online (Connected)' : 'Offline'}
+              </Text>
+            </View>
+
+            <View style={styles.diagItem}>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Backend URL</Text>
+              <Text style={[styles.diagVal, { color: theme.colors.textPrimary, fontSize: 13 }]} numberOfLines={1}>
+                {pingResult.baseUrl}
+              </Text>
+            </View>
+
+            <View style={styles.diagItem}>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>API URL</Text>
+              <Text style={[styles.diagVal, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={1}>
+                {`${pingResult.baseUrl}/api`}
+              </Text>
+            </View>
+
+            <View style={styles.diagItem}>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Environment</Text>
+              <Text style={[styles.diagVal, { color: theme.colors.textPrimary }]}>
+                {EnvironmentManager.getEnvironment()}
               </Text>
             </View>
 
@@ -339,6 +362,21 @@ export const BackendConnectionScreen: React.FC = () => {
             </View>
 
             <View style={styles.diagItem}>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>JWT Token Status</Text>
+              <Text
+                style={[
+                  styles.diagVal,
+                  {
+                    color: useAuthStore.getState().accessToken ? '#10B981' : '#F59E0B',
+                    fontWeight: '600',
+                  },
+                ]}
+              >
+                {useAuthStore.getState().accessToken ? 'Active Session' : 'No Token (Unauthenticated)'}
+              </Text>
+            </View>
+
+            <View style={styles.diagItem}>
               <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Backend Version</Text>
               <Text style={[styles.diagVal, { color: theme.colors.textPrimary }]}>
                 {pingResult.version}
@@ -346,23 +384,17 @@ export const BackendConnectionScreen: React.FC = () => {
             </View>
 
             <View style={styles.diagItem}>
-              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Database Status</Text>
+              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>SQL Server Status</Text>
               <Text
                 style={[
                   styles.diagVal,
                   {
                     color: pingResult.database === 'connected' ? '#10B981' : '#F59E0B',
+                    fontWeight: '600',
                   },
                 ]}
               >
                 {pingResult.database}
-              </Text>
-            </View>
-
-            <View style={styles.diagItem}>
-              <Text style={[styles.diagKey, { color: theme.colors.textSecondary }]}>Target Host</Text>
-              <Text style={[styles.diagVal, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={1}>
-                {pingResult.baseUrl}
               </Text>
             </View>
 

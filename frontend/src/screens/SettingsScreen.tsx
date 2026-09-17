@@ -28,6 +28,8 @@ import { demoModeService } from '../services/demoModeService';
 import { backupService } from '../services/backupService';
 import { EnvironmentManager } from '../config/EnvironmentManager';
 import { BackendConnectionManager } from '../services/BackendConnectionManager';
+import { visionAIService, PingResult as VisionPingResult } from '../services/visionAIService';
+import { visionInferenceQueue } from '../vision/VisionInferenceQueue';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -42,6 +44,69 @@ export const SettingsScreen: React.FC = () => {
   const [urlInput, setUrlInput] = useState(backendUrl);
   const [testingHealth, setTestingHealth] = useState(false);
   const [pingResult, setPingResult] = useState<PingResult | null>(null);
+
+  const analyzeOnImport = useSettingsStore((s) => s.analyzeOnImport);
+  const setAnalyzeOnImport = useSettingsStore((s) => s.setAnalyzeOnImport);
+  const [testingVision, setTestingVision] = useState(false);
+  const [visionPing, setVisionPing] = useState<VisionPingResult | null>(null);
+
+  const handleTestVisionServer = async () => {
+    setTestingVision(true);
+    try {
+      const res = await visionAIService.pingVisionServer();
+      setVisionPing(res);
+      if (res.online) {
+        Alert.alert(
+          'Vision Server Online',
+          `Connected to Local Vision Server!\nModel: ${res.model || 'Qwen2.5-VL-3B-Instruct'}\nGPU: ${res.gpu || 'RTX 4050'}\nLatency: ${res.latencyMs} ms`
+        );
+      } else {
+        Alert.alert(
+          res.error || 'Vision Server Offline',
+          'Could not reach Vision Server via Ubuntu gateway. Verify the Vision server is running on :9000.'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Vision Server Offline', e?.message || 'Connection failed.');
+    } finally {
+      setTestingVision(false);
+    }
+  };
+
+  const handleReanalyzeAll = async () => {
+    Alert.alert(
+      'Re-analyze All Screenshots',
+      'Queue all un-analyzed screenshots for local Vision AI processing on your RTX 4050 GPU? Concurrency is set to 1 (sequential).',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start Queue',
+          onPress: async () => {
+            const count = await visionInferenceQueue.enqueuePending();
+            Alert.alert('Queue Started', `Enqueued ${count} screenshot(s) for local Vision processing.`);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearVisionCache = () => {
+    Alert.alert(
+      'Clear Vision Cache',
+      'Are you sure you want to clear all cached Vision summaries and entities from SQLite?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Cache',
+          style: 'destructive',
+          onPress: async () => {
+            await visionAIService.clearVisionCache();
+            Alert.alert('Cache Cleared', 'Local Vision cache removed.');
+          },
+        },
+      ]
+    );
+  };
 
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
@@ -612,6 +677,137 @@ export const SettingsScreen: React.FC = () => {
         )}
       </ModernCard>
 
+      {/* Local Vision AI Server (RTX 4050 Gateway) */}
+      <ModernCard style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon name="sparkles" size={18} color="#8B5CF6" />
+            <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginLeft: 8, marginBottom: 0 }]}>
+              Local Vision AI Server
+            </Text>
+          </View>
+          <View
+            style={{
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              borderRadius: 10,
+              backgroundColor: visionPing?.online ? '#10B98120' : '#64748B20',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: '700',
+                color: visionPing?.online ? '#10B981' : theme.colors.textMuted,
+              }}
+            >
+              {visionPing?.online ? 'ONLINE' : 'LAN GATEWAY'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
+          Qwen2.5-VL-3B-Instruct running on RTX 4050 Laptop GPU (6 GB VRAM) via Ubuntu proxy gateway.
+        </Text>
+
+        {/* Vision Server Diagnostics Info */}
+        <View
+          style={[
+            styles.diagnosticContainer,
+            {
+              backgroundColor: theme.isDark ? '#0F172A' : '#F1F5F9',
+              borderColor: visionPing?.online ? '#10B981' : theme.colors.border,
+              marginTop: 10,
+            },
+          ]}
+        >
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Gateway URL</Text>
+            <Text
+              style={[styles.diagValue, { color: theme.colors.textPrimary, fontSize: 11 }]}
+              numberOfLines={1}
+            >
+              {BackendConnectionManager.getApiUrl()}/vision
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Status</Text>
+            <Text
+              style={[
+                styles.diagValue,
+                { color: visionPing?.online ? '#10B981' : theme.colors.textSecondary },
+              ]}
+            >
+              {visionPing ? (visionPing.online ? 'Online (Healthy)' : visionPing.error || 'Offline') : 'Not Checked'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Model</Text>
+            <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+              {visionPing?.model || 'Qwen2.5-VL-3B-Instruct'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Hardware</Text>
+            <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+              {visionPing?.gpu || 'NVIDIA RTX 4050 (6 GB)'}
+            </Text>
+          </View>
+          {visionPing?.latencyMs !== undefined && (
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Ping Latency</Text>
+              <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+                {visionPing.latencyMs} ms
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Analyze on Import Toggle */}
+        <View style={[styles.row, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 12, paddingTop: 12 }]}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+              Analyze on Import
+            </Text>
+            <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+              Automatically run local Vision AI when new screenshots are detected
+            </Text>
+          </View>
+          <Switch
+            value={analyzeOnImport}
+            onValueChange={setAnalyzeOnImport}
+            trackColor={{ false: theme.colors.border, true: '#8B5CF6' }}
+            thumbColor={analyzeOnImport ? '#FFFFFF' : '#F4F4F5'}
+          />
+        </View>
+
+        {/* Action Buttons */}
+        <View style={[styles.apiBtnRow, { marginTop: 14 }]}>
+          <TouchableOpacity
+            onPress={handleTestVisionServer}
+            disabled={testingVision}
+            style={[styles.saveBtn, { backgroundColor: '#8B5CF6' }]}
+          >
+            <Text style={styles.btnText}>
+              {testingVision ? 'Pinging...' : 'Ping Vision Server'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleReanalyzeAll}
+            style={[styles.testBtn, { borderColor: '#8B5CF6' }]}
+          >
+            <Text style={[styles.testBtnText, { color: '#8B5CF6' }]}>Re-analyze All</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleClearVisionCache}
+          style={{ marginTop: 10, alignItems: 'center', paddingVertical: 6 }}
+        >
+          <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Clear Vision Cache</Text>
+        </TouchableOpacity>
+      </ModernCard>
+
       {/* Storage & Data Management (Sprint RN-10) */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
@@ -730,10 +926,10 @@ export const SettingsScreen: React.FC = () => {
               <Icon name="sparkles-outline" size={20} color="#8B5CF6" />
               <View style={{ marginLeft: 10 }}>
                 <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
-                  Vision AI Debugger (v1.1)
+                  Vision AI Debugger (RTX 4050)
                 </Text>
                 <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
-                  Multi-key failover, visual scenes & offline heuristics
+                  Local vision gateway, scene analysis & offline heuristics
                 </Text>
               </View>
             </View>
@@ -755,6 +951,26 @@ export const SettingsScreen: React.FC = () => {
               </Text>
               <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
                 Live pipeline monitors, simulations & metrics
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('ScreenshotDiagnostics')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Screenshot Diagnostics"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="images-outline" size={20} color="#06B6D4" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Screenshot Diagnostics
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                MediaStore scan, thumbnail cache stats & Scoped Storage health
               </Text>
             </View>
           </View>

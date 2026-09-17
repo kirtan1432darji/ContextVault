@@ -102,7 +102,17 @@ export class MediaObserverService {
   }
 
   async queryRecentScreenshots(limit = 20): Promise<DetectedScreenshotEvent[]> {
-    if (Platform.OS === 'android' && MediaObserverModule?.queryRecentScreenshots) {
+    return this.queryScreenshotsPaged(limit, 0);
+  }
+
+  async queryScreenshotsPaged(limit = 20, offset = 0): Promise<DetectedScreenshotEvent[]> {
+    if (Platform.OS === 'android' && MediaObserverModule?.queryScreenshotsPaged) {
+      try {
+        return await MediaObserverModule.queryScreenshotsPaged(limit, offset);
+      } catch (err) {
+        console.warn('[MediaObserver] Error querying screenshots paged:', err);
+      }
+    } else if (Platform.OS === 'android' && MediaObserverModule?.queryRecentScreenshots) {
       try {
         return await MediaObserverModule.queryRecentScreenshots(limit);
       } catch (err) {

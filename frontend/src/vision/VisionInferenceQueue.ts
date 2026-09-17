@@ -65,6 +65,47 @@ export class VisionInferenceQueue {
   }
 
   /**
+   * Enqueues a specific list of selected screenshots for batch analysis.
+   */
+  enqueueSelected(
+    screenshots: { id: string; filePath: string; fileName: string; ocrText?: string }[]
+  ): void {
+    screenshots.forEach((s) => {
+      this.enqueue({
+        screenshotId: s.id,
+        filePath: s.filePath,
+        fileName: s.fileName,
+        ocrText: s.ocrText,
+      });
+    });
+  }
+
+  /**
+   * Enqueues all screenshots in a specific folder for batch analysis.
+   */
+  async enqueueFolder(folderId: string): Promise<number> {
+    const { screenshotRepository } = await import('../database/repositories/screenshotRepository');
+    const screenshots = await screenshotRepository.getScreenshotsByCategoryId(folderId);
+    this.enqueueSelected(screenshots);
+    return screenshots.length;
+  }
+
+  /**
+   * Enqueues all pending screenshots that have not been visually analyzed yet.
+   */
+  async enqueuePending(): Promise<number> {
+    const { screenshotRepository } = await import('../database/repositories/screenshotRepository');
+    const screenshots = await screenshotRepository.getAllScreenshots();
+    const { visionRepository } = await import('../database/repositories/VisionRepository');
+    const cachedResults = await visionRepository.getAllVisionResults(1000);
+    const cachedIds = new Set(cachedResults.map((r) => r.screenshot_id));
+
+    const unanalyzed = screenshots.filter((s) => !cachedIds.has(s.id));
+    this.enqueueSelected(unanalyzed);
+    return unanalyzed.length;
+  }
+
+  /**
    * Resumes any un-analyzed screenshots on application startup.
    */
   async resumePendingOnStartup(): Promise<number> {

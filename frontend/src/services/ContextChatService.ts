@@ -2,6 +2,7 @@ import { apiClient } from '../api/apiClient';
 import { chatRepository } from '../database/repositories/chatRepository';
 import { folderContextRepository } from '../database/repositories/folderContextRepository';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { visionRepository } from '../database/repositories/VisionRepository';
 import { searchService } from './searchService';
 import {
   ChatMessageModel,
@@ -281,56 +282,138 @@ export class ContextChatService {
   }): Promise<ChatMessageModel> {
     const qLower = query.toLowerCase();
 
-    // 1. Fetch local folder context from SQLite
+    // 1. Fetch local folder context and screenshots from SQLite
     const folderCtx = await folderContextRepository.getFolderContext(folderId);
     const screenshots = await screenshotRepository.getScreenshotsByCategoryId(folderId);
 
-    const citations: ChatMessageCitation[] = screenshots.slice(0, 4).map((s: ScreenshotModel) => ({
-      screenshotId: s.id,
-      fileName: s.fileName,
-      snippet: s.ocrText ? s.ocrText.substring(0, 100) + '...' : undefined,
-      folderPath: formatFolderPath(s.folderPath) || `/${folderName}`,
-      confidence: s.confidence || 0.9,
-    }));
+    // 2. Fetch cached Vision metadata from SQLite (never call Vision server during chat)
+    const visionRecords = await Promise.all(
+      screenshots.map((s) => visionRepository.getVisionResult(s.id))
+    );
+    const visionMap = new Map<string, any>();
+    visionRecords.forEach((vr, idx) => {
+      if (vr) visionMap.set(screenshots[idx].id, vr);
+    });
+
+    const citations: ChatMessageCitation[] = screenshots.slice(0, 5).map((s: ScreenshotModel) => {
+      const vr = visionMap.get(s.id);
+      return {
+        screenshotId: s.id,
+        fileName: s.fileName,
+        snippet: vr?.summary || (s.ocrText ? s.ocrText.substring(0, 100) + '...' : undefined),
+        folderPath: formatFolderPath(s.folderPath) || `/${folderName}`,
+        confidence: vr ? Math.round(vr.confidence * 100) / 100 : (s.confidence || 0.9),
+      };
+    });
 
     let reply = '';
 
-    if (qLower.includes('summar') || qLower.includes('overview') || qLower.includes('about')) {
-      if (folderCtx?.Summary) {
-        reply = `**${folderName} Summary (Offline Context):**\n\n${folderCtx.Summary}\n\n*Analyzed across ${screenshots.length} local screenshots.*`;
+    // Check for financial payments / amounts queries (e.g. "Payments above ₹500", "Swiggy", "Totals")
+    const isPaymentQuery =
+      qLower.includes('pay') ||
+      qLower.includes('amount') ||
+      qLower.includes('cost') ||
+      qLower.includes('invoic') ||
+      qLower.includes('total') ||
+      qLower.includes('₹') ||
+      qLower.includes('rs');
+
+    // Parse threshold e.g. "above 500" or "above ₹500"
+    const thresholdMatch = qLower.match(/(?:above|>|greater than|more than)\s*(?:₹|rs\.?|inr)?\s*(\d+)/i);
+    const amountThreshold = thresholdMatch ? parseInt(thresholdMatch[1], 10) : null;
+
+    if (isPaymentQuery) {
+      const paymentItems: { merchant: string; amount: string; date?: string; screenshotId: string }[] = [];
+
+      screenshots.forEach((s) => {
+        const vr = visionMap.get(s.id);
+        if (vr) {
+          let entities: any = {};
+          try {
+            entities = JSON.parse(vr.detected_entities || '{}');
+          } catch {}
+
+          if (entities.amount) {
+            const numAmount = parseFloat(String(entities.amount).replace(/[^0-9.]/g, ''));
+            if (!amountThreshold || numAmount >= amountThreshold) {
+              paymentItems.push({
+                merchant: entities.merchant || vr.application_name || 'Merchant',
+                amount: String(entities.amount).includes('₹') ? entities.amount : `₹${entities.amount}`,
+                date: entities.date || entities.transactionDate,
+                screenshotId: s.id,
+              });
+            }
+          }
+        }
+      });
+
+      if (paymentItems.length > 0) {
+        const filterNote = amountThreshold ? ` above ₹${amountThreshold}` : '';
+        const lines = paymentItems
+          .map((p) => `- **${p.merchant}**: ${p.amount}${p.date ? ` (${p.date})` : ''}`)
+          .join('\n');
+        reply = `**Found ${paymentItems.length} payment record(s)${filterNote} in ${folderName}:**\n\n${lines}\n\n*Grounded from local SQLite Vision metadata.*`;
+      } else {
+        reply = amountThreshold
+          ? `No payments above ₹${amountThreshold} were found in **${folderName}**.`
+          : `No specific payment amounts were extracted in **${folderName}**. Try reviewing recent receipts.`;
+      }
+    } else if (qLower.includes('summar') || qLower.includes('overview') || qLower.includes('about')) {
+      const summaryItems: string[] = [];
+      screenshots.slice(0, 5).forEach((s) => {
+        const vr = visionMap.get(s.id);
+        if (vr && vr.summary) {
+          summaryItems.push(`- **${vr.application_name}**: ${vr.summary}`);
+        }
+      });
+
+      if (summaryItems.length > 0) {
+        reply = `**${folderName} AI Summary (Local Vision Metadata):**\n\n${summaryItems.join('\n')}\n\n*Synthesized across ${screenshots.length} local screenshots without remote network calls.*`;
+      } else if (folderCtx?.Summary) {
+        reply = `**${folderName} Summary:**\n\n${folderCtx.Summary}\n\n*Analyzed across ${screenshots.length} local screenshots.*`;
       } else {
         reply = `**${folderName} Overview:**\nThis folder currently contains **${screenshots.length} screenshots**. Key extracted topics relate to receipts, work items, and documents.`;
       }
-    } else if (qLower.includes('task') || qLower.includes('action') || qLower.includes('todo') || qLower.includes('pending')) {
+    } else if (
+      qLower.includes('task') ||
+      qLower.includes('action') ||
+      qLower.includes('todo') ||
+      qLower.includes('pending')
+    ) {
       let tasks: any[] = [];
       try {
         if (folderCtx?.TasksJson) tasks = JSON.parse(folderCtx.TasksJson);
       } catch {}
 
       if (tasks.length > 0) {
-        const taskLines = tasks.map((t: any) => `- [${t.isCompleted ? 'x' : ' '}] **${t.title}** (${t.dueDate || 'No due date'})`).join('\n');
+        const taskLines = tasks
+          .map((t: any) => `- [${t.isCompleted ? 'x' : ' '}] **${t.title}** (${t.dueDate || 'No due date'})`)
+          .join('\n');
         reply = `**Action Items for ${folderName}:**\n\n${taskLines}`;
       } else {
         reply = `No pending action items were identified in **${folderName}**. All screenshots have been cataloged.`;
       }
-    } else if (qLower.includes('pay') || qLower.includes('amount') || qLower.includes('cost') || qLower.includes('invoic') || qLower.includes('total')) {
-      const match = screenshots.filter((s) => s.ocrText && (s.ocrText.includes('₹') || s.ocrText.includes('$') || s.ocrText.toLowerCase().includes('total') || s.ocrText.toLowerCase().includes('paid')));
-      if (match.length > 0) {
-        reply = `Found **${match.length}** financial/transaction records in **${folderName}**. Tap the citations below to review invoice details.`;
-      } else {
-        reply = `No specific financial totals or invoices were found in **${folderName}**.`;
-      }
-    } else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('date')) {
-      const sorted = [...screenshots].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      if (sorted.length > 0) {
-        const latest = sorted[0];
-        const oldest = sorted[sorted.length - 1];
-        reply = `**Timeline Range for ${folderName}:**\n- Latest captured: **${new Date(latest.createdAt).toLocaleDateString()}**\n- Oldest captured: **${new Date(oldest.createdAt).toLocaleDateString()}**\n- Total activity points: ${sorted.length}`;
-      } else {
-        reply = `No timeline data available for this folder.`;
-      }
     } else {
-      reply = `Based on offline analysis of **${screenshots.length} screenshots** in **${folderName}**, here are the relevant records. You can ask for a summary, pending tasks, or specific amounts.`;
+      // Check for specific brand/merchant/keyword in vision entities
+      const matchingScreenshots = screenshots.filter((s) => {
+        const vr = visionMap.get(s.id);
+        if (vr) {
+          const app = (vr.application_name || '').toLowerCase();
+          const sum = (vr.summary || '').toLowerCase();
+          const ent = (vr.detected_entities || '').toLowerCase();
+          const obj = (vr.detected_objects || '').toLowerCase();
+          if (app.includes(qLower) || sum.includes(qLower) || ent.includes(qLower) || obj.includes(qLower)) {
+            return true;
+          }
+        }
+        return s.ocrText && s.ocrText.toLowerCase().includes(qLower);
+      });
+
+      if (matchingScreenshots.length > 0) {
+        reply = `Found **${matchingScreenshots.length}** screenshot(s) matching **"${query}"** in **${folderName}** using cached Vision & OCR intelligence. Tap citations below to view details.`;
+      } else {
+        reply = `Based on local SQLite data for **${screenshots.length} screenshots** in **${folderName}**, no direct matches for "${query}" were found. You can ask for a summary, payments, or task list.`;
+      }
     }
 
     return {

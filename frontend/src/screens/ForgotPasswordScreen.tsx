@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
+import { useAuthStore } from '../store/auth.store';
 import { authService } from '../services/authService';
 import { backendConnectionService } from '../services/BackendConnectionService';
 
@@ -27,6 +29,17 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      useAuthStore.getState().clearError();
+      setErrorMsg(null);
+      return () => {
+        useAuthStore.getState().clearError();
+        setErrorMsg(null);
+      };
+    }, [])
+  );
 
   const handleSendReset = async () => {
     setErrorMsg(null);
@@ -76,7 +89,11 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
           {/* Back Button */}
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              useAuthStore.getState().clearError();
+              setErrorMsg(null);
+              navigation.goBack();
+            }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
@@ -100,7 +117,11 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
 
               <TouchableOpacity
                 style={[styles.primaryButton, { backgroundColor: theme.colors.primary, marginTop: 32 }]}
-                onPress={() => navigation.navigate('Login')}
+                onPress={() => {
+                  useAuthStore.getState().clearError();
+                  setErrorMsg(null);
+                  navigation.navigate('Login');
+                }}
               >
                 <Text style={styles.buttonText}>Return to Sign In</Text>
               </TouchableOpacity>
@@ -177,7 +198,11 @@ export const ForgotPasswordScreen: React.FC<Props> = ({ navigation }) => {
 
               <TouchableOpacity
                 style={styles.backToLoginRow}
-                onPress={() => navigation.navigate('Login')}
+                onPress={() => {
+                  useAuthStore.getState().clearError();
+                  setErrorMsg(null);
+                  navigation.navigate('Login');
+                }}
               >
                 <Icon name="chevron-back" size={16} color={theme.colors.primary} />
                 <Text style={[styles.backToLoginText, { color: theme.colors.primary }]}>

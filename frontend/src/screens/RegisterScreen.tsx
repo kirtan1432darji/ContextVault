@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
@@ -23,7 +24,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useAppTheme();
-  const { register, loading, error } = useAuthStore();
+  const { register, loading, error, clearError } = useAuthStore();
 
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
@@ -35,12 +36,25 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Clear stale auth errors whenever RegisterScreen gains or loses focus
+  useFocusEffect(
+    useCallback(() => {
+      clearError();
+      setLocalError(null);
+      return () => {
+        clearError();
+        setLocalError(null);
+      };
+    }, [clearError])
+  );
+
   const validateEmail = (str: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
   };
 
   const handleRegister = async () => {
     setLocalError(null);
+    clearError();
 
     if (!fullName.trim()) {
       setLocalError('Please enter your full name.');
@@ -106,7 +120,11 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.header}>
             <TouchableOpacity
               style={[styles.backButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                clearError();
+                setLocalError(null);
+                navigation.goBack();
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
@@ -142,6 +160,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setFullName(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -161,6 +180,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setUsername(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -181,6 +201,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setEmail(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -199,6 +220,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setPassword(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -220,6 +242,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setConfirmPassword(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -262,7 +285,13 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
               Already have an account?{' '}
             </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <TouchableOpacity
+              onPress={() => {
+                clearError();
+                setLocalError(null);
+                navigation.navigate('Login');
+              }}
+            >
               <Text style={[styles.loginLink, { color: theme.colors.primary }]}>Sign In</Text>
             </TouchableOpacity>
           </View>

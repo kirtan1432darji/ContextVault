@@ -35,6 +35,7 @@ export interface AuthState {
   // Compatibility helpers
   setTokens: (accessToken: string, refreshToken: string, user?: UserModel) => void;
   clearAuth: () => void;
+  clearError: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -119,6 +120,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearAuth: () => {
     get().clearSession();
+  },
+
+  clearError: () => {
+    set({ error: null });
   },
 
   loadSession: async () => {

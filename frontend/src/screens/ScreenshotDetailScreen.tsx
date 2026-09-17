@@ -21,6 +21,9 @@ import { contextSyncService } from '../services/ContextSyncService';
 import { ocrCacheRepository } from '../database/repositories/ocrCacheRepository';
 import { classificationCacheRepository } from '../database/repositories/classificationCacheRepository';
 import { OCRCacheRecord, ClassificationCacheRecord, ExtractedEntitiesDto } from '../models';
+import { visionRepository } from '../database/repositories/VisionRepository';
+import { visionAIService } from '../services/visionAIService';
+import { VisionCacheRecord } from '../vision/types';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
 import { ReclassifyModal } from '../components/ReclassifyModal';
@@ -36,6 +39,8 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
   const screenshot = useScreenshotStore((s) => s.screenshots.find((item) => item.id === id));
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAnalyzingVision, setIsAnalyzingVision] = useState(false);
+  const [visionRecord, setVisionRecord] = useState<VisionCacheRecord | null>(null);
 
   // OCR and Backend AI Cache States
   const [ocrRecord, setOcrRecord] = useState<OCRCacheRecord | null>(null);
@@ -56,10 +61,49 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         setCacheRecord(cache);
       }
     });
+    visionRepository.getVisionResult(id).then((vr) => {
+      if (isMounted && vr) {
+        setVisionRecord(vr);
+      }
+    });
     return () => {
       isMounted = false;
     };
   }, [id]);
+
+  const handleAnalyzeWithVisionAI = async () => {
+    if (!screenshot) return;
+    setIsAnalyzingVision(true);
+
+    try {
+      const targetPath = screenshot.localPath || screenshot.filePath;
+      const res = await visionAIService.analyzeScreenshot({
+        screenshotId: id,
+        filePath: targetPath,
+        fileHash: (screenshot as any).fileHash,
+        fileName: screenshot.fileName,
+        ocrText: screenshot.ocrText || ocrRecord?.extractedText,
+        forceRefresh: true,
+      });
+
+      if (res.isSuccess && res.data) {
+        const vr = await visionRepository.getVisionResult(id);
+        const cr = await classificationCacheRepository.getCacheByScreenshotId(id);
+        setVisionRecord(vr);
+        setCacheRecord(cr);
+        Alert.alert(
+          'Vision Analysis Complete',
+          `Classified as ${res.data.category} (${res.data.confidence}% confidence)\n\nSummary: ${res.data.summary}`
+        );
+      } else {
+        Alert.alert(res.error || 'Vision Analysis Failed', 'Could not complete visual scene analysis.');
+      }
+    } catch (err: any) {
+      Alert.alert('Vision Analysis Failed', err?.message || 'Error executing vision analysis.');
+    } finally {
+      setIsAnalyzingVision(false);
+    }
+  };
 
   if (!screenshot) {
     return (
@@ -561,6 +605,88 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </Text>
             </TouchableOpacity>
           </View>
+        </ModernCard>
+
+        {/* Local Vision AI Scene Intelligence Card (Sprint P1-B) */}
+        <ModernCard style={styles.card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="sparkles" size={18} color="#8B5CF6" />
+              <Text style={[styles.cardTitle, { color: theme.colors.textPrimary, marginLeft: 8 }]}>
+                Local Vision AI Analysis
+              </Text>
+            </View>
+            <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#8B5CF620' }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#8B5CF6' }}>
+                RTX 4050
+              </Text>
+            </View>
+          </View>
+
+          {visionRecord ? (
+            <View style={{ marginTop: 6 }}>
+              {/* Summary */}
+              {visionRecord.summary ? (
+                <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.colors.surfaceVariant }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#8B5CF6', marginBottom: 4 }}>
+                    Visual Summary
+                  </Text>
+                  <Text style={{ fontSize: 13, lineHeight: 18, color: theme.colors.textPrimary }}>
+                    {visionRecord.summary}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Detected Application & Confidence */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Application</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.textPrimary }}>
+                  {visionRecord.application_name}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Vision Confidence</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#10B981' }}>
+                  {Math.round(visionRecord.confidence * (visionRecord.confidence <= 1 ? 100 : 1))}%
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Model Engine</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                  {visionRecord.model_version}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginVertical: 8 }}>
+              This screenshot has not been visually inspected by the local Vision AI engine yet.
+            </Text>
+          )}
+
+          <TouchableOpacity
+            onPress={handleAnalyzeWithVisionAI}
+            disabled={isAnalyzingVision}
+            style={[
+              styles.reclassifyBtn,
+              {
+                backgroundColor: '#8B5CF618',
+                borderColor: '#8B5CF6',
+                marginTop: 8,
+                opacity: isAnalyzingVision ? 0.6 : 1,
+              },
+            ]}
+          >
+            {isAnalyzingVision ? (
+              <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+            ) : (
+              <Icon name="sparkles-outline" size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
+            )}
+            <Text style={[styles.reclassifyText, { color: '#8B5CF6', fontWeight: '600' }]}>
+              {isAnalyzingVision ? 'Analyzing on RTX 4050...' : visionRecord ? 'Re-analyze with Vision AI' : 'Analyze with Vision AI'}
+            </Text>
+          </TouchableOpacity>
         </ModernCard>
 
         {/* 2. Extracted Entities Card */}

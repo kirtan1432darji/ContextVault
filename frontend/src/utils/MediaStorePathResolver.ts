@@ -76,9 +76,13 @@ export class MediaStorePathResolver {
    * Constructs or normalizes a MediaStore Content URI for the given ID or path.
    * e.g. "12345" -> "content://media/external/images/media/12345"
    */
-  public static resolveContentUri(idOrUri?: string | null): string | null {
-    if (!idOrUri) return null;
-    const clean = idOrUri.trim();
+  public static resolveContentUri(
+    idOrUri?: string | null,
+    deviceAssetId?: string | null
+  ): string | null {
+    const candidate = (idOrUri && idOrUri.trim().length > 0) ? idOrUri : deviceAssetId;
+    if (!candidate) return null;
+    const clean = candidate.trim();
 
     if (clean.startsWith('content://media/external/images/media/')) {
       return clean;
@@ -94,6 +98,27 @@ export class MediaStorePathResolver {
     }
 
     return null;
+  }
+
+  /**
+   * Identifies whether a given Android storage path corresponds to a screenshot.
+   * Checks across all major OEM screenshot folders (Samsung, Xiaomi, OPPO, Realme, OnePlus, Vivo, Pixel).
+   */
+  public static isLikelyScreenshotPath(path?: string | null): boolean {
+    if (!path || typeof path !== 'string') return false;
+    const clean = path.trim().replace(/\\/g, '/').toLowerCase();
+    if (clean.includes('/camera/') && !clean.includes('screenshot')) {
+      return false;
+    }
+    if (clean.includes('/download/')) {
+      return false;
+    }
+    return (
+      clean.includes('screenshot') ||
+      clean.includes('screen_shot') ||
+      clean.includes('screencap') ||
+      clean.includes('screencapture')
+    );
   }
 
   /**

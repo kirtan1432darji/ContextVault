@@ -12,6 +12,8 @@ import {
   ScrollView,
   Share,
   Platform,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -26,7 +28,8 @@ import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { EmptyStateView } from '../components/EmptyStateView';
 import { ModernCard } from '../components/ModernCard';
-import { ScreenshotModel } from '../models';
+import { ScreenshotModel, FolderStatistics } from '../models';
+import { FileUtils } from '../utils/fileUtils';
 import { useAuthStore } from '../store/auth.store';
 import { GuestUpgradeBottomSheet } from '../components/GuestUpgradeBottomSheet';
 import { BulkActionBar } from '../components/BulkActionBar';
@@ -71,6 +74,18 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dbScreenshots, setDbScreenshots] = useState<ScreenshotModel[]>([]);
+  const [folderStats, setFolderStats] = useState<FolderStatistics | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+
+  const loadFolderStats = React.useCallback(async () => {
+    try {
+      const stats = await categoryRepository.getFolderStatistics(categoryId);
+      setFolderStats(stats);
+    } catch (err) {
+      console.warn('[FolderDetail] Failed to load folder statistics:', err);
+    }
+  }, [categoryId]);
 
   const loadFolderScreenshots = React.useCallback(async () => {
     try {
@@ -83,10 +98,25 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       setDbScreenshots(items);
       // Ensure folder count is kept in sync
       await categoryRepository.updateScreenshotCount(categoryId);
+      await loadFolderStats();
     } catch (err) {
       console.warn('[FolderDetail] Failed to query SQLite category screenshots:', err);
     }
-  }, [categoryId, categoryName]);
+  }, [categoryId, categoryName, loadFolderStats]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        useCategoryStore.getState().loadCategories(),
+        useScreenshotStore.getState().loadScreenshots(),
+        loadFolderScreenshots(),
+        loadFolderStats(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Real-time synchronization when screen is focused
   useFocusEffect(
@@ -94,7 +124,8 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       useCategoryStore.getState().loadCategories();
       useScreenshotStore.getState().loadScreenshots();
       loadFolderScreenshots();
-    }, [loadFolderScreenshots])
+      loadFolderStats();
+    }, [loadFolderScreenshots, loadFolderStats])
   );
 
   // All screenshots that belong to this folder or any nested subcategories
@@ -308,16 +339,79 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         setIsBulkMove(false);
         handleCancelSelect();
         await loadFolderScreenshots();
+        await loadFolderStats();
         Alert.alert('Moved', `Successfully moved ${count} screenshots.`);
       } else if (targetScreenshot) {
         await smartFolderService.moveScreenshot(targetScreenshot.id, targetCategoryId);
         setMoveModalVisible(false);
         await loadFolderScreenshots();
+        await loadFolderStats();
         Alert.alert('Moved', 'Screenshot moved to destination folder.');
       }
     } catch (err: any) {
       Alert.alert('Move Error', err?.message || 'Failed to move screenshot.');
     }
+  };
+
+  const handleBulkRemoveFromFolder = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    Alert.alert(
+      'Remove from Folder',
+      `Remove ${ids.length} screenshot${ids.length !== 1 ? 's' : ''} from this folder? They will be moved to Unsorted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await smartFolderService.bulkMoveScreenshots(ids, 'unsorted');
+              await loadFolderScreenshots();
+              await loadFolderStats();
+              handleCancelSelect();
+              Alert.alert('Removed', `Moved ${ids.length} screenshots to Unsorted.`);
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to remove screenshots.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleReanalyzeFolder = async () => {
+    if (displayedScreenshots.length === 0) {
+      Alert.alert('Folder Empty', 'No screenshots to re-analyze in this folder.');
+      return;
+    }
+    Alert.alert(
+      'Re-analyze Folder',
+      `Re-run AI Smart Folder classification for all ${displayedScreenshots.length} screenshots in this folder?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Re-analyze',
+          onPress: async () => {
+            setIsReanalyzing(true);
+            try {
+              const ids = displayedScreenshots.map((s) => s.id);
+              const count = await useScreenshotStore.getState().bulkReanalyzeScreenshots(ids);
+              await Promise.all([
+                useCategoryStore.getState().loadCategories(),
+                loadFolderScreenshots(),
+                loadFolderStats(),
+              ]);
+              Alert.alert('Re-analysis Complete', `Successfully re-analyzed and filed ${count} screenshots.`);
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to re-analyze folder.');
+            } finally {
+              setIsReanalyzing(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderScreenshotGridItem = ({ item, index }: { item: ScreenshotModel; index: number }) => {
@@ -389,16 +483,30 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             )}
           </View>
 
-          {/* Visual Indicators (Feature 12) */}
+          {/* Visual Indicators */}
           <View style={styles.cardBadgesRow}>
             {item.isAutoCategorized ? (
               <View style={[styles.aiBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
                 <Icon name="sparkles" size={10} color={theme.colors.primary} style={{ marginRight: 2 }} />
-                <Text style={styles.aiBadgeText}>AI Filed</Text>
+                <Text style={styles.aiBadgeText}>AI</Text>
               </View>
             ) : (
               <View style={[styles.aiBadge, { backgroundColor: '#64748B20' }]}>
                 <Text style={[styles.aiBadgeText, { color: '#64748B' }]}>Manual</Text>
+              </View>
+            )}
+
+            {item.ocrStatus === 'completed' && (
+              <View style={[styles.microBadge, { backgroundColor: '#10B98118' }]}>
+                <Icon name="document-text" size={9} color="#10B981" style={{ marginRight: 2 }} />
+                <Text style={[styles.microBadgeText, { color: '#10B981' }]}>OCR</Text>
+              </View>
+            )}
+
+            {Boolean(item.aiCategory || (item.tags && item.tags.length > 0)) && (
+              <View style={[styles.microBadge, { backgroundColor: '#8B5CF618' }]}>
+                <Icon name="eye" size={9} color="#8B5CF6" style={{ marginRight: 2 }} />
+                <Text style={[styles.microBadgeText, { color: '#8B5CF6' }]}>Vision</Text>
               </View>
             )}
 
@@ -541,7 +649,96 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             >
               <Icon name="stats-chart-outline" size={15} color={theme.colors.accent} />
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleReanalyzeFolder}
+              disabled={isReanalyzing}
+              style={[
+                styles.reanalyzeHeaderBtn,
+                { backgroundColor: `${theme.colors.primary}18`, borderColor: `${theme.colors.primary}40` },
+              ]}
+              accessibilityLabel="Re-analyze Folder with Vision AI"
+            >
+              {isReanalyzing ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Icon name="sparkles" size={15} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* Folder Analytics Summary Bar */}
+      {folderStats && folderStats.screenshotCount > 0 && (
+        <View style={styles.statsSummaryBarContainer}>
+          <ModernCard style={styles.statsSummaryCard}>
+            <View style={styles.statsSummaryRow}>
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: theme.colors.textPrimary }]}>
+                  {folderStats.screenshotCount}
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  Total
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: '#EF4444' }]}>
+                  ★ {folderStats.favoriteCount}
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  Starred
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: '#10B981' }]}>
+                  {folderStats.ocrCount}
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  OCR
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: '#8B5CF6' }]}>
+                  {folderStats.visionCount}
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  Vision
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: theme.colors.primary }]}>
+                  {Math.round(folderStats.averageConfidence * 100)}%
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  Conf
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.statSummaryCol}>
+                <Text style={[styles.statSummaryValue, { color: theme.colors.textPrimary }]}>
+                  {FileUtils.formatBytes(folderStats.storageSizeBytes)}
+                </Text>
+                <Text style={[styles.statSummaryLabel, { color: theme.colors.textSecondary }]}>
+                  Size
+                </Text>
+              </View>
+            </View>
+          </ModernCard>
         </View>
       )}
 
@@ -654,6 +851,14 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           maxToRenderPerBatch={10}
           windowSize={7}
           removeClippedSubviews={Platform.OS === 'android'}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
         />
       )}
 

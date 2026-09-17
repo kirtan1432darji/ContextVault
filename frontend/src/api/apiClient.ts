@@ -17,6 +17,56 @@ import { DEVELOPER_MODE } from '../config/developerConfig';
 import { EnvironmentManager } from '../config/EnvironmentManager';
 import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
+/**
+ * Maps raw Axios and HTTP errors to consistent, user-friendly error messages
+ * as specified in ContextVault Sprint P0-A requirements.
+ */
+export function formatApiErrorMessage(error: any, baseUrl: string): string {
+  if (!error) return 'An unexpected error occurred.';
+
+  const code = (error.code || '').toUpperCase();
+  const rawMsg = error.message || '';
+  const status = error.response?.status;
+  const backendMsg =
+    error.response?.data?.message ||
+    error.response?.data?.detail ||
+    (Array.isArray(error.response?.data?.errors) && error.response.data.errors[0]);
+
+  if (code === 'ECONNREFUSED' || rawMsg.includes('ECONNREFUSED')) {
+    return 'Backend server unavailable';
+  }
+  if (
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    rawMsg.toLowerCase().includes('timeout')
+  ) {
+    return 'Backend timed out';
+  }
+  if (
+    code === 'ERR_NETWORK' ||
+    code === 'NETWORK_ERROR' ||
+    rawMsg.includes('Network Error') ||
+    !error.response
+  ) {
+    return 'Unable to connect to ContextVault backend';
+  }
+
+  if (status === 401) {
+    return backendMsg || 'Invalid email or password';
+  }
+  if (status === 403) {
+    return backendMsg || 'Access denied';
+  }
+  if (status === 404) {
+    return backendMsg || 'API endpoint not found';
+  }
+  if (status >= 500) {
+    return backendMsg || 'Backend server error';
+  }
+
+  return backendMsg || rawMsg || 'Unable to connect to ContextVault backend';
+}
+
 class ApiClient {
   private axiosInstance: AxiosInstance;
   private isRefreshing = false;
@@ -58,7 +108,7 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // 1. Request Interceptor: Attach Bearer Token, Validate URL & Set Base URL
+    // 1. Request Interceptor: Attach Bearer Token, Validate URL & Set Base URL dynamically
     this.axiosInstance.interceptors.request.use(
       (config) => {
         const dynamicUrl = BackendConnectionManager.getApiUrl();
@@ -66,26 +116,42 @@ class ApiClient {
           return Promise.reject(new Error(`Invalid ContextVault backend URL: ${dynamicUrl}`));
         }
         config.baseURL = dynamicUrl;
+        config.timeout = ApiConstants.connectTimeout || 30000;
 
         const token = useAuthStore.getState().accessToken || StorageService.getAccessToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         config.headers['X-Request-Id'] = Date.now().toString();
+
+        if (EnvironmentManager.isDeveloperModeAvailable()) {
+          console.log(`[ApiClient] Request to [${config.baseURL}] ${config.url || ''}`);
+        }
         return config;
       },
       (error) => Promise.reject(error)
     );
 
-    // 2. Response Interceptor: 401 Refresh Token Retries
+    // 2. Response Interceptor: 401 Refresh Token Retries, Temporary Network Failure Retry, Error Mapping
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+        const originalRequest = (error.config || {}) as AxiosRequestConfig & {
+          _retry?: boolean;
+          _networkRetry?: boolean;
+        };
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const requestUrl = originalRequest.url || '';
+        const isAuthEndpoint =
+          requestUrl.includes(ApiConstants.authLogin) ||
+          requestUrl.includes(ApiConstants.authRegister) ||
+          requestUrl.includes(ApiConstants.authRefresh) ||
+          requestUrl.includes('/auth/login') ||
+          requestUrl.includes('/auth/register');
+
+        // Handle 401 Unauthorized with token refresh (for protected endpoints only)
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           if (DEVELOPER_MODE) {
-            // In Developer Mode, skip token refresh and avoid session eviction
             return Promise.reject(error);
           }
 
@@ -115,11 +181,10 @@ class ApiClient {
           }
 
           try {
-            const refreshRes = await axios.post(
-              `${this.getBaseUrl()}${ApiConstants.authRefresh}`,
+            const refreshRes = await this.axiosInstance.post(
+              ApiConstants.authRefresh,
               { refreshToken },
               {
-                timeout: ApiConstants.connectTimeout,
                 headers: { 'Content-Type': 'application/json' },
               }
             );
@@ -150,11 +215,30 @@ class ApiClient {
           }
         }
 
-        // Handle network unreachable or timeout errors with user-friendly messages
-        if (!error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
-          error.message = `Cannot connect to ContextVault backend at ${this.getBaseUrl()}. Please ensure the backend server is running and reachable.`;
-        } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-          error.message = 'Connection to ContextVault backend timed out after 30 seconds.';
+        // Retry once for temporary network failures
+        const isNetworkFailure =
+          !error.response ||
+          error.code === 'ERR_NETWORK' ||
+          error.code === 'ECONNREFUSED' ||
+          error.code === 'ECONNABORTED';
+
+        if (isNetworkFailure && !originalRequest._networkRetry) {
+          originalRequest._networkRetry = true;
+          if (EnvironmentManager.isDeveloperModeAvailable()) {
+            console.log(`[ApiClient] Temporary network failure on ${requestUrl}. Retrying once...`);
+          }
+          return this.axiosInstance(originalRequest);
+        }
+
+        // Standardized Error Mapping per specification
+        const formattedMessage = formatApiErrorMessage(error, this.getBaseUrl());
+        error.message = formattedMessage;
+        (error as any).userMessage = formattedMessage;
+
+        if (EnvironmentManager.isDeveloperModeAvailable()) {
+          console.log(
+            `[ApiClient] Error [${originalRequest.baseURL || this.getBaseUrl()}] ${requestUrl}: ${formattedMessage}`
+          );
         }
 
         return Promise.reject(error);

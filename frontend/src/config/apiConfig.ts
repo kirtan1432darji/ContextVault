@@ -33,18 +33,18 @@ export const API_V1_PREFIX = '/api';
 
 /**
  * Helper to generate a fully qualified API endpoint URL dynamically.
+ * Delegates to BackendConnectionManager as the single source of truth.
  *
  * @example
  * getEndpointUrl('/health') // -> "http://10.122.196.152:8000/api/health"
  * getEndpointUrl('/auth/login') // -> "http://10.122.196.152:8000/api/auth/login"
  */
 export function getEndpointUrl(path: string): string {
-  const currentBase = resolveBaseUrl();
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   if (cleanPath.startsWith('/api/')) {
-    return `${currentBase}${cleanPath}`;
+    return `${BackendConnectionManager.getBaseUrl()}${cleanPath}`;
   }
-  return `${currentBase}${API_V1_PREFIX}${cleanPath}`;
+  return `${BackendConnectionManager.getApiUrl()}${cleanPath}`;
 }
 
 /**
@@ -73,6 +73,12 @@ export const API_ENDPOINTS = {
   FOLDER_CONTEXT: (id: string) => `/api/context/${id}`,
   CHAT_MESSAGE: '/api/chat/message',
   SEARCH: '/api/search',
+
+  // Vision Gateway (Local RTX 4050 Server)
+  VISION_HEALTH: '/api/vision/health',
+  VISION_MODEL_INFO: '/api/vision/model-info',
+  VISION_ANALYZE: '/api/vision/analyze',
+  VISION_BATCH: '/api/vision/batch',
 } as const;
 
 export default {

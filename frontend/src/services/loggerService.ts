@@ -10,7 +10,9 @@ export type LogModule =
   | 'Storage'
   | 'UI'
   | 'App'
-  | 'Vision';
+  | 'Vision'
+  | 'MediaStore'
+  | 'Thumbnail';
 
 export interface LogEntry {
   id: string;

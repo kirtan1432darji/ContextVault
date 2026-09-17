@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
@@ -26,7 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useAppTheme();
-  const { login, loading, error, loginAsGuest } = useAuthStore();
+  const { login, loading, error, loginAsGuest, clearError } = useAuthStore();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +38,20 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [showHealthDialog, setShowHealthDialog] = useState(false);
   const [healthErrorData, setHealthErrorData] = useState<{ url: string; message: string } | null>(null);
 
+  // Clear stale errors whenever LoginScreen gains or loses focus
+  useFocusEffect(
+    useCallback(() => {
+      clearError();
+      setLocalError(null);
+      return () => {
+        clearError();
+        setLocalError(null);
+      };
+    }, [clearError])
+  );
+
   const handleContinueAsGuest = () => {
+    clearError();
     loginAsGuest();
     navigation.replace('MainTabs', { screen: 'Home' });
   };
@@ -55,6 +69,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLogin = async () => {
     setLocalError(null);
+    clearError();
 
     const cleanIdentifier = identifier.trim();
     if (!cleanIdentifier) {
@@ -166,6 +181,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setIdentifier(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -199,6 +215,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setPassword(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -230,7 +247,11 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               </View>
 
               <TouchableOpacity
-                onPress={() => navigation.navigate('ForgotPassword')}
+                onPress={() => {
+                  clearError();
+                  setLocalError(null);
+                  navigation.navigate('ForgotPassword');
+                }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={[styles.forgotPasswordText, { color: theme.colors.primary }]}>
@@ -296,7 +317,13 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
               Don't have an account?{' '}
             </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <TouchableOpacity
+              onPress={() => {
+                clearError();
+                setLocalError(null);
+                navigation.navigate('Register');
+              }}
+            >
               <Text style={[styles.registerLink, { color: theme.colors.primary }]}>
                 Create Account
               </Text>

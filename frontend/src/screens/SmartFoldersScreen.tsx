@@ -21,6 +21,8 @@ import { CategoryModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { useScreenshotStore } from '../store/screenshot.store';
+import { FileUtils } from '../utils/fileUtils';
+import { DateFormatter } from '../utils/dateFormatter';
 
 export const SmartFoldersScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -153,6 +155,12 @@ export const SmartFoldersScreen: React.FC = () => {
     );
 
     const displayCount = Math.max(node.screenshotCount || 0, folderScreenshots.length);
+    const totalSize = folderScreenshots.reduce((acc, s) => acc + (s.fileSize || 0), 0);
+    const lastUpdated = folderScreenshots.reduce((max, s) => {
+      const t = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      return t > max ? t : max;
+    }, 0);
+    const coverScreenshot = folderScreenshots[0];
 
     return (
       <View key={node.id} style={styles.nodeWrapper}>
@@ -184,7 +192,7 @@ export const SmartFoldersScreen: React.FC = () => {
                 <View style={styles.chevronPlaceholder} />
               )}
 
-              {/* Folder Icon */}
+              {/* Folder Cover / Icon */}
               <TouchableOpacity
                 onPress={() =>
                   navigation.navigate('FolderDetail', {
@@ -194,7 +202,21 @@ export const SmartFoldersScreen: React.FC = () => {
                 }
                 style={[styles.iconBox, { backgroundColor: `${hex}18` }]}
               >
-                <Icon name={node.iconName || 'folder'} size={22} color={hex} />
+                {coverScreenshot ? (
+                  <ScreenshotImageThumbnail
+                    screenshot={coverScreenshot}
+                    filePath={coverScreenshot.filePath}
+                    localPath={coverScreenshot.localPath}
+                    contentUri={coverScreenshot.contentUri}
+                    thumbnailUri={coverScreenshot.thumbnailUri}
+                    deviceAssetId={coverScreenshot.deviceAssetId}
+                    style={styles.coverThumbnail}
+                    borderRadius={10}
+                    fallbackIcon={node.iconName || 'folder'}
+                  />
+                ) : (
+                  <Icon name={node.iconName || 'folder'} size={22} color={hex} />
+                )}
               </TouchableOpacity>
 
               {/* Folder Details */}
@@ -215,8 +237,10 @@ export const SmartFoldersScreen: React.FC = () => {
                     <Icon name="star" size={14} color="#F59E0B" style={{ marginLeft: 6 }} />
                   )}
                 </View>
-                <Text numberOfLines={1} style={[styles.folderPath, { color: theme.colors.textSecondary }]}>
-                  {node.path || `/${node.name}`}
+                <Text numberOfLines={1} style={[styles.folderMeta, { color: theme.colors.textSecondary }]}>
+                  {displayCount} {displayCount === 1 ? 'shot' : 'shots'}
+                  {totalSize > 0 ? ` • ${FileUtils.formatBytes(totalSize)}` : ''}
+                  {lastUpdated > 0 ? ` • ${DateFormatter.formatRelative(new Date(lastUpdated))}` : ''}
                 </Text>
               </TouchableOpacity>
 
@@ -564,12 +588,18 @@ const styles = StyleSheet.create({
     width: 24,
   },
   iconBox: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+    overflow: 'hidden',
+  },
+  coverThumbnail: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
   },
   folderTextContainer: {
     flex: 1,
@@ -586,6 +616,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     fontFamily: 'monospace',
+  },
+  folderMeta: {
+    fontSize: 11,
+    marginTop: 2,
   },
   countBadge: {
     paddingHorizontal: 8,

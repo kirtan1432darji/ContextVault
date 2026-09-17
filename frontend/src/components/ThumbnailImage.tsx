@@ -1,99 +1,103 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Image,
+  Animated,
   StyleSheet,
   ViewStyle,
   ImageStyle,
   StyleProp,
   TouchableOpacity,
   ActivityIndicator,
+  DimensionValue,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAppTheme } from '../theme';
-import { ScreenshotModel } from '../models';
-import { MediaStorePathResolver, ScreenshotSourceInput, getDisplayImageSource } from '../utils/MediaStorePathResolver';
+import { MediaStorePathResolver, ScreenshotSourceInput } from '../utils/MediaStorePathResolver';
 import { thumbnailService } from '../services/ThumbnailService';
 
-export { getDisplayImageSource };
-
-export interface ScreenshotImageThumbnailProps {
-  screenshot?: Partial<ScreenshotModel> | null;
-  filePath?: string;
-  localPath?: string;
-  contentUri?: string;
-  thumbnailUri?: string;
-  deviceAssetId?: string;
+export interface ThumbnailImageProps {
+  source?: ScreenshotSourceInput | null;
+  uri?: string | null;
+  filePath?: string | null;
+  contentUri?: string | null;
+  thumbnailUri?: string | null;
+  deviceAssetId?: string | null;
+  size?: DimensionValue;
+  width?: DimensionValue;
+  height?: DimensionValue;
+  borderRadius?: number;
+  resizeMode?: 'cover' | 'contain' | 'center';
   style?: StyleProp<ViewStyle>;
   imageStyle?: StyleProp<ImageStyle>;
-  borderRadius?: number;
-  resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
-  showLoadingIndicator?: boolean;
+  showLoadingShimmer?: boolean;
   fallbackIcon?: string;
   fallbackIconSize?: number;
   onPress?: () => void;
   onError?: () => void;
   enableRetry?: boolean;
+  testID?: string;
 }
 
-const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
-  screenshot,
+export const ThumbnailImage: React.FC<ThumbnailImageProps> = ({
+  source,
+  uri,
   filePath,
-  localPath,
   contentUri,
   thumbnailUri,
   deviceAssetId,
-  style,
-  imageStyle,
+  size,
+  width = '100%',
+  height = '100%',
   borderRadius = 12,
   resizeMode = 'cover',
-  showLoadingIndicator = false,
+  style,
+  imageStyle,
+  showLoadingShimmer = true,
   fallbackIcon = 'image-outline',
   fallbackIconSize = 24,
   onPress,
   onError,
-  enableRetry = false,
+  enableRetry = true,
+  testID = 'thumbnail-image',
 }) => {
   const theme = useAppTheme();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const candidateUris = useMemo(() => {
-    const input: ScreenshotSourceInput = screenshot
-      ? {
-          thumbnailUri: screenshot.thumbnailUri,
-          contentUri: screenshot.contentUri,
-          localPath: screenshot.localPath,
-          filePath: screenshot.filePath,
-          deviceAssetId: screenshot.deviceAssetId,
-        }
+    const input: ScreenshotSourceInput = source
+      ? source
       : {
           thumbnailUri,
-          contentUri,
-          localPath,
-          filePath,
+          contentUri: contentUri || uri,
+          filePath: filePath || uri,
           deviceAssetId,
         };
     return MediaStorePathResolver.getCandidateUris(input);
-  }, [screenshot, thumbnailUri, contentUri, localPath, filePath, deviceAssetId]);
+  }, [source, uri, filePath, contentUri, thumbnailUri, deviceAssetId]);
 
   const [candidateIndex, setCandidateIndex] = useState(0);
-  const [cachedThumbUri, setCachedThumbUri] = useState<string | null>(null);
+  const [resolvedUri, setResolvedUri] = useState<string>(candidateUris[0] || '');
+  const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setCandidateIndex(0);
     setHasError(false);
-    setCachedThumbUri(null);
+    fadeAnim.setValue(0);
 
     const initial = candidateUris[0];
     if (initial) {
+      setResolvedUri(initial);
       setIsLoading(true);
+
+      // Opportunistically pre-fetch cached thumbnail if not already a thumb
       if (!initial.includes('thumb_')) {
         thumbnailService
-          .getOrCreateThumbnail(initial, 300, screenshot?.id)
+          .getOrCreateThumbnail(initial, typeof size === 'number' ? size : 300)
           .then((cached) => {
             if (cached && cached !== initial) {
-              setCachedThumbUri(cached);
+              setResolvedUri(cached);
             }
           })
           .catch(() => {});
@@ -102,17 +106,26 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
       setIsLoading(false);
       setHasError(true);
     }
-  }, [candidateUris, screenshot?.id]);
+  }, [candidateUris, size]);
 
-  const activeUri = cachedThumbUri || candidateUris[candidateIndex] || '';
+  const handleLoadSuccess = () => {
+    setIsLoading(false);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const handleImageError = () => {
     if (candidateIndex + 1 < candidateUris.length) {
-      // Advance to next candidate URI (e.g. fallback from MediaStore Content URI to File URI or vice versa)
-      setCandidateIndex((prev) => prev + 1);
+      const nextIndex = candidateIndex + 1;
+      setCandidateIndex(nextIndex);
+      setResolvedUri(candidateUris[nextIndex]);
+      setIsLoading(true);
     } else {
-      setHasError(true);
       setIsLoading(false);
+      setHasError(true);
       onError?.();
     }
   };
@@ -120,37 +133,37 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
   const handleRetry = () => {
     setHasError(false);
     setCandidateIndex(0);
+    setResolvedUri(candidateUris[0] || '');
     setIsLoading(true);
   };
 
-  const handleImageLoaded = () => {
-    setIsLoading(false);
+  const containerStyle: ViewStyle = {
+    width: size || width,
+    height: size || height,
+    borderRadius,
+    backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0',
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   };
 
   const content = (
-    <View
-      style={[
-        styles.container,
-        {
-          borderRadius,
-          backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0',
-        },
-        style,
-      ]}
-    >
-      {activeUri && !hasError ? (
+    <View style={[containerStyle, style]} testID={testID}>
+      {resolvedUri && !hasError ? (
         <>
-          <Image
-            source={{ uri: activeUri, cache: 'force-cache' }}
-            style={[styles.image, { borderRadius }, imageStyle]}
+          <Animated.Image
+            source={{ uri: resolvedUri, cache: 'force-cache' }}
+            style={[
+              styles.image,
+              { borderRadius, opacity: fadeAnim },
+              imageStyle,
+            ]}
             resizeMode={resizeMode}
-            onLoadStart={() => setIsLoading(true)}
-            onLoad={handleImageLoaded}
-            onLoadEnd={() => setIsLoading(false)}
+            onLoad={handleLoadSuccess}
             onError={handleImageError}
-            progressiveRenderingEnabled
           />
-          {isLoading && showLoadingIndicator && (
+          {isLoading && showLoadingShimmer && (
             <View style={[styles.loadingOverlay, { borderRadius }]}>
               <ActivityIndicator size="small" color={theme.colors.primary} />
             </View>
@@ -161,7 +174,7 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
           disabled={!enableRetry}
           onPress={handleRetry}
           style={styles.fallbackContainer}
-          testID="thumbnail-fallback"
+          testID={`${testID}-fallback`}
           accessibilityLabel={enableRetry ? 'Retry loading image' : undefined}
           accessibilityRole={enableRetry ? 'button' : undefined}
         >
@@ -196,15 +209,7 @@ const ScreenshotImageThumbnailBase: React.FC<ScreenshotImageThumbnailProps> = ({
   return content;
 };
 
-export const ScreenshotImageThumbnail = React.memo(ScreenshotImageThumbnailBase);
-
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    position: 'relative',
-  },
   image: {
     width: '100%',
     height: '100%',
@@ -212,14 +217,14 @@ const styles = StyleSheet.create({
   fallbackContainer: {
     width: '100%',
     height: '100%',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
   },
   retryBadge: {
     position: 'absolute',

@@ -11,6 +11,7 @@ interface SettingsState {
   screenshotNotifications: boolean;
   scanOnlyScreenshots: boolean;
   useMockAi: boolean;
+  analyzeOnImport: boolean;
   lastScanTimestamp: string | null;
   recentSearches: string[];
 
@@ -22,6 +23,7 @@ interface SettingsState {
   setScreenshotNotifications: (enabled: boolean) => void;
   setScanOnlyScreenshots: (enabled: boolean) => void;
   setUseMockAi: (enabled: boolean) => void;
+  setAnalyzeOnImport: (enabled: boolean) => void;
   setLastScanTimestamp: (timestamp: string) => void;
   addRecentSearch: (query: string) => void;
   removeRecentSearch: (query: string) => void;
@@ -38,6 +40,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   screenshotNotifications: true,
   scanOnlyScreenshots: true,
   useMockAi: false,
+  analyzeOnImport: false,
   lastScanTimestamp: null,
   recentSearches: [],
 
@@ -52,6 +55,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ screenshotNotifications: enabled }),
   setScanOnlyScreenshots: (enabled: boolean) => set({ scanOnlyScreenshots: enabled }),
   setUseMockAi: (enabled: boolean) => set({ useMockAi: enabled }),
+  setAnalyzeOnImport: (enabled: boolean) => set({ analyzeOnImport: enabled }),
   setLastScanTimestamp: (timestamp: string) => set({ lastScanTimestamp: timestamp }),
 
   addRecentSearch: (query: string) => {

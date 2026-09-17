@@ -24,8 +24,10 @@ import { AnimatedCounter } from '../components/AnimatedCounter';
 import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import { ConfidenceBadge } from '../components/ConfidenceBadge';
 import { FileUtils } from '../utils/fileUtils';
+import { DateFormatter } from '../utils/dateFormatter';
 import { smartFolderService } from '../services/SmartFolderService';
 import { screenshotListenerService } from '../services/ScreenshotListenerService';
+import { mediaStoreService } from '../services/mediaStoreService';
 import { screenshotRepository, chatRepository, RecentChatFolderSummary, searchRepository, RecentSearchItem, SavedSearchItem } from '../database/repositories';
 import { useFolderContextStore } from '../store/folderContext.store';
 import { useAuthStore } from '../store/auth.store';
@@ -130,6 +132,8 @@ export const DashboardScreen: React.FC = () => {
     screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
       setScreenshots(items || []);
+      // Discover and sync device screenshots in background on mount
+      mediaStoreService.scanAndSyncScreenshots().catch(() => {});
     });
   }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches]);
 
@@ -145,7 +149,8 @@ export const DashboardScreen: React.FC = () => {
         loadRecentSearches(),
         loadSavedSearches(),
         screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount),
-        screenshotRepository.getAllScreenshots().then((items) => {
+        mediaStoreService.scanAndSyncScreenshots().then(async () => {
+          const items = await screenshotRepository.getAllScreenshots();
           setScreenshots(items || []);
         }),
         screenshotListenerService.refreshStoreCounts(),
@@ -166,6 +171,16 @@ export const DashboardScreen: React.FC = () => {
     return screenshots.filter((s) => !s.categoryId || s.categoryId === 'unsorted').length;
   }, [screenshots]);
 
+  const [folderSort, setFolderSort] = useState<'count' | 'recent'>('count');
+
+  const displayedFolders = useMemo(() => {
+    const list = [...categories].filter((c) => c.id !== 'unsorted');
+    if (folderSort === 'recent') {
+      return list.sort((a, b) => new Date(b.updatedAt || b.createdOn || 0).getTime() - new Date(a.updatedAt || a.createdOn || 0).getTime()).slice(0, 8);
+    }
+    return list.sort((a, b) => (b.screenshotCount || 0) - (a.screenshotCount || 0)).slice(0, 8);
+  }, [categories, folderSort]);
+
   const topFolders = useMemo(() => {
     return [...categories]
       .filter((c) => c.id !== 'unsorted')
@@ -175,8 +190,8 @@ export const DashboardScreen: React.FC = () => {
 
   const recentFolders = useMemo(() => {
     return [...categories]
-      .filter((c) => c.id !== 'unsorted' && c.createdOn)
-      .sort((a, b) => new Date(b.createdOn || 0).getTime() - new Date(a.createdOn || 0).getTime())
+      .filter((c) => c.id !== 'unsorted' && (c.updatedAt || c.createdOn))
+      .sort((a, b) => new Date(b.updatedAt || b.createdOn || 0).getTime() - new Date(a.updatedAt || a.createdOn || 0).getTime())
       .slice(0, 6);
   }, [categories]);
 
@@ -1086,24 +1101,42 @@ export const DashboardScreen: React.FC = () => {
       )}
 
       {/* 7. Recent Screenshots Carousel */}
-      {screenshots.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
-              Recent Screenshots
-            </Text>
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+            Recent Screenshots ({screenshots.length})
+          </Text>
+          {screenshots.length > 0 && (
             <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'Folders' })}>
               <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>See All</Text>
             </TouchableOpacity>
+          )}
+        </View>
+        {screenshots.length === 0 ? (
+          <View
+            style={[
+              styles.emptyRecentCard,
+              { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+            ]}
+          >
+            <Icon name="images-outline" size={32} color={theme.colors.textSecondary} />
+            <Text style={[styles.emptyRecentTitle, { color: theme.colors.textPrimary }]}>
+              No screenshots detected yet
+            </Text>
+            <Text style={[styles.emptyRecentSubtitle, { color: theme.colors.textSecondary }]}>
+              Screenshots on your device are detected automatically.
+            </Text>
           </View>
+        ) : (
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={screenshots.slice(0, 10)}
+            data={screenshots.slice(0, 20)}
             keyExtractor={(item) => item.id}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
             windowSize={5}
+            removeClippedSubviews={true}
             renderItem={({ item }) => (
               <TouchableOpacity
                 onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
@@ -1127,8 +1160,8 @@ export const DashboardScreen: React.FC = () => {
               </TouchableOpacity>
             )}
           />
-        </View>
-      )}
+        )}
+      </View>
 
       {/* 8. Needs Review Queue */}
       {needsReviewList.length > 0 && (
@@ -1269,18 +1302,48 @@ export const DashboardScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Top Smart Folders Grid */}
-        <View style={styles.subSectionHeader}>
-          <Text style={[styles.subSectionTitle, { color: theme.colors.textPrimary }]}>
-            Top Smart Folders
-          </Text>
-          <Text style={[styles.subSectionBadge, { color: theme.colors.textSecondary }]}>
-            Ranked by items
-          </Text>
+        {/* Smart Folders Grid */}
+        <View style={[styles.subSectionHeader, { alignItems: 'center', justifyContent: 'space-between' }]}>
+          <View>
+            <Text style={[styles.subSectionTitle, { color: theme.colors.textPrimary }]}>
+              Smart Folders
+            </Text>
+            <Text style={[styles.subSectionBadge, { color: theme.colors.textSecondary }]}>
+              {folderSort === 'count' ? 'Ranked by items' : 'Recently active'}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', backgroundColor: theme.colors.surfaceVariant, borderRadius: 8, padding: 2 }}>
+            <TouchableOpacity
+              onPress={() => setFolderSort('count')}
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 6,
+                backgroundColor: folderSort === 'count' ? theme.colors.primary : 'transparent',
+              }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '600', color: folderSort === 'count' ? '#FFFFFF' : theme.colors.textSecondary }}>
+                Most Items
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setFolderSort('recent')}
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 6,
+                backgroundColor: folderSort === 'recent' ? theme.colors.primary : 'transparent',
+              }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '600', color: folderSort === 'recent' ? '#FFFFFF' : theme.colors.textSecondary }}>
+                Recent
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.foldersGrid}>
-          {topFolders.map((cat) => (
+          {displayedFolders.map((cat) => (
             <TouchableOpacity
               key={cat.id}
               onPress={() =>
@@ -1297,34 +1360,71 @@ export const DashboardScreen: React.FC = () => {
                 },
               ]}
             >
-              <View
-                style={[
-                  styles.folderIconBox,
-                  { backgroundColor: `${cat.colorHex || cat.color || theme.colors.primary}18` },
-                ]}
-              >
-                <Icon
-                  name={cat.iconName || cat.icon || 'folder-outline'}
-                  size={22}
-                  color={cat.colorHex || cat.color || theme.colors.primary}
+              {/* Cover Thumbnail or Header Placeholder */}
+              {cat.coverUri ? (
+                <View style={styles.folderCoverContainer}>
+                  <ScreenshotImageThumbnail
+                    uri={cat.coverUri}
+                    style={styles.folderCoverImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.folderCoverOverlay} />
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.folderCoverPlaceholder,
+                    { backgroundColor: `${cat.colorHex || cat.color || theme.colors.primary}15` },
+                  ]}
                 />
+              )}
+
+              {/* Icon & Confidence Row */}
+              <View style={styles.folderCardHeader}>
+                <View
+                  style={[
+                    styles.folderIconBox,
+                    {
+                      backgroundColor: `${cat.colorHex || cat.color || theme.colors.primary}25`,
+                      borderColor: theme.colors.card,
+                    },
+                  ]}
+                >
+                  <Icon
+                    name={cat.iconName || cat.icon || 'folder-outline'}
+                    size={20}
+                    color={cat.colorHex || cat.color || theme.colors.primary}
+                  />
+                </View>
+                {cat.averageConfidence && cat.averageConfidence > 0 ? (
+                  <View style={[styles.folderConfidenceBadge, { backgroundColor: '#10B98120' }]}>
+                    <Text style={[styles.folderConfidenceText, { color: '#10B981' }]}>
+                      {Math.round(cat.averageConfidence > 1 ? cat.averageConfidence : cat.averageConfidence * 100)}% AI
+                    </Text>
+                  </View>
+                ) : null}
               </View>
+
               <Text
                 numberOfLines={1}
                 style={[styles.folderName, { color: theme.colors.textPrimary }]}
               >
                 {cat.name}
               </Text>
-              {cat.path && cat.path.includes('/') && (
-                <Text
-                  numberOfLines={1}
-                  style={[styles.folderPathText, { color: theme.colors.textSecondary }]}
-                >
-                  {cat.path}
+
+              <View style={styles.folderMetaRow}>
+                <Text style={[styles.folderCount, { color: theme.colors.textSecondary }]}>
+                  {cat.screenshotCount || 0} items
                 </Text>
-              )}
-              <Text style={[styles.folderCount, { color: theme.colors.textSecondary }]}>
-                {cat.screenshotCount || 0} items
+                {cat.storageSizeBytes && cat.storageSizeBytes > 0 ? (
+                  <Text style={[styles.folderSizeText, { color: theme.colors.textSecondary }]}>
+                    • {FileUtils.formatBytes(cat.storageSizeBytes)}
+                  </Text>
+                ) : null}
+              </View>
+
+              <Text style={[styles.folderTimeText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                {cat.updatedAt || cat.createdOn ? DateFormatter.formatRelative(cat.updatedAt || cat.createdOn!) : ''}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1754,6 +1854,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
+  emptyRecentCard: {
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  emptyRecentTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  emptyRecentSubtitle: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
   reviewItem: {
     width: 100,
     marginRight: 10,
@@ -1775,32 +1894,76 @@ const styles = StyleSheet.create({
   },
   folderCard: {
     width: '48%',
-    padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  folderCoverContainer: {
+    height: 60,
+    width: '100%',
+    position: 'relative',
+  },
+  folderCoverImage: {
+    width: '100%',
+    height: 60,
+  },
+  folderCoverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  folderCoverPlaceholder: {
+    height: 28,
+    width: '100%',
+  },
+  folderCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    marginTop: -14,
+    marginBottom: 4,
   },
   folderIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    borderWidth: 1,
+  },
+  folderConfidenceBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  folderConfidenceText: {
+    fontSize: 9,
+    fontWeight: '700',
   },
   folderName: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    marginHorizontal: 8,
     marginBottom: 2,
   },
-  folderPathText: {
-    fontSize: 10,
-    marginBottom: 4,
-    fontFamily: 'monospace',
+  folderMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+    marginBottom: 2,
   },
   folderCount: {
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  folderSizeText: {
+    fontSize: 10,
+  },
+  folderTimeText: {
+    fontSize: 10,
+    marginHorizontal: 8,
+    marginBottom: 8,
   },
   uncategorizedCard: {
     marginBottom: 16,

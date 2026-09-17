@@ -54,6 +54,11 @@ class DatabaseService {
       'ALTER TABLE categories ADD COLUMN is_favorite INTEGER DEFAULT 0',
       'ALTER TABLE categories ADD COLUMN path TEXT',
       'ALTER TABLE categories ADD COLUMN created_on TEXT',
+      'ALTER TABLE categories ADD COLUMN cover_uri TEXT',
+      'ALTER TABLE categories ADD COLUMN manual_cover_uri TEXT',
+      'ALTER TABLE categories ADD COLUMN average_confidence REAL DEFAULT 0.0',
+      'ALTER TABLE categories ADD COLUMN storage_size_bytes INTEGER DEFAULT 0',
+      'ALTER TABLE categories ADD COLUMN updated_at TEXT',
 
       // Pending screenshots migrations (Sprint RN-03 / RN-04)
       'ALTER TABLE pending_screenshots ADD COLUMN device_folder TEXT',
@@ -176,3 +181,4 @@ class DatabaseService {
 }
 
 export const databaseService = new DatabaseService();
+export const getDatabase = () => databaseService.getDatabase();

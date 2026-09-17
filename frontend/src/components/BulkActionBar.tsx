@@ -11,6 +11,7 @@ export interface BulkActionBarProps {
   onShare: () => void;
   onCancel: () => void;
   isAllFavorite?: boolean;
+  onRemoveFromFolder?: () => void;
 }
 
 export const BulkActionBar: React.FC<BulkActionBarProps> = ({
@@ -21,6 +22,7 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
   onShare,
   onCancel,
   isAllFavorite = false,
+  onRemoveFromFolder,
 }) => {
   const theme = useAppTheme();
 
@@ -45,16 +47,13 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Cancel selection"
         >
-          <Icon name="close" size={18} color={theme.colors.textSecondary} />
+          <Icon name="close" size={16} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={[styles.badge, { backgroundColor: `${theme.colors.primary}20` }]}>
           <Text style={[styles.badgeText, { color: theme.colors.primary }]}>
             {selectedCount}
           </Text>
         </View>
-        <Text style={[styles.selectedLabel, { color: theme.colors.textPrimary }]}>
-          Selected
-        </Text>
       </View>
 
       {/* Action Buttons */}
@@ -67,12 +66,27 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           accessibilityLabel="Move selected screenshots"
         >
           <View style={[styles.iconCircle, { backgroundColor: `${theme.colors.primary}18` }]}>
-            <Icon name="folder-outline" size={18} color={theme.colors.primary} />
+            <Icon name="folder-outline" size={17} color={theme.colors.primary} />
           </View>
           <Text style={[styles.actionLabel, { color: theme.colors.textPrimary }]}>Move</Text>
         </TouchableOpacity>
 
-        {/* 2. Favorite / Unfavorite */}
+        {/* 2. Remove / Unfile */}
+        {onRemoveFromFolder && (
+          <TouchableOpacity
+            onPress={onRemoveFromFolder}
+            style={styles.actionBtn}
+            activeOpacity={0.7}
+            accessibilityLabel="Remove selected from folder"
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#F59E0B18' }]}>
+              <Icon name="remove-circle-outline" size={17} color="#F59E0B" />
+            </View>
+            <Text style={[styles.actionLabel, { color: '#F59E0B' }]}>Unfile</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* 3. Favorite / Unfavorite */}
         <TouchableOpacity
           onPress={onFavorite}
           style={styles.actionBtn}
@@ -82,16 +96,16 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           <View style={[styles.iconCircle, { backgroundColor: '#EF444418' }]}>
             <Icon
               name={isAllFavorite ? 'heart-dislike-outline' : 'heart'}
-              size={18}
+              size={17}
               color="#EF4444"
             />
           </View>
           <Text style={[styles.actionLabel, { color: theme.colors.textPrimary }]}>
-            {isAllFavorite ? 'Unfavorite' : 'Favorite'}
+            {isAllFavorite ? 'Unstar' : 'Star'}
           </Text>
         </TouchableOpacity>
 
-        {/* 3. Delete to Recycle Bin */}
+        {/* 4. Delete to Recycle Bin */}
         <TouchableOpacity
           onPress={onDelete}
           style={styles.actionBtn}
@@ -99,12 +113,12 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           accessibilityLabel="Move selected to Recycle Bin"
         >
           <View style={[styles.iconCircle, { backgroundColor: '#EF444418' }]}>
-            <Icon name="trash-outline" size={18} color="#EF4444" />
+            <Icon name="trash-outline" size={17} color="#EF4444" />
           </View>
           <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Delete</Text>
         </TouchableOpacity>
 
-        {/* 4. Share */}
+        {/* 5. Share */}
         <TouchableOpacity
           onPress={onShare}
           style={styles.actionBtn}
@@ -117,7 +131,7 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
               { backgroundColor: theme.isDark ? '#334155' : '#F1F5F9' },
             ]}
           >
-            <Icon name="share-social-outline" size={18} color={theme.colors.textPrimary} />
+            <Icon name="share-social-outline" size={17} color={theme.colors.textPrimary} />
           </View>
           <Text style={[styles.actionLabel, { color: theme.colors.textPrimary }]}>Share</Text>
         </TouchableOpacity>

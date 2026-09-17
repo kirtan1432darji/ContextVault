@@ -47,22 +47,26 @@ jest.mock('../theme', () => ({
 
 // Mock axios for auth network tests
 jest.mock('axios', () => {
+  const mPost = jest.fn();
+  const mGet = jest.fn();
+  const mPut = jest.fn();
+  const mDelete = jest.fn();
   const mAxiosInstance = {
     interceptors: {
       request: { use: jest.fn() },
       response: { use: jest.fn() },
     },
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
+    get: mGet,
+    post: mPost,
+    put: mPut,
+    delete: mDelete,
   };
   return {
     create: jest.fn(() => mAxiosInstance),
-    post: jest.fn(),
-    get: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
+    post: mPost,
+    get: mGet,
+    put: mPut,
+    delete: mDelete,
   };
 });
 import axios from 'axios';
@@ -284,6 +288,58 @@ describe('ContextVault Sprint P0-4 — Authentication Completion Suite', () => {
       expect(StorageService.getAccessToken()).toBeNull();
       expect(StorageService.getRefreshToken()).toBeNull();
       expect(StorageService.getUserProfile()).toBeNull();
+    });
+  });
+
+  describe('6. Error State Management and Screen Isolation', () => {
+    it('sets and clears error state via clearError', () => {
+      useAuthStore.setState({ error: 'Invalid email/username or password.' });
+      expect(useAuthStore.getState().error).toBe('Invalid email/username or password.');
+
+      useAuthStore.getState().clearError();
+      expect(useAuthStore.getState().error).toBeNull();
+    });
+
+    it('formats network error into user-friendly message', async () => {
+      const netErr: any = new Error('Network Error');
+      netErr.code = 'ERR_NETWORK';
+      mockedAxios.post.mockRejectedValueOnce(netErr);
+
+      const result = await authService.login({
+        emailOrUsername: 'test@example.com',
+        password: 'Password123!',
+      });
+
+      expect(result.isSuccess).toBe(false);
+      expect(result.error).toMatch(/unable to connect to contextvault backend/i);
+    });
+
+    it('formats timeout error into user-friendly message', async () => {
+      const timeoutErr: any = new Error('timeout of 30000ms exceeded');
+      timeoutErr.code = 'ECONNABORTED';
+      mockedAxios.post.mockRejectedValueOnce(timeoutErr);
+
+      const result = await authService.login({
+        emailOrUsername: 'test@example.com',
+        password: 'Password123!',
+      });
+
+      expect(result.isSuccess).toBe(false);
+      expect(result.error).toMatch(/backend timed out/i);
+    });
+
+    it('formats 500 internal server error into user-friendly message', async () => {
+      const serverErr: any = new Error('Internal Server Error');
+      serverErr.response = { status: 500 };
+      mockedAxios.post.mockRejectedValueOnce(serverErr);
+
+      const result = await authService.login({
+        emailOrUsername: 'test@example.com',
+        password: 'Password123!',
+      });
+
+      expect(result.isSuccess).toBe(false);
+      expect(result.error).toMatch(/backend server error/i);
     });
   });
 });

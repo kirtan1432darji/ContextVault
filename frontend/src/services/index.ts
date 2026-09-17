@@ -32,4 +32,8 @@ export * from './voiceSearchService';
 export * from './crashReportingService';
 export * from './EntityMergeService';
 export * from './BackendConnectionManager';
+export * from './mediaStoreService';
+export * from './storageService';
+export * from './ThumbnailService';
+export * from './contextGenerationService';
 export * from '../vision';

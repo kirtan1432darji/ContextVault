@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CategoryModel, DEFAULT_CATEGORIES } from '../models';
+import { CategoryModel, FolderStatistics, DEFAULT_CATEGORIES } from '../models';
 import { categoryRepository } from '../database/repositories/categoryRepository';
 
 export interface CategoryTreeNode extends CategoryModel {
@@ -11,15 +11,20 @@ interface CategoryState {
   categories: CategoryModel[];
   selectedCategoryId: string | null;
   expandedFolderIds: string[];
+  folderSortBy: 'count' | 'recent';
   isLoading: boolean;
   error: string | null;
 
   // Actions
   setCategories: (categories: CategoryModel[]) => void;
+  setFolderSortBy: (sort: 'count' | 'recent') => void;
   loadCategories: () => Promise<void>;
   selectCategory: (categoryId: string | null) => void;
   setCategoryCount: (categoryId: string, count: number) => void;
   toggleExpandFolder: (id: string) => void;
+  updateFolderCover: (folderId: string, coverUri: string) => Promise<void>;
+  rebuildSmartFolders: () => Promise<void>;
+  getFolderStats: (folderId: string) => Promise<FolderStatistics>;
 
   // Manual folder management
   createFolder: (
@@ -46,10 +51,13 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   categories: DEFAULT_CATEGORIES,
   selectedCategoryId: null,
   expandedFolderIds: [],
+  folderSortBy: 'count',
   isLoading: false,
   error: null,
 
   setCategories: (categories: CategoryModel[]) => set({ categories }),
+
+  setFolderSortBy: (sort: 'count' | 'recent') => set({ folderSortBy: sort }),
 
   loadCategories: async () => {
     set({ isLoading: true, error: null });
@@ -78,6 +86,30 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     } else {
       set({ expandedFolderIds: [...current, id] });
     }
+  },
+
+  updateFolderCover: async (folderId: string, coverUri: string) => {
+    await categoryRepository.updateFolderCover(folderId, coverUri, true);
+    set((state) => ({
+      categories: state.categories.map((c) =>
+        c.id === folderId ? { ...c, coverUri, manualCoverUri: coverUri } : c
+      ),
+    }));
+  },
+
+  rebuildSmartFolders: async () => {
+    set({ isLoading: true });
+    try {
+      await categoryRepository.rebuildSmartFolders();
+      const all = await categoryRepository.getAllCategories();
+      set({ categories: all, isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Failed to rebuild folders', isLoading: false });
+    }
+  },
+
+  getFolderStats: async (folderId: string) => {
+    return categoryRepository.getFolderStatistics(folderId);
   },
 
   createFolder: async (name, parentId = null, iconName = 'folder-outline', colorHex = '6366F1') => {
