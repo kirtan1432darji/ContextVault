@@ -33,15 +33,15 @@ class AuthService:
         self.token_repo = RefreshTokenRepository(db)
 
     def register(self, request: UserRegisterRequest) -> TokenResponse:
-        # Check existing email
-        if self.user_repo.get_by_email(request.email):
+        # Check existing email (including soft-deleted to avoid SQL Server unique constraint collisions)
+        if self.user_repo.get_by_email(request.email, include_deleted=True):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A user with this email address already exists.",
             )
 
-        # Check existing username
-        if self.user_repo.get_by_username(request.username):
+        # Check existing username (including soft-deleted)
+        if self.user_repo.get_by_username(request.username, include_deleted=True):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A user with this username already exists.",

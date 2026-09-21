@@ -20,11 +20,6 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api"
     ENVIRONMENT: str = "development"
 
-    # Local Vision AI Server Gateway (RTX 4050 Laptop GPU)
-    VISION_SERVER_URL: str = "http://127.0.0.1:9000"
-    VISION_TIMEOUT: int = 120
-    VISION_HEALTH_TIMEOUT: int = 5
-
     # SQL Server Database Configuration
     DB_SERVER: str = "localhost"
     DB_DATABASE: str = "ContextVault"
@@ -44,9 +39,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/contextvault.log"
 
-    # Vision AI Gateway (Windows Laptop RTX 4050)
-    VISION_SERVER_URL: str = "http://localhost:8000"
+    # Vision AI Server (RTX 4050 Gateway)
+    VISION_SERVER_URL: str = "http://localhost:8001"
     VISION_TIMEOUT: int = 120
+    VISION_HEALTH_TIMEOUT: int = 5
 
     @property
     def sqlalchemy_database_uri(self) -> str:
