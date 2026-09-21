@@ -44,6 +44,11 @@ interface ScreenshotState {
   bulkMoveScreenshots: (ids: string[], targetFolderId: string) => Promise<number>;
   bulkReanalyzeScreenshots: (ids: string[]) => Promise<number>;
   restoreAIClassification: (id: string) => Promise<void>;
+
+  // Smart Folder Classification Actions
+  updateClassification: (screenshotId: string, updates: Partial<ScreenshotModel>) => void;
+  refreshScreenshot: (id: string) => Promise<ScreenshotModel | null>;
+  batchUpdateCategories: (ids: string[], categoryId: string, categoryName: string, subcategory?: string) => Promise<number>;
 }
 
 export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
@@ -320,5 +325,73 @@ export const useScreenshotStore = create<ScreenshotState>((set, get) => ({
     await smartFolderClassificationService.restoreAIClassification(id);
     await get().loadScreenshots();
     await useCategoryStore.getState().loadCategories();
+  },
+
+  updateClassification: (screenshotId: string, updates: Partial<ScreenshotModel>) => {
+    const list = get().screenshots.map((s) => {
+      if (s.id === screenshotId) {
+        return {
+          ...s,
+          ...updates,
+          categoryId: updates.categoryId || s.categoryId,
+          categoryName: updates.categoryName || s.categoryName,
+          confidence: updates.confidence !== undefined ? updates.confidence : s.confidence,
+        };
+      }
+      return s;
+    });
+
+    const favorites = list.filter((s) => s.isFavorite);
+    const needsReviewList = list.filter(
+      (s) => !s.isReviewed && (s.confidence < 0.7 || s.categoryId === 'unsorted')
+    );
+
+    set({
+      screenshots: list,
+      favorites,
+      needsReviewList,
+      selectedScreenshot:
+        get().selectedScreenshot?.id === screenshotId
+          ? { ...get().selectedScreenshot!, ...updates }
+          : get().selectedScreenshot,
+    });
+  },
+
+  refreshScreenshot: async (id: string) => {
+    try {
+      const item = await screenshotRepository.getScreenshotById(id);
+      if (item) {
+        get().addOrUpdateScreenshot(item);
+        return item;
+      }
+    } catch (err: any) {
+      console.warn('[ScreenshotStore] Failed to refresh screenshot:', err?.message);
+    }
+    return null;
+  },
+
+  batchUpdateCategories: async (
+    ids: string[],
+    categoryId: string,
+    categoryName: string,
+    subcategory = ''
+  ) => {
+    const count = await screenshotRepository.bulkUpdateCategory(ids, categoryId, categoryName, subcategory);
+    const idSet = new Set(ids);
+    const list = get().screenshots.map((s) =>
+      idSet.has(s.id)
+        ? {
+            ...s,
+            categoryId,
+            categoryName,
+            subcategory,
+            isAutoCategorized: false,
+            classificationSource: 'manual' as const,
+            isReviewed: true,
+          }
+        : s
+    );
+    get().setScreenshots(list);
+    return count;
   },
 }));

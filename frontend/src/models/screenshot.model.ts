@@ -35,7 +35,7 @@ export interface ScreenshotModel {
   tags: TagModel[];
   lastScannedAt?: string;
   isMock?: boolean;
-  classificationSource?: 'backend' | 'local' | 'manual';
+  classificationSource?: 'backend' | 'local' | 'manual' | 'vision_ai';
   entities?: ExtractedEntitiesDto;
   isDeleted?: boolean;
   deletedAt?: string;

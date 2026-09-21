@@ -37,3 +37,5 @@ export * from './storageService';
 export * from './ThumbnailService';
 export * from './contextGenerationService';
 export * from '../vision';
+export * from './background';
+export * from './memory';

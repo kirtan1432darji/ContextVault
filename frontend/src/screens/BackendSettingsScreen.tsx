@@ -18,10 +18,14 @@ import { useAppTheme } from '../theme';
 import { ModernCard } from '../components/ModernCard';
 import { EnvironmentManager, AppEnvironment } from '../config/EnvironmentManager';
 import {
-  backendConnectionService,
-  ConnectionStatusResult,
-} from '../services/BackendConnectionService';
-import { apiClient } from '../api/apiClient';
+  getApiBaseUrl,
+  setApiBaseUrl,
+  resetApiBaseUrl,
+  testConnection,
+  HealthCheckResult,
+  isValidUrl,
+  DEFAULT_FALLBACK_URL,
+} from '../config/api';
 
 export const BackendSettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -29,11 +33,11 @@ export const BackendSettingsScreen: React.FC = () => {
 
   const isDevAvailable = EnvironmentManager.isDeveloperModeAvailable();
   const currentEnv = EnvironmentManager.getEnvironment();
-  const defaultUrl = EnvironmentManager.getDefaultUrl();
 
-  const [urlInput, setUrlInput] = useState(EnvironmentManager.getApiBaseUrl());
+  const [currentUrl, setCurrentUrl] = useState(getApiBaseUrl());
+  const [urlInput, setUrlInput] = useState(getApiBaseUrl());
   const [testing, setTesting] = useState(false);
-  const [pingResult, setPingResult] = useState<ConnectionStatusResult | null>(null);
+  const [pingResult, setPingResult] = useState<HealthCheckResult | null>(null);
 
   if (!isDevAvailable) {
     return (
@@ -63,7 +67,7 @@ export const BackendSettingsScreen: React.FC = () => {
       Alert.alert('Validation Error', 'Please enter a valid backend URL.');
       return;
     }
-    if (!EnvironmentManager.isValidUrl(target)) {
+    if (!isValidUrl(target)) {
       Alert.alert('Invalid URL', 'Backend URL must begin with http:// or https://');
       return;
     }
@@ -71,11 +75,11 @@ export const BackendSettingsScreen: React.FC = () => {
     setTesting(true);
     setPingResult(null);
     try {
-      const result = await backendConnectionService.pingBackend(target);
+      const result = await testConnection(target);
       setPingResult(result);
     } catch (err: any) {
       setPingResult({
-        status: 'Offline',
+        status: 'Connection Failed',
         isHealthy: false,
         latencyMs: 0,
         errorMessage: err?.message || 'Connection test failed unexpectedly.',
@@ -86,30 +90,30 @@ export const BackendSettingsScreen: React.FC = () => {
     }
   };
 
-  const handleSaveUrl = () => {
+  const handleSaveUrl = async () => {
     const target = urlInput.trim();
     if (!target) {
       Alert.alert('Validation Error', 'Please enter a valid backend URL.');
       return;
     }
-    if (!EnvironmentManager.isValidUrl(target)) {
+    if (!isValidUrl(target)) {
       Alert.alert('Invalid URL', 'Backend URL must begin with http:// or https://');
       return;
     }
 
     try {
-      apiClient.setBaseUrl(target);
-      Alert.alert('Backend URL Saved', `Active backend URL set to:\n${target}\n\nSaved to MMKV storage.`);
+      await setApiBaseUrl(target);
+      setCurrentUrl(getApiBaseUrl());
+      Alert.alert('Backend URL Saved', `Active backend URL set to:\n${target}\n\nSaved to AsyncStorage.`);
     } catch (e: any) {
       Alert.alert('Error Saving URL', e?.message || 'Failed to save URL.');
     }
   };
 
-  const handleRestoreDefault = () => {
-    EnvironmentManager.resetToDefaultUrl();
-    const restored = EnvironmentManager.getDefaultUrl();
+  const handleRestoreDefault = async () => {
+    const restored = await resetApiBaseUrl();
     setUrlInput(restored);
-    apiClient.setBaseUrl(restored);
+    setCurrentUrl(restored);
     setPingResult(null);
     Alert.alert('Default Restored', `Backend URL reverted to build default:\n${restored}`);
   };
@@ -129,11 +133,7 @@ export const BackendSettingsScreen: React.FC = () => {
     switch (status) {
       case 'Connected':
         return '#10B981';
-      case 'Timeout':
-        return '#F59E0B';
-      case 'Unauthorized':
-        return '#EAB308';
-      case 'Offline':
+      case 'Connection Failed':
       default:
         return '#EF4444';
     }
@@ -188,13 +188,22 @@ export const BackendSettingsScreen: React.FC = () => {
             FastAPI Server Endpoint
           </Text>
           <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-            Enter the host IP and port of your ContextVault backend. Changes are saved directly in MMKV.
+            Enter the host IP and port of your ContextVault backend. Changes are saved directly in AsyncStorage.
           </Text>
+
+          <View style={styles.activeUrlRow}>
+            <Text style={[styles.activeUrlLabel, { color: theme.colors.textSecondary }]}>
+              Current Backend URL:
+            </Text>
+            <Text style={[styles.activeUrlValue, { color: theme.colors.primary }]}>
+              {currentUrl}
+            </Text>
+          </View>
 
           <TextInput
             value={urlInput}
             onChangeText={setUrlInput}
-            placeholder="http://10.122.196.152:8000"
+            placeholder={DEFAULT_FALLBACK_URL}
             placeholderTextColor={theme.colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -241,7 +250,7 @@ export const BackendSettingsScreen: React.FC = () => {
           >
             <Icon name="refresh-outline" size={16} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
             <Text style={[styles.restoreBtnText, { color: theme.colors.textSecondary }]}>
-              Restore Default ({defaultUrl})
+              Restore Default ({DEFAULT_FALLBACK_URL})
             </Text>
           </TouchableOpacity>
         </ModernCard>
@@ -397,6 +406,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  activeUrlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#3B82F614',
+  },
+  activeUrlLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  activeUrlValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: 'monospace',
   },
   input: {
     height: 48,

@@ -623,45 +623,126 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             </View>
           </View>
 
-          {visionRecord ? (
-            <View style={{ marginTop: 6 }}>
-              {/* Summary */}
-              {visionRecord.summary ? (
-                <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.colors.surfaceVariant }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#8B5CF6', marginBottom: 4 }}>
-                    Visual Summary
+          {visionRecord ? (() => {
+            let visionEntities: Record<string, any> = {};
+            try {
+              visionEntities = JSON.parse(visionRecord.detected_entities || '{}');
+            } catch {}
+
+            let visionTags: string[] = [];
+            try {
+              visionTags = JSON.parse(visionRecord.detected_objects || '[]');
+            } catch {}
+
+            const visionTitle = visionRecord.application_name || visionEntities.title || screenshot.fileName;
+            const visionConfidence =
+              visionRecord.confidence != null && visionRecord.confidence > 0
+                ? Math.round(visionRecord.confidence * (visionRecord.confidence <= 1 ? 100 : 1))
+                : 100;
+            const visionMerchant =
+              visionEntities.merchant ||
+              (Array.isArray(visionEntities.merchants) ? visionEntities.merchants[0] : visionEntities.merchants);
+            const visionAmount =
+              visionEntities.amount ||
+              (Array.isArray(visionEntities.amounts) ? visionEntities.amounts[0] : visionEntities.amounts);
+            const visionPoints: string[] = Array.isArray(visionEntities.points) ? visionEntities.points : [];
+
+            return (
+              <View style={{ marginTop: 6 }}>
+                {/* AI Title */}
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    AI Title
                   </Text>
-                  <Text style={{ fontSize: 13, lineHeight: 18, color: theme.colors.textPrimary }}>
-                    {visionRecord.summary}
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 2 }}>
+                    {visionTitle}
                   </Text>
                 </View>
-              ) : null}
 
-              {/* Detected Application & Confidence */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Application</Text>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.textPrimary }}>
-                  {visionRecord.application_name}
-                </Text>
-              </View>
+                {/* AI Summary */}
+                {visionRecord.summary ? (
+                  <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.colors.surfaceVariant }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B5CF6', marginBottom: 4 }}>
+                      AI Summary
+                    </Text>
+                    <Text style={{ fontSize: 13, lineHeight: 18, color: theme.colors.textPrimary }}>
+                      {visionRecord.summary}
+                    </Text>
+                  </View>
+                ) : null}
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Vision Confidence</Text>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#10B981' }}>
-                  {Math.round(visionRecord.confidence * (visionRecord.confidence <= 1 ? 100 : 1))}%
-                </Text>
-              </View>
+                {/* Key Bullet Points */}
+                {visionPoints.length > 0 && (
+                  <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.isDark ? '#1E293B80' : '#F8FAFC' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B5CF6', marginBottom: 6 }}>
+                      Bullet Points
+                    </Text>
+                    {visionPoints.map((pt, idx) => (
+                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <Text style={{ color: '#8B5CF6', marginRight: 6, fontSize: 12 }}>•</Text>
+                        <Text style={{ fontSize: 12, color: theme.colors.textPrimary, flex: 1, lineHeight: 16 }}>
+                          {pt}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Model Engine</Text>
-                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
-                  {visionRecord.model_version}
-                </Text>
+                {/* Merchant & Amount Badges */}
+                {(visionMerchant || visionAmount) && (
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                    {visionMerchant ? (
+                      <View style={{ flex: 1, padding: 8, borderRadius: 8, backgroundColor: '#3B82F615' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#3B82F6' }}>Merchant</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 2 }}>
+                          {String(visionMerchant)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {visionAmount ? (
+                      <View style={{ flex: 1, padding: 8, borderRadius: 8, backgroundColor: '#10B98115' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#10B981' }}>Amount</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#10B981', marginTop: 2 }}>
+                          {String(visionAmount)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Tags */}
+                {visionTags.length > 0 && (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary, marginBottom: 6 }}>
+                      Tags
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {visionTags.map((tag, idx) => (
+                        <TagChip key={idx} label={tag} colorHex="#8B5CF6" />
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Confidence & Model Engine Meta */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Confidence</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#10B981' }}>
+                    {visionConfidence}%
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Model Engine</Text>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                    {visionRecord.model_version || 'Qwen2.5-VL-3B-Instruct'}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ) : (
+            );
+          })() : (
             <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginVertical: 8 }}>
-              This screenshot has not been visually inspected by the local Vision AI engine yet.
+              This screenshot has not been analyzed by the local Vision AI engine yet.
             </Text>
           )}
 
@@ -684,7 +765,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               <Icon name="sparkles-outline" size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
             )}
             <Text style={[styles.reclassifyText, { color: '#8B5CF6', fontWeight: '600' }]}>
-              {isAnalyzingVision ? 'Analyzing on RTX 4050...' : visionRecord ? 'Re-analyze with Vision AI' : 'Analyze with Vision AI'}
+              {isAnalyzingVision ? 'Analyzing on RTX 4050...' : visionRecord ? 'Re-analyze with AI' : 'Analyze with AI'}
             </Text>
           </TouchableOpacity>
         </ModernCard>

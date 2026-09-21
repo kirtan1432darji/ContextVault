@@ -12,6 +12,7 @@ import { loggerService } from './loggerService';
 import { databaseService } from '../database/database';
 import { notificationService } from './notificationService';
 import { performanceAuditService } from './performanceAuditService';
+import { aiProcessingQueue, backgroundAIWorker } from './background';
 
 const STORAGE_KEY_SCANNER_ENABLED = '@contextvault_scanner_auto_enabled';
 
@@ -56,6 +57,16 @@ export class ScreenshotListenerService {
       await visionInferenceQueue.resumePendingOnStartup();
     } catch (visionErr) {
       loggerService.warn('Scanner', 'Failed to initialize vision queue on startup', visionErr);
+    }
+
+    // 4c. Resume Background AI Processing Queue (Sprint P5-A)
+    try {
+      const stats = await aiProcessingQueue.getStats();
+      if (stats.pending > 0) {
+        backgroundAIWorker.start().catch(() => {});
+      }
+    } catch (queueErr) {
+      loggerService.warn('Scanner', 'Failed to resume AI processing queue on startup', queueErr);
     }
 
     // 5. Check if listener should automatically resume after app launch
@@ -287,6 +298,13 @@ export class ScreenshotListenerService {
         mimeType,
         retryCount: 0,
       });
+
+      // 7. Dispatch to persistent Background AI Processing Queue (Sprint P5-A) with High priority
+      try {
+        await aiProcessingQueue.enqueue(pendingId, 'high');
+      } catch (aiErr) {
+        loggerService.warn('Scanner', 'Failed to auto-enqueue screenshot for AI processing', aiErr);
+      }
     } catch (err: any) {
       loggerService.error('Scanner', `Error saving pending screenshot: ${fileName}`, err);
     }

@@ -118,7 +118,7 @@ export class VisionModelManager {
 
   /**
    * Executes inference through the Ubuntu backend gateway over LAN:
-   * 1. Calls Ubuntu backend: POST http://10.122.196.152:8000/api/vision/analyze
+   * 1. Calls Ubuntu backend: POST /api/vision/analyze
    * 2. If gateway / vision server offline, engages LocalVisionFallbackAdapter.
    */
   async executeWithFailover(params: {

@@ -133,7 +133,7 @@ export const SCHEMA_SQL = [
     FOREIGN KEY (screenshot_id) REFERENCES screenshots (id) ON DELETE CASCADE
   );`,
 
-  // 9. Chat History (Sprint RN-07)
+  // 9. Chat History (Sprint RN-07 / Sprint P3-A)
   `CREATE TABLE IF NOT EXISTS chat_history (
     id TEXT PRIMARY KEY,
     session_id TEXT,
@@ -143,6 +143,8 @@ export const SCHEMA_SQL = [
     message TEXT NOT NULL,
     content TEXT,
     citations_json TEXT,
+    referenced_screenshot_ids TEXT,
+    response_time_ms INTEGER DEFAULT 0,
     created_on TEXT NOT NULL,
     created_at TEXT,
     sync_status TEXT NOT NULL DEFAULT 'synced'
@@ -245,4 +247,23 @@ export const SCHEMA_SQL = [
   );`,
   `CREATE INDEX IF NOT EXISTS idx_thumbnail_screenshot ON thumbnail_cache(screenshot_id);`,
   `CREATE INDEX IF NOT EXISTS idx_thumbnail_hash ON thumbnail_cache(file_hash);`,
+
+  // 17. Analysis Queue (Sprint P5-A Background AI Processing Queue)
+  `CREATE TABLE IF NOT EXISTS analysis_queue (
+    id TEXT PRIMARY KEY,
+    screenshot_id TEXT NOT NULL UNIQUE,
+    state TEXT NOT NULL DEFAULT 'pending',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    priority_order INTEGER NOT NULL DEFAULT 2,
+    queued_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    error_message TEXT,
+    processing_time_ms INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (screenshot_id) REFERENCES screenshots (id) ON DELETE CASCADE
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_analysis_queue_state ON analysis_queue(state);`,
+  `CREATE INDEX IF NOT EXISTS idx_analysis_queue_priority ON analysis_queue(priority_order DESC, queued_at ASC);`,
+  `CREATE INDEX IF NOT EXISTS idx_analysis_queue_screenshot ON analysis_queue(screenshot_id);`,
 ];

@@ -46,13 +46,13 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const allScreenshots = useScreenshotStore((s) => s.screenshots);
   const categories = useCategoryStore((s) => s.categories);
 
-  // Subfolders under this category
   const subcategoriesFromStore = useCategoryStore((s) =>
     s.getSubcategories(categoryId)
   );
 
   const [selectedSubcat, setSelectedSubcat] = useState<string>('all');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'confidence' | 'merchant' | 'amount'>('newest');
+  const [quickFilter, setQuickFilter] = useState<'all' | 'favorites' | 'ocr' | 'vision'>('all');
   const [searchInFolder, setSearchInFolder] = useState('');
 
   // Guest Mode State
@@ -178,9 +178,86 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     return Array.from(subcats);
   }, [folderScreenshots, categories, categoryId, categoryName]);
 
+  const extractAmountNumber = (s: ScreenshotModel): number => {
+    if (s.entities?.amount) {
+      const num = parseFloat(String(s.entities.amount).replace(/[^0-9.]/g, ''));
+      if (!isNaN(num)) return num;
+    }
+    const amtTag = s.tags?.find((t) => t.name.startsWith('₹') || t.name.startsWith('amt_'));
+    if (amtTag) {
+      const num = parseFloat(amtTag.name.replace(/[^0-9.]/g, ''));
+      if (!isNaN(num)) return num;
+    }
+    if (s.ocrText) {
+      const m = s.ocrText.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i);
+      if (m) {
+        const num = parseFloat(m[1].replace(/,/g, ''));
+        if (!isNaN(num)) return num;
+      }
+    }
+    return 0;
+  };
+
+  const getMerchant = (item: ScreenshotModel): string | null => {
+    if (item.entities?.merchant) return String(item.entities.merchant);
+    const mTag = item.tags?.find((t) => t.name.startsWith('merchant_'));
+    if (mTag) return mTag.name.replace('merchant_', '');
+    return null;
+  };
+
+  const getAmount = (item: ScreenshotModel): string | null => {
+    if (item.entities?.amount) return `₹${item.entities.amount}`;
+    const amtTag = item.tags?.find((t) => t.name.startsWith('₹') || t.name.startsWith('amt_'));
+    if (amtTag) return amtTag.name.replace('amt_', '₹');
+    if (item.ocrText) {
+      const m = item.ocrText.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i);
+      if (m) return `₹${m[1]}`;
+    }
+    return null;
+  };
+
+  const cycleSort = () => {
+    const options: ('newest' | 'oldest' | 'confidence' | 'merchant' | 'amount')[] = [
+      'newest',
+      'oldest',
+      'confidence',
+      'merchant',
+      'amount',
+    ];
+    const nextIdx = (options.indexOf(sortOrder) + 1) % options.length;
+    setSortOrder(options[nextIdx]);
+  };
+
+  const getSortLabel = (s: typeof sortOrder): string => {
+    switch (s) {
+      case 'newest':
+        return 'Newest';
+      case 'oldest':
+        return 'Oldest';
+      case 'confidence':
+        return 'AI Conf';
+      case 'merchant':
+        return 'Merchant';
+      case 'amount':
+        return 'Amount';
+    }
+  };
+
   // Filtered and sorted screenshots
   const displayedScreenshots = useMemo(() => {
     let result = folderScreenshots;
+
+    // Quick filter: All, Favorites, OCR, Vision
+    if (quickFilter === 'favorites') {
+      result = result.filter((s) => s.isFavorite);
+    } else if (quickFilter === 'ocr') {
+      result = result.filter((s) => s.ocrStatus === 'completed' || Boolean(s.ocrText));
+    } else if (quickFilter === 'vision') {
+      result = result.filter(
+        (s) =>
+          Boolean(s.entities || (s.tags && s.tags.length > 0) || s.classificationSource === 'vision_ai')
+      );
+    }
 
     // Filter by subfolder
     if (selectedSubcat !== 'all') {
@@ -213,13 +290,24 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       );
     }
 
-    // Sort by date
+    // Sort options: newest | oldest | confidence | merchant | amount
     return [...result].sort((a, b) => {
+      if (sortOrder === 'confidence') {
+        return (b.confidence || 0) - (a.confidence || 0);
+      }
+      if (sortOrder === 'merchant') {
+        const mA = (a.entities?.merchant || a.subcategory || a.fileName || '').toLowerCase();
+        const mB = (b.entities?.merchant || b.subcategory || b.fileName || '').toLowerCase();
+        return mA.localeCompare(mB);
+      }
+      if (sortOrder === 'amount') {
+        return extractAmountNumber(b) - extractAmountNumber(a);
+      }
       const timeA = new Date(a.createdAt).getTime() || 0;
       const timeB = new Date(b.createdAt).getTime() || 0;
       return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
     });
-  }, [folderScreenshots, selectedSubcat, searchInFolder, sortOrder]);
+  }, [folderScreenshots, selectedSubcat, searchInFolder, sortOrder, quickFilter, categories, categoryId]);
 
   const handleToggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -503,7 +591,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
               </View>
             )}
 
-            {Boolean(item.aiCategory || (item.tags && item.tags.length > 0)) && (
+            {Boolean(item.entities || (item.tags && item.tags.length > 0)) && (
               <View style={[styles.microBadge, { backgroundColor: '#8B5CF618' }]}>
                 <Icon name="eye" size={9} color="#8B5CF6" style={{ marginRight: 2 }} />
                 <Text style={[styles.microBadgeText, { color: '#8B5CF6' }]}>Vision</Text>
@@ -525,6 +613,40 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
               </Text>
             </View>
           ) : null}
+
+          {/* Merchant & Amount Chips (Sprint P2-A) */}
+          {(getMerchant(item) || getAmount(item)) && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+              {getMerchant(item) ? (
+                <View style={[styles.entityMiniChip, { backgroundColor: `${theme.colors.primary}18` }]}>
+                  <Icon name="business-outline" size={9} color={theme.colors.primary} style={{ marginRight: 2 }} />
+                  <Text numberOfLines={1} style={[styles.entityMiniChipText, { color: theme.colors.primary }]}>
+                    {getMerchant(item)}
+                  </Text>
+                </View>
+              ) : null}
+              {getAmount(item) ? (
+                <View style={[styles.entityMiniChip, { backgroundColor: '#10B98118' }]}>
+                  <Text numberOfLines={1} style={[styles.entityMiniChipText, { color: '#10B981' }]}>
+                    {getAmount(item)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {/* Tags Chips */}
+          {item.tags && item.tags.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+              {item.tags.slice(0, 2).map((t, idx) => (
+                <View key={`${t.id || t.name}_${idx}`} style={[styles.tagMiniChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+                  <Text numberOfLines={1} style={[styles.tagMiniChipText, { color: theme.colors.textSecondary }]}>
+                    #{t.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Move button (shown when not in select mode) */}
           {!isSelectMode && (
@@ -764,7 +886,7 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
 
         <TouchableOpacity
-          onPress={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')}
+          onPress={cycleSort}
           style={[
             styles.sortBtn,
             {
@@ -772,17 +894,60 @@ export const FolderDetailScreen: React.FC<Props> = ({ route, navigation }) => {
               borderColor: theme.colors.border,
             },
           ]}
+          accessibilityLabel={`Sort by ${getSortLabel(sortOrder)}`}
         >
           <Icon
-            name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'}
+            name="swap-vertical"
             size={14}
             color={theme.colors.primary}
             style={{ marginRight: 4 }}
           />
           <Text style={[styles.sortBtnText, { color: theme.colors.textPrimary }]}>
-            {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+            {getSortLabel(sortOrder)}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* 2.5 Quick Filter Chips (All, Favorites, OCR, Vision) */}
+      <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 8, gap: 6 }}>
+        {(
+          [
+            { id: 'all', label: 'All', icon: 'apps-outline' },
+            { id: 'favorites', label: 'Starred', icon: 'star' },
+            { id: 'ocr', label: 'OCR', icon: 'document-text-outline' },
+            { id: 'vision', label: 'Vision AI', icon: 'sparkles' },
+          ] as const
+        ).map((qf) => {
+          const isSelected = quickFilter === qf.id;
+          return (
+            <TouchableOpacity
+              key={qf.id}
+              onPress={() => setQuickFilter(qf.id)}
+              style={[
+                styles.quickFilterChip,
+                {
+                  backgroundColor: isSelected ? `${theme.colors.primary}20` : theme.colors.surfaceVariant,
+                  borderColor: isSelected ? theme.colors.primary : 'transparent',
+                },
+              ]}
+            >
+              <Icon
+                name={qf.icon}
+                size={12}
+                color={isSelected ? theme.colors.primary : theme.colors.textSecondary}
+                style={{ marginRight: 4 }}
+              />
+              <Text
+                style={[
+                  styles.quickFilterChipText,
+                  { color: isSelected ? theme.colors.primary : theme.colors.textSecondary },
+                ]}
+              >
+                {qf.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* 3. Subfolder Filter Chips */}
@@ -1254,5 +1419,90 @@ const styles = StyleSheet.create({
     right: 6,
     borderRadius: 12,
     padding: 1,
+  },
+  reanalyzeHeaderBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  statsSummaryBarContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  statsSummaryCard: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  statsSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statSummaryCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statSummaryValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statSummaryLabel: {
+    fontSize: 9,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  statDivider: {
+    width: 1,
+    height: 20,
+  },
+  microBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  microBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  entityMiniChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    maxWidth: '48%',
+  },
+  entityMiniChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  tagMiniChip: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    maxWidth: '48%',
+  },
+  tagMiniChipText: {
+    fontSize: 9,
+    fontWeight: '500',
+  },
+  quickFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  quickFilterChipText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

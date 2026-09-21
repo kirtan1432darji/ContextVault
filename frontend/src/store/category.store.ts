@@ -15,16 +15,21 @@ interface CategoryState {
   isLoading: boolean;
   error: string | null;
 
+  folderStats: Record<string, FolderStatistics>;
+
   // Actions
   setCategories: (categories: CategoryModel[]) => void;
   setFolderSortBy: (sort: 'count' | 'recent') => void;
   loadCategories: () => Promise<void>;
+  refreshCategories: () => Promise<void>;
   selectCategory: (categoryId: string | null) => void;
   setCategoryCount: (categoryId: string, count: number) => void;
   toggleExpandFolder: (id: string) => void;
   updateFolderCover: (folderId: string, coverUri: string) => Promise<void>;
+  updateFolderCounts: (folderId: string) => Promise<void>;
   rebuildSmartFolders: () => Promise<void>;
   getFolderStats: (folderId: string) => Promise<FolderStatistics>;
+  loadFolderStats: (folderId: string) => Promise<FolderStatistics>;
 
   // Manual folder management
   createFolder: (
@@ -54,6 +59,7 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   folderSortBy: 'count',
   isLoading: false,
   error: null,
+  folderStats: {},
 
   setCategories: (categories: CategoryModel[]) => set({ categories }),
 
@@ -67,6 +73,10 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     } catch (err: any) {
       set({ error: err?.message || 'Failed to load categories', isLoading: false });
     }
+  },
+
+  refreshCategories: async () => {
+    return get().loadCategories();
   },
 
   selectCategory: (categoryId: string | null) => set({ selectedCategoryId: categoryId }),
@@ -97,6 +107,12 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     }));
   },
 
+  updateFolderCounts: async (folderId: string) => {
+    await categoryRepository.updateFolderCounts(folderId);
+    const all = await categoryRepository.getAllCategories();
+    set({ categories: all });
+  },
+
   rebuildSmartFolders: async () => {
     set({ isLoading: true });
     try {
@@ -110,6 +126,17 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
 
   getFolderStats: async (folderId: string) => {
     return categoryRepository.getFolderStatistics(folderId);
+  },
+
+  loadFolderStats: async (folderId: string) => {
+    const stats = await categoryRepository.getFolderStatistics(folderId);
+    set((state) => ({
+      folderStats: {
+        ...state.folderStats,
+        [folderId]: stats,
+      },
+    }));
+    return stats;
   },
 
   createFolder: async (name, parentId = null, iconName = 'folder-outline', colorHex = '6366F1') => {

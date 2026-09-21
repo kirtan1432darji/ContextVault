@@ -9,3 +9,5 @@ export * from './classificationCacheRepository';
 export * from './chatRepository';
 export * from './searchRepository';
 export * from './VisionRepository';
+export * from './ChatHistoryRepository';
+export * from './QueueRepository';

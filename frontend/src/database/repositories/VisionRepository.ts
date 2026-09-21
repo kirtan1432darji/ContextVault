@@ -1,6 +1,7 @@
 import { databaseService } from '../database';
 import { VisionCacheRecord, VisionStructuredOutput } from '../../vision/types';
 import { classificationCacheRepository } from './classificationCacheRepository';
+import { tagRepository } from './tagRepository';
 
 export class VisionRepository {
   /**
@@ -86,6 +87,38 @@ export class VisionRepository {
       source: 'local',
       cachedAt: now,
     });
+
+    // 3. Save tags into tags and screenshot_tags table (Sprint P1-B Phase 5)
+    if (Array.isArray(tags) && tags.length > 0) {
+      for (const t of tags) {
+        if (!t || typeof t !== 'string') continue;
+        const cleanTag = t.trim().toLowerCase();
+        if (!cleanTag) continue;
+        const tagId = `tag_${cleanTag.replace(/[^a-z0-9]/g, '_')}`;
+        try {
+          await tagRepository.addTag({ id: tagId, name: cleanTag, colorHex: '6366F1' });
+          await tagRepository.linkScreenshotTag(screenshotId, tagId);
+        } catch (tagErr) {
+          console.warn(`[VisionRepository] Failed to link tag ${cleanTag}:`, tagErr);
+        }
+      }
+    }
+
+    // 4. Update screenshots table with confidence, detected app, and timestamp
+    const normConf = structured.confidence > 1 ? structured.confidence / 100 : structured.confidence;
+    try {
+      await databaseService.executeCommand(
+        `UPDATE screenshots SET 
+          confidence = ?, 
+          last_scanned_at = ?,
+          detected_app = coalesce(?, detected_app),
+          classification_source = 'local'
+         WHERE id = ?`,
+        [normConf, now, appName !== 'Unknown' ? appName : null, screenshotId]
+      );
+    } catch (scErr) {
+      console.warn(`[VisionRepository] Failed to update screenshot row for ${screenshotId}:`, scErr);
+    }
   }
 
   /**

@@ -6,6 +6,9 @@ export interface ExtractedEntitiesDto {
   merchants: string[];
   projectNames: string[];
   dates: string[];
+  merchant?: string;
+  amount?: string | number;
+  [key: string]: any;
 }
 
 export interface ClassificationResultModel {

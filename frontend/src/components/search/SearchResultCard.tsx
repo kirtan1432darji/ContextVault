@@ -62,7 +62,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
 
         {/* Right Details */}
         <View style={styles.detailsContainer}>
-          {/* Top Row: Folder Path + Date */}
+          {/* Top Row: Folder Path + Score + Date */}
           <View style={styles.topRow}>
             <View style={[styles.folderBadge, { backgroundColor: `${theme.colors.primary}15` }]}>
               <Icon name="folder-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
@@ -70,9 +70,17 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
                 {folderPathStr}
               </Text>
             </View>
-            <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
-              {formattedDate}
-            </Text>
+            <View style={styles.topRightRow}>
+              {item.score !== undefined && item.score > 0 && (
+                <View style={[styles.scoreBadge, { backgroundColor: `${theme.colors.accent}18` }]}>
+                  <Icon name="speedometer-outline" size={10} color={theme.colors.accent} style={{ marginRight: 2 }} />
+                  <Text style={[styles.scoreText, { color: theme.colors.accent }]}>{item.score}</Text>
+                </View>
+              )}
+              <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
+                {formattedDate}
+              </Text>
+            </View>
           </View>
 
           {/* Title */}
@@ -192,6 +200,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
+  },
+  topRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  scoreText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   folderBadge: {
     flexDirection: 'row',

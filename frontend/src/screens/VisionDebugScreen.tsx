@@ -23,6 +23,7 @@ import { visionRepository } from '../database/repositories/VisionRepository';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { VisionInferenceResult, VisionScene } from '../vision/types';
 import { useVisionStore } from '../store/vision.store';
+import { getEndpointUrl } from '../config/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VisionDebug'>;
 
@@ -204,7 +205,7 @@ export const VisionDebugScreen: React.FC<Props> = ({ navigation }) => {
                       {k.provider.toUpperCase()} • {k.model}
                     </Text>
                     <Text style={[styles.keyMasked, { color: theme.colors.textMuted }]}>
-                      {k.endpoint || 'http://10.122.196.152:8000/api/vision/analyze'}
+                      {k.endpoint || getEndpointUrl('/api/vision/analyze')}
                     </Text>
                   </View>
                 </View>

@@ -29,6 +29,7 @@ import { EmptyStateView } from '../components/EmptyStateView';
 import { FeatureLockCard } from '../components/FeatureLockCard';
 import { useAuthStore } from '../store/auth.store';
 import { GlobalSearchResultItem, SavedSearchItem } from '../models';
+import { searchSuggestionService } from '../services/search/SearchSuggestionService';
 
 type RouteProps = RouteProp<RootStackParamList, 'GlobalAISearch'>;
 
@@ -72,12 +73,29 @@ export const GlobalAISearchScreen: React.FC = () => {
   const setVoiceModalOpen = useSearchStore((s) => s.setVoiceModalOpen);
 
   const [viewMode, setViewMode] = useState<'relevance' | 'grouped'>('relevance');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // Check if current query is saved
   const isCurrentQuerySaved = React.useMemo(() => {
     if (!query.trim()) return false;
     return savedSearches.some((s) => s.query.toLowerCase() === query.trim().toLowerCase());
   }, [query, savedSearches]);
+
+  useEffect(() => {
+    let active = true;
+    if (query.trim().length >= 1) {
+      searchSuggestionService.getSuggestions(query, 5).then((items) => {
+        if (active) {
+          setSuggestions(items.filter((item) => item.toLowerCase() !== query.trim().toLowerCase()));
+        }
+      });
+    } else {
+      setSuggestions([]);
+    }
+    return () => {
+      active = false;
+    };
+  }, [query]);
 
   useEffect(() => {
     loadRecentAndSavedSearches();
@@ -288,6 +306,33 @@ export const GlobalAISearchScreen: React.FC = () => {
       ) : (
         /* Active Query: Filters, AI Answer Card, Results */
         <View style={styles.activeContentContainer}>
+          {/* Dynamic Autocomplete Suggestions */}
+          {suggestions.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.suggestionRow}
+              contentContainerStyle={styles.suggestionRowContent}
+            >
+              {suggestions.map((sug, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSelectSuggestion(sug)}
+                  style={[
+                    styles.suggestionChip,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                >
+                  <Icon name="search-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                  <Text style={[styles.suggestionChipText, { color: theme.colors.textPrimary }]}>{sug}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
           {/* Material 3 Filter Chips */}
           <SearchFilterBar
             filters={activeFilters}
@@ -605,6 +650,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
+  },
+  suggestionRow: {
+    maxHeight: 38,
+    marginVertical: 4,
+  },
+  suggestionRowContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  suggestionChipText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

@@ -11,6 +11,7 @@ import {
   DetectedEntity,
   TextToken,
 } from '../models';
+import { semanticSearchService } from './search/SemanticSearchService';
 
 export interface ParsedNaturalQuery {
   rawQuery: string;
@@ -220,38 +221,48 @@ export class GlobalSearchService {
       isOffline = true;
     }
 
-    // 2. Query SQLite locally across multiple indices
-    const localItems = await this.queryLocalDatabase(raw, parsed, filters);
+    // 2. Query SQLite locally with 7-signal SemanticSearchService
+    let enrichedResults: GlobalSearchResultItem[] = [];
+    try {
+      enrichedResults = await semanticSearchService.search(raw, {
+        query: raw,
+        folderId: filters.folderId,
+        categoryId: filters.folderId,
+        favorite: filters.onlyFavorites,
+        minAmount: parsed.minAmount,
+        maxAmount: parsed.maxAmount,
+        appSource: filters.sourceApp !== 'all' ? filters.sourceApp : parsed.detectedApp,
+        dateFrom: parsed.dateFilter === 'today' ? new Date().toISOString().split('T')[0] : undefined,
+      });
+    } catch {
+      const localItems = await this.queryLocalDatabase(raw, parsed, filters);
+      const queryTokens = this.extractQueryTokens(raw, parsed);
+      enrichedResults = localItems.map((item) => {
+        const { snippet, matchReason, score, matchedField } = this.calculateMatchDetails(
+          item,
+          queryTokens,
+          parsed
+        );
+        const highlightedSnippet = this.highlightSnippet(snippet, queryTokens);
+        const entities = this.extractEntitiesFromItem(item);
 
-    // 3. Highlight matched keywords & rank results
-    const queryTokens = this.extractQueryTokens(raw, parsed);
-    const enrichedResults: GlobalSearchResultItem[] = localItems.map((item) => {
-      const { snippet, matchReason, score, matchedField } = this.calculateMatchDetails(
-        item,
-        queryTokens,
-        parsed
-      );
-      const highlightedSnippet = this.highlightSnippet(snippet, queryTokens);
-      const entities = this.extractEntitiesFromItem(item);
+        return {
+          ...item,
+          matchedSnippet: snippet,
+          matchedField,
+          matchReason,
+          score,
+          highlightedSnippet,
+          detectedEntities: entities,
+        };
+      });
+      enrichedResults.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
 
-      return {
-        ...item,
-        matchedSnippet: snippet,
-        matchedField,
-        matchReason,
-        score,
-        highlightedSnippet,
-        detectedEntities: entities,
-      };
-    });
-
-    // 4. Sort by score descending, then by date descending
-    enrichedResults.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-
-    // 5. Save recent search entry in SQLite asynchronously
+    // 3. Save recent search entry in SQLite asynchronously
     searchRepository.saveRecentSearch(raw, enrichedResults.length).catch(() => {});
 
     // 6. Group results by category

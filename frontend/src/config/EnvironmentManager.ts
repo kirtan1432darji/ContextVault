@@ -1,5 +1,6 @@
 import { StorageService } from '../utils/storage';
 import { BackendConnectionManager } from '../services/BackendConnectionManager';
+import { DEFAULT_FALLBACK_URL, getApiBaseUrl } from './api';
 
 export type AppEnvironment = 'development' | 'local_release' | 'production';
 
@@ -25,7 +26,7 @@ export const DevelopmentEnvironment: EnvironmentConfig = {
   appName: 'ContextVault (Dev)',
   appVersion: '1.0.0',
   buildNumber: 1,
-  apiBaseUrl: 'http://10.122.196.152:8000',
+  apiBaseUrl: DEFAULT_FALLBACK_URL,
   debugFlags: {
     enableDeveloperMode: true,
     enableDemoMode: true,
@@ -41,7 +42,7 @@ export const LocalReleaseEnvironment: EnvironmentConfig = {
   appName: 'ContextVault',
   appVersion: '1.0.0',
   buildNumber: 1,
-  apiBaseUrl: 'http://10.122.196.152:8000',
+  apiBaseUrl: DEFAULT_FALLBACK_URL,
   debugFlags: {
     enableDeveloperMode: false,
     enableDemoMode: false,
@@ -143,7 +144,7 @@ class EnvironmentManagerClass {
   }
 
   /**
-   * Returns active base URL (e.g. "http://10.122.196.152:8000").
+   * Returns active base URL (e.g. "http://10.33.95.152:8000").
    * Delegates directly to BackendConnectionManager as the single source of truth.
    */
   public getApiBaseUrl(): string {
@@ -151,7 +152,7 @@ class EnvironmentManagerClass {
   }
 
   /**
-   * Returns normalized API URL with /api suffix (e.g. "http://10.122.196.152:8000/api").
+   * Returns normalized API URL with /api suffix (e.g. "http://10.33.95.152:8000/api").
    * Delegates directly to BackendConnectionManager as the single source of truth.
    */
   public getApiUrl(): string {

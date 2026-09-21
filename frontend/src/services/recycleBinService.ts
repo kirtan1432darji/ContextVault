@@ -2,6 +2,7 @@ import { screenshotRepository } from '../database/repositories/screenshotReposit
 import { categoryRepository } from '../database/repositories/categoryRepository';
 import { ScreenshotModel } from '../models';
 import { loggerService } from './loggerService';
+import { aiProcessingQueue } from './background';
 
 export class RecycleBinService {
   /**
@@ -55,6 +56,13 @@ export class RecycleBinService {
       await screenshotRepository.restoreScreenshot(id);
       await categoryRepository.recalculateAllCounts();
       loggerService.info('Storage', `Screenshot ${id} restored from Recycle Bin.`);
+
+      // Enqueue restored screenshot with High priority for background organization
+      try {
+        await aiProcessingQueue.enqueue(id, 'high');
+      } catch (aiErr) {
+        loggerService.warn('Storage', 'Failed to enqueue restored screenshot for AI processing:', aiErr);
+      }
     } catch (err) {
       loggerService.error('Storage', `Failed to restore screenshot ${id}`, err);
       throw err;
@@ -66,9 +74,20 @@ export class RecycleBinService {
    */
   async restoreAll(): Promise<number> {
     try {
+      const deleted = await screenshotRepository.getDeletedScreenshots();
+      const ids = deleted.map((s) => s.id);
       const count = await screenshotRepository.restoreAllScreenshots();
       await categoryRepository.recalculateAllCounts();
       loggerService.info('Storage', `Restored all ${count} screenshots from Recycle Bin.`);
+
+      if (ids.length > 0) {
+        try {
+          await aiProcessingQueue.enqueueBatch(ids, 'high');
+        } catch (aiErr) {
+          loggerService.warn('Storage', 'Failed to enqueue restored batch for AI processing:', aiErr);
+        }
+      }
+
       return count;
     } catch (err) {
       loggerService.error('Storage', 'Failed to restore all screenshots', err);

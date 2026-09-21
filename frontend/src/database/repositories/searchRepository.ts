@@ -14,6 +14,9 @@ export interface SavedSearchItem {
   iconName: string;
   colorHex: string;
   createdAt: string;
+  filters?: any;
+  lastUsedAt?: string;
+  useCount?: number;
 }
 
 export class SearchRepository {
@@ -103,6 +106,18 @@ export class SearchRepository {
     }
   }
 
+  private async ensureSavedSearchColumns(): Promise<void> {
+    try {
+      await databaseService.executeCommand(`ALTER TABLE saved_searches ADD COLUMN filters_json TEXT`);
+    } catch {}
+    try {
+      await databaseService.executeCommand(`ALTER TABLE saved_searches ADD COLUMN last_used_at TEXT`);
+    } catch {}
+    try {
+      await databaseService.executeCommand(`ALTER TABLE saved_searches ADD COLUMN use_count INTEGER DEFAULT 0`);
+    } catch {}
+  }
+
   /**
    * Pins or saves a search for quick 1-tap access.
    */
@@ -110,7 +125,8 @@ export class SearchRepository {
     query: string,
     title?: string,
     iconName = 'bookmark-outline',
-    colorHex = '#6366F1'
+    colorHex = '#6366F1',
+    filters?: any
   ): Promise<void> {
     const trimmed = (query || '').trim();
     if (!trimmed) return;
@@ -118,6 +134,24 @@ export class SearchRepository {
     const id = `saved_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const displayTitle = title || trimmed;
     const now = new Date().toISOString();
+
+    if (filters !== undefined) {
+      await this.ensureSavedSearchColumns();
+      const filtersJson = JSON.stringify(filters);
+      try {
+        await databaseService.executeCommand(
+          `INSERT INTO saved_searches (id, query, title, icon_name, color_hex, created_at, filters_json, last_used_at, use_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+           ON CONFLICT(query) DO UPDATE SET
+             title = excluded.title,
+             icon_name = excluded.icon_name,
+             color_hex = excluded.color_hex,
+             filters_json = excluded.filters_json`,
+          [id, trimmed, displayTitle, iconName, colorHex, now, filtersJson, now]
+        );
+        return;
+      } catch {}
+    }
 
     try {
       await databaseService.executeCommand(
@@ -140,23 +174,46 @@ export class SearchRepository {
   async getSavedSearches(): Promise<SavedSearchItem[]> {
     try {
       const rows = await databaseService.executeQuery(
-        `SELECT id, query, title, icon_name, color_hex, created_at
-         FROM saved_searches
-         ORDER BY created_at DESC`
+        `SELECT * FROM saved_searches ORDER BY created_at DESC`
       );
 
-      return rows.map((r: any) => ({
-        id: r.id,
-        query: r.query,
-        title: r.title || r.query,
-        iconName: r.icon_name || 'bookmark-outline',
-        colorHex: r.color_hex || '#6366F1',
-        createdAt: r.created_at,
-      }));
+      return rows.map((r: any) => {
+        let filters: any = undefined;
+        try {
+          if (r.filters_json) filters = JSON.parse(r.filters_json);
+        } catch {}
+
+        return {
+          id: r.id,
+          query: r.query,
+          title: r.title || r.query,
+          iconName: r.icon_name || 'bookmark-outline',
+          colorHex: r.color_hex || '#6366F1',
+          createdAt: r.created_at,
+          filters,
+          lastUsedAt: r.last_used_at,
+          useCount: r.use_count || 0,
+        };
+      });
     } catch (err) {
       console.warn('[SearchRepository] Failed to get saved searches:', err);
       return [];
     }
+  }
+
+  /**
+   * Increments the use count of a saved search and updates last_used_at.
+   */
+  async incrementSavedSearchUse(idOrQuery: string): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      await databaseService.executeCommand(
+        `UPDATE saved_searches 
+         SET use_count = coalesce(use_count, 0) + 1, last_used_at = ? 
+         WHERE id = ? OR query = ?`,
+        [now, idOrQuery, idOrQuery]
+      );
+    } catch {}
   }
 
   /**
@@ -178,7 +235,7 @@ export class SearchRepository {
    */
   async updateSavedSearch(
     id: string,
-    updates: { title?: string; iconName?: string; colorHex?: string }
+    updates: { title?: string; iconName?: string; colorHex?: string; filters?: any }
   ): Promise<void> {
     const fields: string[] = [];
     const values: any[] = [];
@@ -194,6 +251,10 @@ export class SearchRepository {
     if (updates.colorHex !== undefined) {
       fields.push('color_hex = ?');
       values.push(updates.colorHex);
+    }
+    if (updates.filters !== undefined) {
+      fields.push('filters_json = ?');
+      values.push(JSON.stringify(updates.filters));
     }
 
     if (fields.length === 0) return;
@@ -218,14 +279,16 @@ export class SearchRepository {
 
     try {
       const rows = await databaseService.executeQuery(
-        `SELECT id, query, title, icon_name, color_hex, created_at
-         FROM saved_searches
-         WHERE query = ?
-         LIMIT 1`,
+        `SELECT * FROM saved_searches WHERE query = ? LIMIT 1`,
         [trimmed]
       );
       if (!rows || rows.length === 0) return null;
       const r = rows[0];
+      let filters: any = undefined;
+      try {
+        if (r.filters_json) filters = JSON.parse(r.filters_json);
+      } catch {}
+
       return {
         id: r.id,
         query: r.query,
@@ -233,6 +296,9 @@ export class SearchRepository {
         iconName: r.icon_name || 'bookmark-outline',
         colorHex: r.color_hex || '#6366F1',
         createdAt: r.created_at,
+        filters,
+        lastUsedAt: r.last_used_at,
+        useCount: r.use_count || 0,
       };
     } catch (err) {
       console.warn('[SearchRepository] Error getSavedSearchByQuery:', err);
@@ -248,14 +314,16 @@ export class SearchRepository {
 
     try {
       const rows = await databaseService.executeQuery(
-        `SELECT id, query, title, icon_name, color_hex, created_at
-         FROM saved_searches
-         WHERE id = ?
-         LIMIT 1`,
+        `SELECT * FROM saved_searches WHERE id = ? LIMIT 1`,
         [id]
       );
       if (!rows || rows.length === 0) return null;
       const r = rows[0];
+      let filters: any = undefined;
+      try {
+        if (r.filters_json) filters = JSON.parse(r.filters_json);
+      } catch {}
+
       return {
         id: r.id,
         query: r.query,
@@ -263,6 +331,9 @@ export class SearchRepository {
         iconName: r.icon_name || 'bookmark-outline',
         colorHex: r.color_hex || '#6366F1',
         createdAt: r.created_at,
+        filters,
+        lastUsedAt: r.last_used_at,
+        useCount: r.use_count || 0,
       };
     } catch (err) {
       console.warn('[SearchRepository] Error getSavedSearchById:', err);

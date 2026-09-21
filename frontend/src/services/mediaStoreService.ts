@@ -12,6 +12,7 @@ import { FileUtils } from '../utils/fileUtils';
 import { MediaStorePathResolver } from '../utils/MediaStorePathResolver';
 import { DetectedScreenshotEvent, ScreenshotModel, PendingScreenshot } from '../models';
 import { loggerService } from './loggerService';
+import { aiProcessingQueue } from './background';
 
 export interface MediaStoreScanResult {
   scanned: number;
@@ -92,6 +93,7 @@ export class MediaStoreService {
     let scanned = 0;
     let newItems = 0;
     let errors = 0;
+    const newScreenshotIds: string[] = [];
 
     try {
       const hasPermission = await this.checkAndRequestPermissions();
@@ -205,6 +207,7 @@ export class MediaStoreService {
           };
           await pendingScreenshotRepository.insertPending(pendingItem);
 
+          newScreenshotIds.push(screenshotId);
           newItems++;
         } catch (itemErr) {
           errors++;
@@ -216,6 +219,15 @@ export class MediaStoreService {
       if (newItems > 0) {
         await categoryRepository.updateAllAncestorCounts('unsorted');
         await useCategoryStore.getState().loadCategories();
+      }
+
+      // 6. Enqueue newly added screenshots to Background AI Processing Queue (Sprint P5-A) with Medium priority
+      if (newScreenshotIds.length > 0) {
+        try {
+          await aiProcessingQueue.enqueueBatch(newScreenshotIds, 'medium');
+        } catch (queueErr) {
+          loggerService.warn('MediaStore', 'Failed to enqueue new items to AI processing queue:', queueErr);
+        }
       }
 
       const allScreenshots = await screenshotRepository.getAllScreenshots();

@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.util.Size;
 import androidx.annotation.NonNull;
 
@@ -159,7 +160,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
             String[] selectionArgs = getScreenshotSelectionArgs();
             int safeLimit = Math.max(1, limit);
             int safeOffset = Math.max(0, offset);
-            String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT " + safeLimit + " OFFSET " + safeOffset;
+            String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
 
             try (Cursor cursor = reactContext.getContentResolver().query(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -169,14 +170,22 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     sortOrder
             )) {
                 if (cursor != null) {
+                    int currentIndex = 0;
                     while (cursor.moveToNext()) {
-                        WritableMap map = parseCursorRow(cursor);
-                        if (map != null) {
-                            array.pushMap(map);
+                        if (currentIndex >= safeOffset && array.size() < safeLimit) {
+                            WritableMap map = parseCursorRow(cursor);
+                            if (map != null) {
+                                array.pushMap(map);
+                            }
+                        }
+                        currentIndex++;
+                        if (array.size() >= safeLimit) {
+                            break;
                         }
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.w("MediaObserver", "Strict query failed, attempting fallback: " + e.getMessage());
             }
 
             // Fallback without SQL selection if strict selection returned 0 on older Android or custom OEM
@@ -186,7 +195,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                         projection,
                         null,
                         null,
-                        MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT " + Math.max(50, safeLimit * 2)
+                        sortOrder
                 )) {
                     if (fallbackCursor != null) {
                         while (fallbackCursor.moveToNext() && array.size() < safeLimit) {
@@ -196,7 +205,8 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                             }
                         }
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    Log.w("MediaObserver", "Fallback query failed: " + e.getMessage());
                 }
             }
 
@@ -249,7 +259,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
         String[] projection = getProjection();
         String selection = getScreenshotSelection();
         String[] selectionArgs = getScreenshotSelectionArgs();
-        String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT 5";
+        String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
 
         try (Cursor cursor = reactContext.getContentResolver().query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -259,7 +269,9 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                 sortOrder
         )) {
             if (cursor != null) {
-                while (cursor.moveToNext()) {
+                int count = 0;
+                while (cursor.moveToNext() && count < 10) {
+                    count++;
                     WritableMap map = parseCursorRow(cursor);
                     if (map != null) {
                         String assetId = map.getString("deviceAssetId");
@@ -275,7 +287,8 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w("MediaObserver", "queryLatestScreenshot failed: " + e.getMessage());
         }
         return null;
     }
@@ -422,46 +435,7 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
      * and finally to composite SHA-256 fallback if file cannot be read directly.
      */
     private String computeSHA256Hash(Uri contentUri, String filePath, long fileSize, long dateAdded) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            InputStream is = null;
-
-            try {
-                ContentResolver resolver = reactContext.getContentResolver();
-                is = resolver.openInputStream(contentUri);
-            } catch (Exception ignored) {
-            }
-
-            if (is == null) {
-                File file = new File(filePath);
-                if (file.exists() && file.canRead()) {
-                    is = new FileInputStream(file);
-                }
-            }
-
-            if (is != null) {
-                try {
-                    while ((read = is.read(buffer)) > 0) {
-                        digest.update(buffer, 0, read);
-                    }
-                } finally {
-                    is.close();
-                }
-
-                byte[] hashBytes = digest.digest();
-                StringBuilder hex = new StringBuilder();
-                for (byte b : hashBytes) {
-                    hex.append(String.format("%02x", b));
-                }
-                return hex.toString();
-            }
-        } catch (Exception ignored) {
-        }
-
-        // Composite hash fallback if raw file cannot be opened
-        return computeCompositeSHA256(filePath + "_" + fileSize + "_" + dateAdded);
+        return computeCompositeSHA256((filePath != null ? filePath : "") + "_" + fileSize + "_" + dateAdded);
     }
 
     private String computeCompositeSHA256(String input) {

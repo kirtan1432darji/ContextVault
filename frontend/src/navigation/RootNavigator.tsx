@@ -11,6 +11,7 @@ import {
   FolderDetailScreen,
   FolderContextScreen,
   ContextAIChatScreen,
+  ContextChatScreen,
   ScreenshotDetailScreen,
   PrivacyPolicyScreen,
   ScannerStatusScreen,
@@ -24,6 +25,8 @@ import {
   BackendConnectionScreen,
   VisionDebugScreen,
   ScreenshotDiagnosticsScreen,
+  AIQueueScreen,
+  MemoryTimelineScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -76,7 +79,12 @@ export const RootNavigator: React.FC = () => {
           />
           <Stack.Screen
             name="ContextAIChat"
-            component={ContextAIChatScreen}
+            component={ContextChatScreen}
+            options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="ContextChat"
+            component={ContextChatScreen}
             options={{ animation: 'slide_from_bottom' }}
           />
           <Stack.Screen
@@ -132,6 +140,16 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="ScreenshotDiagnostics"
             component={ScreenshotDiagnosticsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="AIQueue"
+            component={AIQueueScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="MemoryTimeline"
+            component={MemoryTimelineScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>

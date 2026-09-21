@@ -34,10 +34,10 @@ function syncEnv() {
 
   const envData = parseEnv(path.resolve(rootDir, selectedFile));
   const output = {
-    apiBaseUrl: envData.API_BASE_URL || 'http://10.122.196.152:8000',
+    apiBaseUrl: envData.API_BASE_URL || 'http://10.33.95.152:8000',
     environment: envData.ENVIRONMENT || (isProdTarget ? 'production' : 'local_release'),
     visionProvider: envData.VISION_PROVIDER || 'local',
-    visionServerUrl: envData.VISION_SERVER_URL || 'http://10.122.196.152:8000/api/vision',
+    visionServerUrl: envData.VISION_SERVER_URL || 'http://10.33.95.152:8000/api/vision',
     visionTimeout: parseInt(envData.VISION_TIMEOUT || '120', 10),
     resolvedFrom: selectedFile,
     updatedAt: new Date().toISOString(),

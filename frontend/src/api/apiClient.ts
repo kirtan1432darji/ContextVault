@@ -258,12 +258,21 @@ class ApiClient {
     BackendConnectionManager.setBaseUrl(url);
     this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
     useSettingsStore.getState().setBackendUrl(url);
+    // Sync to centralized api config and AsyncStorage
+    try {
+      const { setApiBaseUrl } = require('../config/api');
+      setApiBaseUrl(url);
+    } catch {}
   }
 
   public resetBaseUrl(): void {
     BackendConnectionManager.resetBaseUrl();
     this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
     useSettingsStore.getState().setBackendUrl(BackendConnectionManager.getBaseUrl());
+    try {
+      const { resetApiBaseUrl } = require('../config/api');
+      resetApiBaseUrl();
+    } catch {}
   }
 
   private unwrap<T>(responseData: any): T {

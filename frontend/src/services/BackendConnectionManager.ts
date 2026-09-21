@@ -1,4 +1,5 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from '../utils/storage';
 
 export interface PingResult {
@@ -20,12 +21,14 @@ export interface StartupHealthResult {
   errorMessage?: string;
 }
 
+import { DEFAULT_FALLBACK_URL, STORAGE_KEY_BACKEND_URL } from '../config/api';
+
 let generatedEnv: { apiBaseUrl?: string; environment?: string } = {};
 try {
   generatedEnv = require('../config/env.generated.json');
 } catch {}
 
-const DEFAULT_DEV_FALLBACK_URL = 'http://10.122.196.152:8000';
+const DEFAULT_DEV_FALLBACK_URL = DEFAULT_FALLBACK_URL;
 
 export class BackendConnectionManagerClass {
   private defaultUrl: string;
@@ -55,7 +58,7 @@ export class BackendConnectionManagerClass {
   /**
    * Normalizes backend URL:
    * Trims whitespace, removes trailing slashes, strips trailing '/api'.
-   * Example: "http://10.122.196.152:8000/api/" -> "http://10.122.196.152:8000"
+   * Example: "http://10.33.95.152:8000/api/" -> "http://10.33.95.152:8000"
    */
   public normalizeUrl(url: string): string {
     if (!url || typeof url !== 'string') return this.defaultUrl;
@@ -87,7 +90,7 @@ export class BackendConnectionManagerClass {
 
   /**
    * Returns currently active API URL (with '/api' suffix).
-   * Example: "http://10.122.196.152:8000/api"
+   * Example: "http://10.33.95.152:8000/api"
    */
   public getApiUrl(): string {
     const base = this.getBaseUrl();
@@ -95,7 +98,7 @@ export class BackendConnectionManagerClass {
   }
 
   /**
-   * Saves custom backend URL into MMKV secure storage.
+   * Saves custom backend URL into MMKV secure storage and AsyncStorage.
    * Validates format before persisting.
    */
   public setBaseUrl(url: string): void {
@@ -105,13 +108,19 @@ export class BackendConnectionManagerClass {
     }
     const cleanUrl = this.normalizeUrl(trimmed);
     StorageService.setBackendUrlOverride(cleanUrl);
+    try {
+      AsyncStorage.setItem(STORAGE_KEY_BACKEND_URL, cleanUrl);
+    } catch {}
   }
 
   /**
-   * Resets backend URL to .env.development default by removing MMKV override.
+   * Resets backend URL to default by removing MMKV and AsyncStorage override.
    */
   public resetBaseUrl(): void {
     StorageService.clearBackendUrlOverride();
+    try {
+      AsyncStorage.removeItem(STORAGE_KEY_BACKEND_URL);
+    } catch {}
   }
 
   /**
@@ -128,35 +137,41 @@ export class BackendConnectionManagerClass {
   public async ping(targetUrl?: string): Promise<PingResult> {
     const rawBase = targetUrl || this.getBaseUrl();
     const cleanBase = this.normalizeUrl(rawBase);
-    const healthUrl = `${cleanBase}/api/health`;
-
+    const candidateUrls = [`${cleanBase}/health`, `${cleanBase}/api/health`];
     const startTime = Date.now();
-    try {
-      const response = await axios.get(healthUrl, {
-        timeout: 5000,
-        headers: {
-          Accept: 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-      });
 
-      const latencyMs = Math.max(1, Date.now() - startTime);
-      const resData = response.data?.data || response.data || {};
+    for (let i = 0; i < candidateUrls.length; i++) {
+      const healthUrl = candidateUrls[i];
+      try {
+        const response = await axios.get(healthUrl, {
+          timeout: 5000,
+          headers: {
+            Accept: 'application/json',
+            'Cache-Control': 'no-cache',
+          },
+        });
 
-      return {
-        isHealthy: true,
-        status: 'Connected',
-        latencyMs,
-        version: resData.version || '1.0.0',
-        database:
-          resData.database ||
-          (resData.status === 'ok' || resData.status === 'healthy' ? 'connected' : 'unknown'),
-        baseUrl: cleanBase,
-      };
-    } catch (err: any) {
-      const latencyMs = Math.max(1, Date.now() - startTime);
-      let status: 'Connected' | 'Offline' | 'Timeout' | 'Unauthorized' = 'Offline';
-      let errorMessage = `Cannot connect to ContextVault backend at ${cleanBase}.`;
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        const resData = response.data?.data || response.data || {};
+
+        return {
+          isHealthy: true,
+          status: 'Connected',
+          latencyMs,
+          version: resData.version || '1.0.0',
+          database:
+            resData.database ||
+            (resData.status === 'ok' || resData.status === 'healthy' ? 'connected' : 'unknown'),
+          baseUrl: cleanBase,
+        };
+      } catch (err: any) {
+        if (err.response?.status === 404 && i < candidateUrls.length - 1) {
+          continue;
+        }
+
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        let status: 'Connected' | 'Offline' | 'Timeout' | 'Unauthorized' = 'Offline';
+        let errorMessage = `Cannot connect to ContextVault backend at ${cleanBase}.`;
 
       if (err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')) {
         status = 'Timeout';
@@ -172,16 +187,27 @@ export class BackendConnectionManagerClass {
         errorMessage = err.message;
       }
 
-      return {
-        isHealthy: false,
-        status,
-        latencyMs,
-        version: 'unknown',
-        database: 'disconnected',
-        baseUrl: cleanBase,
-        errorMessage,
-      };
+        return {
+          isHealthy: false,
+          status,
+          latencyMs,
+          version: 'unknown',
+          database: 'disconnected',
+          baseUrl: cleanBase,
+          errorMessage,
+        };
+      }
     }
+
+    return {
+      isHealthy: false,
+      status: 'Offline',
+      latencyMs: Math.max(1, Date.now() - startTime),
+      version: 'unknown',
+      database: 'disconnected',
+      baseUrl: cleanBase,
+      errorMessage: `Cannot connect to ContextVault backend at ${cleanBase}.`,
+    };
   }
 
   /**

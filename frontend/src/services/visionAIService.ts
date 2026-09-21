@@ -90,7 +90,7 @@ export class VisionAIService {
    * 1. SHA-256 cache check (never re-analyze duplicate images).
    * 2. Quick 5s health check (aborts early with friendly message if offline).
    * 3. Image preprocessing (longest edge 1024px, JPEG quality 85%, EXIF stripped).
-   * 4. Streaming upload to Ubuntu gateway: POST http://10.122.196.152:8000/api/vision/analyze
+   * 4. Streaming upload to Ubuntu gateway: POST /api/vision/analyze
    * 5. Parse structured JSON (category, confidence, summary, tags, entities).
    * 6. Save metadata to SQLite (vision_cache & classification_cache).
    * 7. Automatic Smart Folder update (category, cover, confidence, count, stores).
@@ -172,13 +172,80 @@ export class VisionAIService {
         return Result.failure('Invalid Vision Response: Empty data returned', 'INVALID_RESPONSE');
       }
 
-      // 5. Parse and normalize structured JSON
+      // 5. Parse and normalize structured JSON (handles standard and extracted_data formats)
+      const extractedData = raw.extracted_data || {};
+      const points: string[] = Array.isArray(extractedData.points) ? extractedData.points : [];
+      const title: string = extractedData.title || raw.title || '';
+
+      const entities: Record<string, any> =
+        typeof raw.entities === 'object' && raw.entities !== null ? { ...raw.entities } : {};
+
+      if (title) {
+        entities.title = title;
+      }
+      if (points.length > 0) {
+        entities.points = points;
+        for (const pt of points) {
+          if (typeof pt === 'string') {
+            const parts = pt.split(':');
+            if (parts.length >= 2) {
+              const key = parts[0].trim().toLowerCase();
+              const val = parts.slice(1).join(':').trim();
+              entities[key] = val;
+            }
+          }
+        }
+      }
+
+      // Infer category if not directly provided
+      let inferredCategory = raw.category;
+      if (!inferredCategory) {
+        const textToClassify = `${title} ${points.join(' ')}`.toLowerCase();
+        if (
+          textToClassify.includes('pay') ||
+          textToClassify.includes('upi') ||
+          textToClassify.includes('bank') ||
+          textToClassify.includes('₹') ||
+          textToClassify.includes('inr')
+        ) {
+          inferredCategory = 'Finance';
+        } else if (
+          textToClassify.includes('swiggy') ||
+          textToClassify.includes('zomato') ||
+          textToClassify.includes('food')
+        ) {
+          inferredCategory = 'Food Delivery';
+        } else if (
+          textToClassify.includes('amazon') ||
+          textToClassify.includes('flipkart') ||
+          textToClassify.includes('order')
+        ) {
+          inferredCategory = 'Shopping';
+        } else {
+          inferredCategory = 'Other';
+        }
+      }
+
+      const summary =
+        raw.summary ||
+        (points.length > 0
+          ? `${title ? `${title}: ` : ''}${points.join(' • ')}`
+          : title || 'Screenshot analyzed by Local Vision AI.');
+
+      const tags =
+        Array.isArray(raw.tags) && raw.tags.length > 0
+          ? raw.tags
+          : [
+              inferredCategory.toLowerCase(),
+              ...Object.keys(entities).filter((k) => k !== 'points' && k !== 'title'),
+            ];
+
       const structured: VisionStructuredOutput = {
-        category: raw.category || 'Other',
-        confidence: Number(raw.confidence) || 90,
-        summary: raw.summary || 'Screenshot analyzed by Local Vision AI.',
-        tags: Array.isArray(raw.tags) ? raw.tags : [],
-        entities: typeof raw.entities === 'object' && raw.entities !== null ? raw.entities : {},
+        category: inferredCategory,
+        confidence: Number(raw.confidence) || 100,
+        summary,
+        tags,
+        entities,
       };
 
       // 6. Save to SQLite
@@ -366,10 +433,18 @@ export class VisionAIService {
   }
 
   private mapVisionError(err: any): string {
-    if (!err) return 'Vision Analysis Failed';
+    if (!err) return 'Unable to analyze screenshot';
     const code = (err.code || '').toUpperCase();
     const msg = (err.message || '').toLowerCase();
     const status = err.response?.status;
+    const backendDetail = err.response?.data?.detail || err.response?.data?.message;
+
+    if (backendDetail && typeof backendDetail === 'string') {
+      if (backendDetail.includes('Offline')) return 'Vision Server Offline';
+      if (backendDetail.includes('Timeout')) return 'Vision Server Timeout';
+      if (backendDetail.includes('Invalid')) return 'Invalid AI Response';
+      if (backendDetail.includes('Failed')) return 'Vision Analysis Failed';
+    }
 
     if (code === 'ECONNREFUSED' || msg.includes('econnrefused')) {
       return 'Vision Server Offline';
@@ -383,14 +458,14 @@ export class VisionAIService {
     if (status === 504) {
       return 'Vision Server Timeout';
     }
-    if (status === 502) {
-      return 'Invalid Vision Response';
+    if (status === 502 || msg.includes('json') || msg.includes('parse')) {
+      return 'Invalid AI Response';
     }
-    if (status >= 500) {
+    if (status === 500) {
       return 'Vision Analysis Failed';
     }
 
-    return err.response?.data?.error || err.response?.data?.detail || 'Vision Analysis Failed';
+    return 'Unable to analyze screenshot';
   }
 
   private getCategoryIcon(cat: string): string {

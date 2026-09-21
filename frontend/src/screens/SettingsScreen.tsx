@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -17,6 +18,7 @@ import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useSettingsStore } from '../store/settings.store';
 import { useAuthStore } from '../store/auth.store';
+import { useScreenshotStore } from '../store/screenshot.store';
 import { ModernCard } from '../components/ModernCard';
 import { AppInfo } from '../utils/appConstants';
 import { apiClient } from '../api/apiClient';
@@ -28,6 +30,7 @@ import { demoModeService } from '../services/demoModeService';
 import { backupService } from '../services/backupService';
 import { EnvironmentManager } from '../config/EnvironmentManager';
 import { BackendConnectionManager } from '../services/BackendConnectionManager';
+import { getApiBaseUrl, setApiBaseUrl } from '../config/api';
 import { visionAIService, PingResult as VisionPingResult } from '../services/visionAIService';
 import { visionInferenceQueue } from '../vision/VisionInferenceQueue';
 
@@ -90,6 +93,38 @@ export const SettingsScreen: React.FC = () => {
     );
   };
 
+  const [analyzingTest, setAnalyzingTest] = useState(false);
+
+  const handleAnalyzeTestScreenshot = async () => {
+    const screenshots = useScreenshotStore.getState().screenshots;
+    if (screenshots.length === 0) {
+      Alert.alert('No Screenshot', 'No screenshots found. Please import or capture a screenshot first.');
+      return;
+    }
+    const testItem = screenshots[0];
+    setAnalyzingTest(true);
+    try {
+      const res = await visionAIService.analyzeScreenshot({
+        screenshotId: testItem.id,
+        filePath: testItem.localPath || testItem.filePath,
+        fileName: testItem.fileName,
+        forceRefresh: true,
+      });
+      if (res.isSuccess && res.data) {
+        Alert.alert(
+          'Test Analysis Succeeded',
+          `Model: Qwen2.5-VL-3B-Instruct\nCategory: ${res.data.category} (${res.data.confidence}%)\n\nSummary:\n${res.data.summary}`
+        );
+      } else {
+        Alert.alert('Analysis Failed', res.error || 'Unable to analyze test screenshot.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to analyze test screenshot.');
+    } finally {
+      setAnalyzingTest(false);
+    }
+  };
+
   const handleClearVisionCache = () => {
     Alert.alert(
       'Clear Vision Cache',
@@ -131,11 +166,12 @@ export const SettingsScreen: React.FC = () => {
     }, 600);
   };
 
-  const handleSaveUrl = () => {
+  const handleSaveUrl = async () => {
     try {
+      await setApiBaseUrl(urlInput);
       BackendConnectionManager.setBaseUrl(urlInput);
       apiClient.setBaseUrl(urlInput);
-      Alert.alert('Settings Saved', `Backend URL updated to ${BackendConnectionManager.getBaseUrl()}`);
+      Alert.alert('Settings Saved', `Backend URL updated to ${getApiBaseUrl()}`);
     } catch (e: any) {
       Alert.alert('Invalid URL', e?.message || 'Failed to save URL');
     }
@@ -571,12 +607,12 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          FastAPI backend running inside Docker (e.g., http://10.122.196.152:8000/api)
+          FastAPI backend running inside Docker (e.g., {getApiBaseUrl()}/api)
         </Text>
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}
-          placeholder="http://10.122.196.152:8000/api"
+          placeholder={`${getApiBaseUrl()}/api`}
           placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -799,6 +835,34 @@ export const SettingsScreen: React.FC = () => {
             <Text style={[styles.testBtnText, { color: '#8B5CF6' }]}>Re-analyze All</Text>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          onPress={handleAnalyzeTestScreenshot}
+          disabled={analyzingTest}
+          style={[
+            {
+              backgroundColor: '#8B5CF618',
+              borderColor: '#8B5CF6',
+              marginTop: 10,
+              paddingVertical: 10,
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              borderRadius: 8,
+              borderWidth: 1,
+              opacity: analyzingTest ? 0.6 : 1,
+            },
+          ]}
+        >
+          {analyzingTest ? (
+            <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+          ) : (
+            <Icon name="flask-outline" size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
+          )}
+          <Text style={{ color: '#8B5CF6', fontWeight: '700', fontSize: 13 }}>
+            {analyzingTest ? 'Analyzing on RTX 4050...' : 'Analyze Test Screenshot'}
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={handleClearVisionCache}

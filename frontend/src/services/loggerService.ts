@@ -12,7 +12,9 @@ export type LogModule =
   | 'App'
   | 'Vision'
   | 'MediaStore'
-  | 'Thumbnail';
+  | 'Thumbnail'
+  | 'AIQueue'
+  | 'Memory';
 
 export interface LogEntry {
   id: string;

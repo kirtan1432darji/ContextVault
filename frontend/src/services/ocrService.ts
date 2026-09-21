@@ -5,7 +5,7 @@ import { OCRBlock, OCRResultModel } from '../models';
 import { searchIndexService } from './searchIndexService';
 import { FileUtils } from '../utils/fileUtils';
 
-const { OCRRecognitionModule } = NativeModules;
+const OCRRecognitionModule = NativeModules?.OCRRecognitionModule;
 const OCR_TIMEOUT_MS = 10000;
 const CURRENT_OCR_VERSION = 'MLKit-Text-16.0.0';
 

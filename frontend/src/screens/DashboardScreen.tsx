@@ -33,6 +33,8 @@ import { useFolderContextStore } from '../store/folderContext.store';
 import { useAuthStore } from '../store/auth.store';
 import { useNotificationStore } from '../store/notification.store';
 import { FeatureLockCard, GuestUpgradeBottomSheet } from '../components';
+import { aiProcessingQueue, QueueStats, QueueItem } from '../services/background';
+import { dailyDigestService, DailyDigest } from '../services/memory';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -86,6 +88,43 @@ export const DashboardScreen: React.FC = () => {
   const ocrFailed = useScannerStore((s) => s.ocrFailed);
   const avgProcessingTimeMs = useScannerStore((s) => s.avgProcessingTimeMs);
 
+  // Sprint P5-A Background AI Processing Queue State
+  const [queueStats, setQueueStats] = useState<QueueStats>({
+    total: 0,
+    pending: 0,
+    processing: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+    averageProcessingTimeMs: 0,
+  });
+  const [currentQueueItem, setCurrentQueueItem] = useState<QueueItem | null>(null);
+  const [isQueueProcessing, setIsQueueProcessing] = useState<boolean>(false);
+  const [isQueuePaused, setIsQueuePaused] = useState<boolean>(false);
+
+  const loadQueueData = useCallback(async () => {
+    try {
+      const stats = await aiProcessingQueue.getStats();
+      setQueueStats(stats);
+      setIsQueueProcessing(aiProcessingQueue.isProcessing());
+      setIsQueuePaused(aiProcessingQueue.isPaused());
+      setCurrentQueueItem(aiProcessingQueue.getCurrentItem());
+    } catch (err) {
+      console.warn('[DashboardScreen] Failed to load queue stats:', err);
+    }
+  }, []);
+
+  const [todayDigest, setTodayDigest] = useState<DailyDigest | null>(null);
+
+  const loadTodayDigest = useCallback(async () => {
+    try {
+      const digest = await dailyDigestService.getTodayDigest();
+      setTodayDigest(digest);
+    } catch (err) {
+      console.warn('[DashboardScreen] Failed to load today digest:', err);
+    }
+  }, []);
+
   const loadRecentChats = useCallback(async () => {
     try {
       const chats = await chatRepository.getRecentChatFolders(4);
@@ -113,14 +152,25 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
-  // Reload chats, recent searches, and saved searches whenever dashboard comes into focus
+  // Reload chats, recent searches, saved searches, and today digest whenever dashboard comes into focus
   useFocusEffect(
     useCallback(() => {
       loadRecentChats();
       loadRecentSearches();
       loadSavedSearches();
-    }, [loadRecentChats, loadRecentSearches, loadSavedSearches])
+      loadQueueData();
+      loadTodayDigest();
+    }, [loadRecentChats, loadRecentSearches, loadSavedSearches, loadQueueData, loadTodayDigest])
   );
+
+  // Subscribe to live background AI queue events
+  useEffect(() => {
+    const unsub = aiProcessingQueue.subscribe(() => {
+      loadQueueData();
+      loadTodayDigest();
+    });
+    return () => unsub();
+  }, [loadQueueData, loadTodayDigest]);
 
   // Load fresh categories & screenshots & context stats on mount
   useEffect(() => {
@@ -129,13 +179,16 @@ export const DashboardScreen: React.FC = () => {
     loadRecentChats();
     loadRecentSearches();
     loadSavedSearches();
+    loadQueueData();
+    loadTodayDigest();
     screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount);
     screenshotRepository.getAllScreenshots().then((items) => {
       setScreenshots(items || []);
       // Discover and sync device screenshots in background on mount
       mediaStoreService.scanAndSyncScreenshots().catch(() => {});
+      aiProcessingQueue.retryFailed().catch(() => {});
     });
-  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches]);
+  }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches, loadQueueData, loadTodayDigest]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -148,11 +201,14 @@ export const DashboardScreen: React.FC = () => {
         loadRecentChats(),
         loadRecentSearches(),
         loadSavedSearches(),
+        loadQueueData(),
+        loadTodayDigest(),
         screenshotRepository.getNeedsReviewCount().then(setNeedsReviewCount),
         mediaStoreService.scanAndSyncScreenshots().then(async () => {
           const items = await screenshotRepository.getAllScreenshots();
           setScreenshots(items || []);
         }),
+        aiProcessingQueue.retryFailed().catch(() => {}),
         screenshotListenerService.refreshStoreCounts(),
       ]);
     } catch (err) {
@@ -160,7 +216,7 @@ export const DashboardScreen: React.FC = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [loadCategories, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches, setScreenshots]);
+  }, [loadCategories, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches, setScreenshots, loadQueueData, loadTodayDigest]);
 
   const totalCount = screenshots.length;
   const organizedCount = screenshots.filter((s) => s.categoryId && s.categoryId !== 'unsorted').length;
@@ -802,6 +858,196 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
+      {/* 4b. Sprint P5-A: Background AI Processing Queue Card */}
+      <ModernCard style={styles.ocrStatsCard}>
+        <View style={styles.ocrTitleRow}>
+          <View style={styles.ocrTitleLeft}>
+            <View style={[styles.ocrBadgeIcon, { backgroundColor: `${theme.colors.primary}18` }]}>
+              <Icon name="hardware-chip" size={18} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={[styles.ocrSectionTitle, { color: theme.colors.textPrimary }]}>
+                AI Processing Queue
+              </Text>
+              <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
+                Sequential OCR + Local Vision AI (RTX 4050)
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AIQueue')}
+            style={[styles.avgTimePill, { backgroundColor: `${theme.colors.primary}15` }]}
+          >
+            <Text style={[styles.avgTimeText, { color: theme.colors.primary }]}>Manage Queue ›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Live status & progress bar */}
+        {queueStats.total > 0 && (
+          <View style={{ marginTop: 10, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary, fontWeight: '600' }}>
+                {isQueueProcessing
+                  ? `Analyzing: ${currentQueueItem?.fileName || 'Processing...'}`
+                  : isQueuePaused
+                  ? 'Queue Paused'
+                  : queueStats.pending > 0
+                  ? `${queueStats.pending} waiting in queue`
+                  : 'All screenshots analyzed'}
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.primary, fontWeight: '700' }}>
+                {queueStats.total > 0
+                  ? `${Math.round((queueStats.completed / queueStats.total) * 100)}%`
+                  : '100%'}
+              </Text>
+            </View>
+            <View
+              style={{
+                height: 6,
+                backgroundColor: theme.colors.surfaceVariant,
+                borderRadius: 3,
+                overflow: 'hidden',
+              }}
+            >
+              <View
+                style={{
+                  height: '100%',
+                  width: `${
+                    queueStats.total > 0
+                      ? Math.min(100, Math.round((queueStats.completed / queueStats.total) * 100))
+                      : 0
+                  }%`,
+                  backgroundColor: theme.colors.primary,
+                  borderRadius: 3,
+                }}
+              />
+            </View>
+          </View>
+        )}
+
+        <View style={styles.ocrMetricsGrid}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: '#F59E0B' }]}>
+              <AnimatedCounter value={queueStats.pending} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Pending
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.primary }]}>
+              <AnimatedCounter value={queueStats.processing} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Active
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
+              <AnimatedCounter value={queueStats.completed} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Completed
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text
+              style={[
+                styles.ocrMetricValue,
+                { color: queueStats.failed > 0 ? theme.colors.error : theme.colors.textSecondary },
+              ]}
+            >
+              <AnimatedCounter value={queueStats.failed} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Failed
+            </Text>
+          </View>
+        </View>
+      </ModernCard>
+
+      {/* 4c. Sprint P6-A: Today's AI Digest & Memory Highlights */}
+      <ModernCard style={styles.ocrStatsCard}>
+        <View style={styles.ocrTitleRow}>
+          <View style={styles.ocrTitleLeft}>
+            <View style={[styles.ocrBadgeIcon, { backgroundColor: `${theme.colors.accent}18` }]}>
+              <Icon name="sparkles" size={18} color={theme.colors.accent} />
+            </View>
+            <View>
+              <Text style={[styles.ocrSectionTitle, { color: theme.colors.textPrimary }]}>
+                Today's AI Memory Digest
+              </Text>
+              <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
+                {todayDigest?.dateFormatted || 'Today in ContextVault'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('MemoryTimeline')}
+            style={[styles.avgTimePill, { backgroundColor: `${theme.colors.accent}15` }]}
+          >
+            <Text style={[styles.avgTimeText, { color: theme.colors.accent }]}>View Timeline ›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* AI Summary Text */}
+        <Text
+          style={{
+            fontSize: 13,
+            color: theme.colors.textPrimary,
+            lineHeight: 18,
+            marginTop: 8,
+            marginBottom: 10,
+          }}
+        >
+          {todayDigest?.summary || "Analyzing today's memories..."}
+        </Text>
+
+        {/* 4 Metrics Strip: Shots, Spent, Orders, Travel */}
+        <View style={styles.ocrMetricsGrid}>
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.primary }]}>
+              <AnimatedCounter value={todayDigest?.totalScreenshots || 0} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Shots Today
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.success }]}>
+              {todayDigest && todayDigest.payments.totalAmount > 0
+                ? `₹${todayDigest.payments.totalAmount.toLocaleString('en-IN')}`
+                : '₹0'}
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Spent Today
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: '#F59E0B' }]}>
+              <AnimatedCounter value={todayDigest?.orders.count || 0} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Orders Today
+            </Text>
+          </View>
+
+          <View style={[styles.ocrMetricBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <Text style={[styles.ocrMetricValue, { color: theme.colors.info }]}>
+              <AnimatedCounter value={todayDigest?.travel.count || 0} />
+            </Text>
+            <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
+              Travel Today
+            </Text>
+          </View>
+        </View>
+      </ModernCard>
+
       {/* 5. Sprint RN-06: Context Folders & Backend AI Sync Metrics */}
       <ModernCard style={styles.ocrStatsCard}>
         <View style={styles.ocrTitleRow}>
@@ -1364,7 +1610,8 @@ export const DashboardScreen: React.FC = () => {
               {cat.coverUri ? (
                 <View style={styles.folderCoverContainer}>
                   <ScreenshotImageThumbnail
-                    uri={cat.coverUri}
+                    thumbnailUri={cat.coverUri}
+                    filePath={cat.coverUri}
                     style={styles.folderCoverImage}
                     resizeMode="cover"
                   />

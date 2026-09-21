@@ -3,8 +3,9 @@ import { screenshotRepository } from '../database/repositories/screenshotReposit
 import { CategoryModel, ScreenshotModel } from '../models';
 import { useCategoryStore } from '../store/category.store';
 import { useScreenshotStore } from '../store/screenshot.store';
-import { searchIndexService } from './searchIndexService';
 import { smartFolderClassificationService } from './SmartFolderClassificationService';
+import { SmartFolderRules } from './smartFolders/SmartFolderRules';
+import { SmartFolderTagExtractor } from './smartFolders/SmartFolderTagExtractor';
 
 export interface SmartFolderClassificationResult {
   categoryName: string;
@@ -46,272 +47,48 @@ export class SmartFolderService {
     const raw = payload.ocrText || '';
     const text = raw.toLowerCase();
     const name = payload.fileName.toLowerCase();
-    const folder = (payload.deviceFolder || '').toLowerCase();
 
-    // 1. PROJECTS / PAYROLL / CORPORATE (e.g. Projects -> NHDC -> Payroll)
+    // Check project payroll rule
     const isPayroll =
       text.includes('payroll') ||
       text.includes('payslip') ||
       text.includes('salary slip') ||
       text.includes('net salary') ||
-      text.includes('earnings & deductions') ||
-      text.includes('pf contribution') ||
-      text.includes('basic pay') ||
       name.includes('payroll') ||
       name.includes('salary');
 
-    const isProject =
-      text.includes('sprint') ||
-      text.includes('jira') ||
-      text.includes('trello') ||
-      text.includes('asana') ||
-      text.includes('milestone') ||
-      text.includes('architecture blueprint') ||
-      text.includes('deliverable') ||
-      name.includes('project');
-
-    if (isPayroll || isProject) {
-      let org = '';
-      const orgMatch = raw.match(/\b(NHDC|TCS|INFOSYS|WIPRO|GOOGLE|META|MICROSOFT|AMAZON|RELIANCE|TATA|ADANI|[A-Z]{3,8})\b/);
-      if (orgMatch && !['THE', 'AND', 'FOR', 'ALL', 'NOT', 'YOU', 'ARE'].includes(orgMatch[0])) {
-        org = orgMatch[0];
-      } else if (text.includes('nhdc') || name.includes('nhdc')) {
-        org = 'NHDC';
-      }
-
-      const orgFolder = org || 'Work';
-
-      if (isPayroll) {
-        return {
-          categoryName: 'Projects',
-          subcategory: 'Payroll',
-          folderHierarchy: ['Projects', orgFolder, 'Payroll'],
-          confidence: 0.96,
-          tags: ['payroll', 'salary', orgFolder.toLowerCase()],
-          suggestedIcon: 'briefcase-outline',
-          suggestedColor: '6366F1',
-        };
-      } else {
-        return {
-          categoryName: 'Projects',
-          subcategory: orgFolder,
-          folderHierarchy: ['Projects', orgFolder],
-          confidence: 0.94,
-          tags: ['project', 'tasks', orgFolder.toLowerCase()],
-          suggestedIcon: 'briefcase-outline',
-          suggestedColor: '6366F1',
-        };
-      }
-    }
-
-    // 2. FINANCE / PAYMENTS / BANKING (e.g. Finance -> Payments)
-    const isPayment =
-      text.includes('upi') ||
-      text.includes('payment successful') ||
-      text.includes('transaction id') ||
-      text.includes('paid to') ||
-      text.includes('gpay') ||
-      text.includes('google pay') ||
-      text.includes('phonepe') ||
-      text.includes('paytm') ||
-      text.includes('razorpay') ||
-      text.includes('credit card') ||
-      text.includes('debit card') ||
-      text.includes('bank transfer') ||
-      name.includes('payment') ||
-      name.includes('upi');
-
-    const isInvoice =
-      text.includes('invoice') ||
-      text.includes('billing') ||
-      text.includes('tax invoice') ||
-      text.includes('gstin') ||
-      name.includes('invoice');
-
-    if (isPayment || isInvoice) {
-      const sub = isPayment ? 'Payments' : 'Invoices';
+    if (isPayroll) {
       return {
-        categoryName: 'Finance',
-        subcategory: sub,
-        folderHierarchy: ['Finance', sub],
-        confidence: 0.95,
-        tags: ['finance', sub.toLowerCase(), 'transaction'],
-        suggestedIcon: 'wallet-outline',
-        suggestedColor: '10B981',
+        categoryName: 'Work',
+        subcategory: 'Payroll',
+        folderHierarchy: ['Work', 'Payroll'],
+        confidence: 0.96,
+        tags: ['payroll', 'salary', 'work'],
+        suggestedIcon: 'briefcase-outline',
+        suggestedColor: '6366F1',
       };
     }
 
-    // 3. SHOPPING (e.g. Shopping -> Shoes)
-    const isShoes =
-      text.includes('sneaker') ||
-      text.includes('shoes') ||
-      text.includes('footwear') ||
-      text.includes('running shoes') ||
-      text.includes('nike') ||
-      text.includes('adidas') ||
-      text.includes('puma') ||
-      name.includes('shoe');
+    const ruleResult = SmartFolderRules.evaluateRules({
+      fileName: payload.fileName,
+      ocrText: payload.ocrText,
+      deviceFolder: payload.deviceFolder,
+    });
 
-    const isShopping =
-      isShoes ||
-      text.includes('amazon') ||
-      text.includes('flipkart') ||
-      text.includes('myntra') ||
-      text.includes('order placed') ||
-      text.includes('delivery by') ||
-      text.includes('items in cart') ||
-      text.includes('wishlist') ||
-      name.includes('amazon');
+    const tags = SmartFolderTagExtractor.extractTags({
+      fileName: payload.fileName,
+      ocrText: payload.ocrText,
+      extraKeywords: [ruleResult.categoryId, ruleResult.categoryName.toLowerCase(), ruleResult.subcategory.toLowerCase()],
+    });
 
-    if (isShopping) {
-      const sub = isShoes ? 'Shoes' : 'Orders';
-      return {
-        categoryName: 'Shopping',
-        subcategory: sub,
-        folderHierarchy: ['Shopping', sub],
-        confidence: 0.93,
-        tags: ['shopping', sub.toLowerCase()],
-        suggestedIcon: 'bag-handle-outline',
-        suggestedColor: 'F97316',
-      };
-    }
-
-    // 4. LEARNING / TUTORIALS (e.g. Learning -> Flutter)
-    const isFlutter = text.includes('flutter') || text.includes('dart') || name.includes('flutter');
-    const isReact = text.includes('react native') || text.includes('reactjs') || name.includes('react');
-    const isLearning =
-      isFlutter ||
-      isReact ||
-      text.includes('course') ||
-      text.includes('tutorial') ||
-      text.includes('udemy') ||
-      text.includes('coursera') ||
-      text.includes('documentation') ||
-      text.includes('guide') ||
-      text.includes('syllabus');
-
-    if (isLearning) {
-      const sub = isFlutter ? 'Flutter' : isReact ? 'React' : 'Tutorials';
-      return {
-        categoryName: 'Learning',
-        subcategory: sub,
-        folderHierarchy: ['Learning', sub],
-        confidence: 0.94,
-        tags: ['learning', sub.toLowerCase()],
-        suggestedIcon: 'school-outline',
-        suggestedColor: '3B82F6',
-      };
-    }
-
-    // 5. TRAVEL / TICKETS (e.g. Travel -> Flights)
-    const isFlight =
-      text.includes('flight') ||
-      text.includes('boarding pass') ||
-      text.includes('airline') ||
-      text.includes('indigo') ||
-      text.includes('air india') ||
-      text.includes('emirates') ||
-      text.includes('departure') ||
-      text.includes('terminal');
-
-    const isTravel =
-      isFlight ||
-      text.includes('hotel booking') ||
-      text.includes('reservation') ||
-      text.includes('airbnb') ||
-      text.includes('train ticket') ||
-      text.includes('irctc') ||
-      name.includes('ticket');
-
-    if (isTravel) {
-      const sub = isFlight ? 'Flights' : 'Bookings';
-      return {
-        categoryName: 'Travel',
-        subcategory: sub,
-        folderHierarchy: ['Travel', sub],
-        confidence: 0.95,
-        tags: ['travel', sub.toLowerCase(), 'ticket'],
-        suggestedIcon: 'airplane-outline',
-        suggestedColor: '06B6D4',
-      };
-    }
-
-    // 6. TECH / CODE / TERMINAL
-    const isTech =
-      text.includes('github') ||
-      text.includes('console.log') ||
-      text.includes('stack trace') ||
-      text.includes('api endpoint') ||
-      text.includes('error 500') ||
-      text.includes('status 200') ||
-      name.includes('code') ||
-      name.includes('terminal');
-
-    if (isTech) {
-      return {
-        categoryName: 'Tech',
-        subcategory: 'Code',
-        folderHierarchy: ['Tech', 'Code'],
-        confidence: 0.92,
-        tags: ['tech', 'code', 'developer'],
-        suggestedIcon: 'code-slash-outline',
-        suggestedColor: '8B5CF6',
-      };
-    }
-
-    // 7. SOCIAL / MESSAGES
-    const isSocial =
-      text.includes('whatsapp') ||
-      text.includes('telegram') ||
-      text.includes('instagram') ||
-      text.includes('message') ||
-      text.includes('typing...') ||
-      folder.includes('whatsapp') ||
-      folder.includes('telegram');
-
-    if (isSocial) {
-      const sub = folder.includes('whatsapp') ? 'WhatsApp' : 'Messages';
-      return {
-        categoryName: 'Social',
-        subcategory: sub,
-        folderHierarchy: ['Social', sub],
-        confidence: 0.91,
-        tags: ['social', sub.toLowerCase()],
-        suggestedIcon: 'chatbubble-ellipses-outline',
-        suggestedColor: 'EC4899',
-      };
-    }
-
-    // 8. DOCUMENTS / OFFICIAL
-    const isDocument =
-      text.includes('passport') ||
-      text.includes('driving licence') ||
-      text.includes('identity card') ||
-      text.includes('aadhaar') ||
-      text.includes('certificate') ||
-      text.includes('contract');
-
-    if (isDocument) {
-      return {
-        categoryName: 'Documents',
-        subcategory: 'Official',
-        folderHierarchy: ['Documents', 'Official'],
-        confidence: 0.92,
-        tags: ['documents', 'id'],
-        suggestedIcon: 'document-text-outline',
-        suggestedColor: 'F59E0B',
-      };
-    }
-
-    // Default: Unsorted
     return {
-      categoryName: 'Unsorted',
-      subcategory: 'General',
-      folderHierarchy: ['Unsorted'],
-      confidence: 0.5,
-      tags: ['unsorted'],
-      suggestedIcon: 'help-circle-outline',
-      suggestedColor: '94A3B8',
+      categoryName: ruleResult.categoryName,
+      subcategory: ruleResult.subcategory,
+      folderHierarchy: ruleResult.folderHierarchy,
+      confidence: ruleResult.confidence,
+      tags,
+      suggestedIcon: ruleResult.suggestedIcon,
+      suggestedColor: ruleResult.suggestedColor,
     };
   }
 
