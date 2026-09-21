@@ -37,7 +37,7 @@ export interface ClassificationCacheRecord {
   entitiesJson?: string;
   confidence: number;
   summary?: string;
-  source: 'backend' | 'local';
+  source: 'backend' | 'local' | 'vision_ai';
   cachedAt: string;
 }
 

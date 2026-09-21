@@ -8,6 +8,7 @@ import { databaseService } from '../../database';
 import { ocrService } from '../ocrService';
 import { visionAIService } from '../visionAIService';
 import { smartFolderClassificationService } from '../SmartFolderClassificationService';
+import { memoryTimelineService } from '../memory/MemoryTimelineService';
 import { loggerService } from '../loggerService';
 import { useScreenshotStore } from '../../store/screenshot.store';
 import { useCategoryStore } from '../../store/category.store';
@@ -252,34 +253,27 @@ export class BackgroundAIWorker {
 
       // If not cached, query Local Vision AI Server (RTX 4050) if reachable
       if (!visionCached) {
-        try {
-          const ping = await visionAIService.pingVisionServer();
-          if (ping.online) {
-            this.emit({
-              type: 'item_progress',
-              item,
-              step: 'Running Local Vision AI inference (RTX 4050)',
-              timestamp: new Date().toISOString(),
-            });
+        const ping = await visionAIService.pingVisionServer();
+        if (ping.online) {
+          this.emit({
+            type: 'item_progress',
+            item,
+            step: 'Running Local Vision AI inference (RTX 4050)',
+            timestamp: new Date().toISOString(),
+          });
 
-            const visionResult = await visionAIService.analyzeScreenshot({
-              screenshotId: item.screenshotId,
-              filePath,
-              fileName,
-              ocrText,
-            });
+          const visionResult = await visionAIService.analyzeScreenshot({
+            screenshotId: item.screenshotId,
+            filePath,
+            fileName,
+            ocrText,
+          });
 
-            if (!visionResult.isSuccess) {
-              loggerService.warn('AIQueue', `Vision AI inference returned non-success: ${visionResult.error}`);
-            }
-          } else {
-            loggerService.info(
-              'AIQueue',
-              `Vision AI server offline, utilizing on-device OCR & rule engine for ${fileName}`
-            );
+          if (!visionResult.isSuccess) {
+            loggerService.warn('AIQueue', `Vision AI inference returned non-success: ${visionResult.error}`);
           }
-        } catch (visionErr: any) {
-          loggerService.warn('AIQueue', `Vision AI skipped for ${fileName}: ${visionErr?.message || visionErr}`);
+        } else {
+          throw new Error(`Local Vision AI Server is offline: ${ping.error || ping.status || 'Connection failed'}`);
         }
       }
 
@@ -302,6 +296,13 @@ export class BackgroundAIWorker {
         fileSize: screenshot?.fileSize || pendingScreenshot?.fileSize,
         deviceFolder: screenshot?.categoryName || pendingScreenshot?.deviceFolder,
       });
+
+      // Update Memory Timeline
+      try {
+        await memoryTimelineService.addScreenshotToTimeline(updatedScreenshot);
+      } catch (timelineErr) {
+        loggerService.warn('AIQueue', 'Error updating memory timeline:', timelineErr);
+      }
 
       // 6. Step: Complete Queue Item in SQLite
       const processingDuration = Date.now() - startTime;

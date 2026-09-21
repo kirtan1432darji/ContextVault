@@ -2,6 +2,10 @@ import { databaseService } from '../database';
 import { categoryRepository } from '../database/repositories/categoryRepository';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { visionRepository } from '../database/repositories/VisionRepository';
+import { classificationCacheRepository } from '../database/repositories/classificationCacheRepository';
+import { tagRepository } from '../database/repositories/tagRepository';
+import { folderContextRepository } from '../database/repositories/folderContextRepository';
+import { pendingScreenshotRepository } from '../database/repositories/pendingScreenshotRepository';
 import { CategoryModel, ScreenshotModel } from '../models';
 import { useCategoryStore } from '../store/category.store';
 import { useScreenshotStore } from '../store/screenshot.store';
@@ -164,7 +168,8 @@ export class SmartFolderClassificationService {
     // Manual Override Protection
     if (
       existing &&
-      (existing.classificationSource === 'manual' || !existing.isAutoCategorized) &&
+      existing.classificationSource === 'manual' &&
+      existing.categoryId !== 'unsorted' &&
       !input.forceRefresh
     ) {
       return existing;
@@ -250,7 +255,57 @@ export class SmartFolderClassificationService {
 
     // Save locally to SQLite
     await screenshotRepository.insertScreenshot(screenshotModel);
+
+    // Save classification cache
+    try {
+      await classificationCacheRepository.setCache({
+        id: `c_${screenshotModel.id}`,
+        screenshotId: screenshotModel.id,
+        category: assignedCategory.name,
+        subcategory: classification.subcategory,
+        tagsJson: JSON.stringify(combinedKeywords.slice(0, 5)),
+        entitiesJson: '{}',
+        confidence: classification.confidence,
+        summary: `Classified into ${assignedCategory.name}`,
+        source: source === 'vision_ai' ? 'vision_ai' : 'backend',
+        cachedAt: new Date().toISOString(),
+      });
+    } catch {}
+
+    // Save tags and link to screenshot
+    if (screenshotModel.tags && screenshotModel.tags.length > 0) {
+      for (const t of screenshotModel.tags) {
+        try {
+          await tagRepository.addTag(t);
+          await tagRepository.linkScreenshotTag(screenshotModel.id, t.id);
+        } catch {}
+      }
+    }
+
+    // Upsert folder context
+    try {
+      await folderContextRepository.upsertFolderContext({
+        FolderId: assignedCategory.id,
+        Summary: `Smart folder for ${assignedCategory.name} containing ${classification.subcategory || 'screenshots'}`,
+        EntitiesJson: '{}',
+        TasksJson: '[]',
+        UpdatedOn: new Date().toISOString(),
+        Version: 1,
+      });
+    } catch {}
+
+    // Update ancestor counts & folder counts
     await categoryRepository.updateAllAncestorCounts(assignedCategory.id);
+    if (classification.folderId && classification.folderId !== assignedCategory.id) {
+      await categoryRepository.updateFolderCounts(classification.folderId);
+    }
+    await categoryRepository.updateFolderCounts(assignedCategory.id);
+    await categoryRepository.updateScreenshotCount('unsorted');
+
+    // Update pending screenshot status
+    try {
+      await pendingScreenshotRepository.updateStatus(input.screenshotId, 'Completed');
+    } catch {}
 
     // Sync Zustand stores immediately
     useScreenshotStore.getState().addOrUpdateScreenshot(screenshotModel);
@@ -258,6 +313,13 @@ export class SmartFolderClassificationService {
     useCategoryStore.getState().setCategories(allCategories);
 
     return screenshotModel;
+  }
+
+  /**
+   * Alias for assignScreenshotToSmartFolder.
+   */
+  async classifyScreenshot(input: ScreenshotClassificationInput): Promise<ScreenshotModel> {
+    return this.assignScreenshotToSmartFolder(input);
   }
 
   /**
@@ -299,7 +361,10 @@ export class SmartFolderClassificationService {
       const sc = screenshots[i];
 
       // Skip manual overrides
-      if (sc.classificationSource === 'manual' || sc.isAutoCategorized === false) {
+      if (
+        sc.classificationSource === 'manual' &&
+        sc.categoryId !== 'unsorted'
+      ) {
         processed++;
         options?.onProgress?.(processed, screenshots.length);
         continue;

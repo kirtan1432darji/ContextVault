@@ -7,6 +7,8 @@ import { notificationService } from './notificationService';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
 import { categoryRepository } from '../database/repositories/categoryRepository';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { smartFolderClassificationService } from './SmartFolderClassificationService';
 
 export interface DiscoveredMediaAsset {
   id: string;
@@ -66,70 +68,32 @@ export class ScreenshotScannerService {
       lastScannedAt: new Date().toISOString(),
     };
 
+    // Save initial screenshot to SQLite and update Zustand store
+    try {
+      await screenshotRepository.insertScreenshot(initialScreenshot);
+    } catch {}
     useScreenshotStore.getState().addOrUpdateScreenshot(initialScreenshot);
 
     // 2. OCR Step
     let ocrText = '';
-    let ocrConfidence = 0.85;
     const ocrRes = await ocrService.extractText(screenshotId, asset.filePath);
     if (ocrRes.isSuccess && ocrRes.data) {
       ocrText = ocrRes.data.rawText;
-      ocrConfidence = ocrRes.data.confidence;
     }
 
-    // 3. Classification Step
-    const classRes = await classificationService.classifyScreenshot({
+    // 3. Smart Folder 5-Tier Classification & Auto-Organization
+    const organizedScreenshot = await smartFolderClassificationService.assignScreenshotToSmartFolder({
       screenshotId,
       fileName: asset.fileName,
       filePath: asset.filePath,
       ocrText,
+      fileSize: asset.fileSize,
     });
 
-    let targetCatId = 'unsorted';
-    let targetCatName = 'Unsorted';
-    let subcategory = 'General';
-    let confidence = ocrConfidence;
-    const tags: any[] = [];
-
-    if (classRes.isSuccess && classRes.data) {
-      targetCatId = classRes.data.categoryId;
-      targetCatName = classRes.data.categoryName;
-      subcategory = classRes.data.subcategory;
-      confidence = classRes.data.confidence;
-
-      classRes.data.suggestedTags.forEach((t) => {
-        tags.push({
-          id: `tag_${t.toLowerCase().replace(/\s+/g, '_')}`,
-          name: t,
-          colorHex: '6366F1',
-        });
-      });
-    }
-
-    // 4. Update Model
-    const organizedScreenshot: ScreenshotModel = {
-      ...initialScreenshot,
-      categoryId: targetCatId,
-      categoryName: targetCatName,
-      subcategory,
-      confidence,
-      ocrText,
-      ocrStatus: 'completed',
-      isReviewed: confidence >= 0.85,
-      isSynced: true,
-      tags,
-    };
-
-    useScreenshotStore.getState().addOrUpdateScreenshot(organizedScreenshot);
-
-    // Refresh Category and ancestor counts in SQLite & Store
-    await categoryRepository.updateAllAncestorCounts(targetCatId);
-    await useCategoryStore.getState().loadCategories();
-
-    // 5. Notification
+    // 4. Notification
     await notificationService.showScreenshotOrganizedNotification({
-      categoryName: targetCatName,
-      subcategory,
+      categoryName: organizedScreenshot.categoryName,
+      subcategory: organizedScreenshot.subcategory || 'General',
       fileName: asset.fileName,
     });
 

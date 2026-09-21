@@ -52,7 +52,7 @@ export function formatApiErrorMessage(error: any, baseUrl: string): string {
   }
 
   if (status === 401) {
-    return backendMsg || 'Invalid email or password';
+    return backendMsg || 'Invalid email/username or password';
   }
   if (status === 403) {
     return backendMsg || 'Access denied';
@@ -60,11 +60,14 @@ export function formatApiErrorMessage(error: any, baseUrl: string): string {
   if (status === 404) {
     return backendMsg || 'API endpoint not found';
   }
+  if (status === 409) {
+    return backendMsg || 'Email or username already exists';
+  }
   if (status >= 500) {
-    return backendMsg || 'Backend server error';
+    return backendMsg || 'Backend server error. Please retry later.';
   }
 
-  return backendMsg || rawMsg || 'Unable to connect to ContextVault backend';
+  return backendMsg || rawMsg || 'Cannot connect to ContextVault backend';
 }
 
 class ApiClient {

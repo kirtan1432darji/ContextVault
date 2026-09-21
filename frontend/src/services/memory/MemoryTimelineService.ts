@@ -162,6 +162,38 @@ export class MemoryTimelineService {
   }
 
   /**
+   * Adds or updates a single screenshot in the in-memory timeline and invalidates caches.
+   */
+  async addScreenshotToTimeline(screenshot: any): Promise<void> {
+    if (!screenshot || !screenshot.id) return;
+    const event = this.mapScreenshotModelToEvent(screenshot);
+
+    if (!this.cachedEvents) {
+      await this.getAllEvents();
+    }
+
+    if (this.cachedEvents) {
+      const existingIndex = this.cachedEvents.findIndex(
+        (e) => e.screenshotId === event.screenshotId || e.id === event.id
+      );
+      if (existingIndex >= 0) {
+        this.cachedEvents[existingIndex] = event;
+      } else {
+        this.cachedEvents.unshift(event);
+      }
+      this.cachedEvents.sort((a, b) => b.timestamp - a.timestamp);
+      this.cachedGrouping = this.groupEvents(this.cachedEvents);
+    }
+
+    try {
+      const { dailyDigestService } = require('./DailyDigestService');
+      if (dailyDigestService && typeof dailyDigestService.getTodayDigest === 'function') {
+        await dailyDigestService.getTodayDigest(true);
+      }
+    } catch {}
+  }
+
+  /**
    * Rebuilds the entire memory timeline from fresh SQLite data.
    */
   async rebuildTimeline(): Promise<TimelineGrouping> {
