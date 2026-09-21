@@ -86,6 +86,14 @@ def create_application() -> FastAPI:
             "docs": "/docs",
         }
 
+    @application.get("/health", tags=["Health"])
+    async def health_check():
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "version": settings.VERSION,
+        }
+
     return application
 
 

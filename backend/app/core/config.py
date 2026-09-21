@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/contextvault.log"
 
+    # Vision AI Gateway (Windows Laptop RTX 4050)
+    VISION_SERVER_URL: str = "http://localhost:8000"
+    VISION_TIMEOUT: int = 120
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         """Construct standard SQLAlchemy connection string using pyodbc for SQL Server."""
