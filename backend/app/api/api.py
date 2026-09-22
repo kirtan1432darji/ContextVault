@@ -16,6 +16,6 @@ api_router.include_router(classification_router)
 api_router.include_router(screenshots_router)
 api_router.include_router(context_router)
 api_router.include_router(chat_router)
-api_router.include_router(vision_router)
+api_router.include_router(vision_router, tags=["Vision AI"])
 
 __all__ = ["api_router"]

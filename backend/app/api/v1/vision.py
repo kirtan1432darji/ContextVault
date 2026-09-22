@@ -9,6 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
 from app.core.logging import logger
 from app.services.vision_gateway_service import vision_gateway_service
 

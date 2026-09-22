@@ -346,9 +346,11 @@ class VisionGatewayService:
                     data = response.json()
                     return {
                         "status": "healthy",
+                        "vision_server": "connected",
                         "online": True,
                         "modelLoaded": data.get("modelLoaded", True),
-                        "model": data.get("model", "Qwen/Qwen2.5-VL-3B-Instruct"),
+                        "model": data.get("model", settings.VISION_MODEL),
+                        "version": "1.0.0",
                         "gpu": data.get("gpu", "NVIDIA GeForce RTX 4050"),
                     }
         except Exception as err:
@@ -396,10 +398,11 @@ class VisionGatewayService:
             pass
 
         return {
-            "model": "Qwen/Qwen2.5-VL-3B-Instruct",
+            "model": settings.VISION_MODEL,
             "provider": "local_qwen_vl",
             "quantization": "4-bit NF4",
             "precision": "bfloat16",
+            "version": "1.0.0",
             "vram_allocated_gb": "~4.2 GB",
             "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU",
         }
