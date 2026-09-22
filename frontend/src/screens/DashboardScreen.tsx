@@ -42,6 +42,8 @@ import {
   MemoryTimelineEvent,
   PeriodDigest,
 } from '../services/memory';
+import { visionAIService } from '../services/visionAIService';
+import { testConnection } from '../config/api';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -79,6 +81,10 @@ export const DashboardScreen: React.FC = () => {
 
   const [isOrganizing, setIsOrganizing] = useState(false);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
+
+  // System Status indicators
+  const [visionStatus, setVisionStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
 
   // Sprint RN-03 Scanner Store State
   const isListening = useScannerStore((s) => s.isListening);
@@ -204,6 +210,25 @@ export const DashboardScreen: React.FC = () => {
       aiProcessingQueue.retryFailed().catch(() => {});
     });
   }, [loadCategories, setScreenshots, loadStatsAndRecents, loadRecentChats, loadRecentSearches, loadSavedSearches, loadQueueData, loadTodayDigest]);
+
+  // Check system status on mount
+  useEffect(() => {
+    const checkSystemStatus = async () => {
+      try {
+        const pingResult = await visionAIService.pingVisionServer();
+        setVisionStatus(pingResult.online === true ? 'connected' : 'offline');
+      } catch {
+        setVisionStatus('offline');
+      }
+      try {
+        const healthResult = await testConnection();
+        setBackendStatus(healthResult.isHealthy === true ? 'connected' : 'offline');
+      } catch {
+        setBackendStatus('offline');
+      }
+    };
+    checkSystemStatus();
+  }, []);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -569,6 +594,23 @@ export const DashboardScreen: React.FC = () => {
           </Text>
         </View>
       </ModernCard>
+
+      {/* System Status Row */}
+      <View style={{flexDirection:'row', justifyContent:'space-around', marginHorizontal:16, marginBottom:12, padding:12, backgroundColor:'rgba(255,255,255,0.05)', borderRadius:12}}>
+        {[
+          {label:'Vision AI', status:visionStatus},
+          {label:'Backend', status:backendStatus},
+          {label:'SQL', status:screenshots.length > 0 ? 'connected' : 'checking'},
+        ].map(item => (
+          <View key={item.label} style={{alignItems:'center'}}>
+            <View style={{width:8, height:8, borderRadius:4, backgroundColor:item.status==='connected'?'#4CAF50':item.status==='offline'?'#F44336':'#FFC107', marginBottom:4}}/>
+            <Text style={{color:'rgba(255,255,255,0.7)', fontSize:10}}>{item.label}</Text>
+            <Text style={{color:item.status==='connected'?'#4CAF50':item.status==='offline'?'#F44336':'#FFC107', fontSize:9, fontWeight:'600'}}>
+              {item.status==='connected'?'Online':item.status==='offline'?'Offline':'...'}
+            </Text>
+          </View>
+        ))}
+      </View>
 
       {/* Quick Action Hub (Sprint P0) */}
       <View style={styles.quickActionsRow}>

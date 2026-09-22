@@ -31,7 +31,7 @@ import { backupService } from '../services/backupService';
 import { EnvironmentManager } from '../config/EnvironmentManager';
 import { BackendConnectionManager } from '../services/BackendConnectionManager';
 import { getApiBaseUrl, setApiBaseUrl } from '../config/api';
-import { visionAIService, PingResult as VisionPingResult } from '../services/visionAIService';
+import { visionAIService, PingResult as VisionPingResult, VisionModelInfo } from '../services/visionAIService';
 import { visionInferenceQueue } from '../vision/VisionInferenceQueue';
 
 export const SettingsScreen: React.FC = () => {
@@ -52,6 +52,13 @@ export const SettingsScreen: React.FC = () => {
   const setAnalyzeOnImport = useSettingsStore((s) => s.setAnalyzeOnImport);
   const [testingVision, setTestingVision] = useState(false);
   const [visionPing, setVisionPing] = useState<VisionPingResult | null>(null);
+  const [modelInfo, setModelInfo] = useState<VisionModelInfo | null>(null);
+
+  useEffect(() => {
+    visionAIService.getModelInfo().then((info) => {
+      if (info) setModelInfo(info);
+    });
+  }, []);
 
   const handleTestVisionServer = async () => {
     setTestingVision(true);

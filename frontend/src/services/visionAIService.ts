@@ -15,6 +15,8 @@ import {
   VisionModelInfo,
 } from '../vision/types';
 
+export type { VisionModelInfo };
+
 export interface ScreenshotAnalysisResult extends VisionStructuredOutput {
   title: string;
   summary: string;
