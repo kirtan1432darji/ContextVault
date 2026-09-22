@@ -1,7 +1,10 @@
-try {
-  require('./scripts/sync-env').syncEnv();
-} catch (e) {
-  // Graceful fallback
+if (!process.env._SYNC_ENV_DONE) {
+  process.env._SYNC_ENV_DONE = '1';
+  try {
+    require('./scripts/sync-env').syncEnv();
+  } catch (e) {
+    // Graceful fallback
+  }
 }
 
 module.exports = {

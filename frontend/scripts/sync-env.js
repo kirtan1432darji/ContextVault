@@ -44,6 +44,22 @@ function syncEnv() {
   };
 
   const targetPath = path.resolve(rootDir, 'src', 'config', 'env.generated.json');
+  if (fs.existsSync(targetPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+      if (
+        existing.apiBaseUrl === output.apiBaseUrl &&
+        existing.environment === output.environment &&
+        existing.visionProvider === output.visionProvider &&
+        existing.visionServerUrl === output.visionServerUrl &&
+        existing.visionTimeout === output.visionTimeout &&
+        existing.resolvedFrom === output.resolvedFrom
+      ) {
+        return existing;
+      }
+    } catch (_) {}
+  }
+
   fs.writeFileSync(targetPath, JSON.stringify(output, null, 2), 'utf8');
   console.log(`[sync-env] Synchronized environment from ${selectedFile}:`, output);
   return output;
