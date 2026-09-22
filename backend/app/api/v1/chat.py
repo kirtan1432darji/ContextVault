@@ -68,6 +68,25 @@ def get_chat_history(
     )
 
 
+@router.delete(
+    "/history/{folderId}",
+    response_model=ApiResponse[int],
+    summary="Delete conversation history for a smart folder",
+    description="Soft-deletes all chat messages and sessions associated with the specified folder ID.",
+)
+def delete_chat_history_for_folder(
+    folderId: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> ApiResponse[int]:
+    service = ChatEngineService(db)
+    count = service.delete_history(user_id=current_user.Id, folder_id=folderId)
+    return ApiResponse.ok(
+        data=count,
+        message=f"Deleted {count} chat message(s) for folder {folderId}.",
+    )
+
+
 @router.get(
     "/suggestions/{folderId}",
     response_model=ApiResponse[ChatSuggestionsDto],
@@ -90,12 +109,33 @@ def get_chat_suggestions(
 
 
 @router.get(
+    "/sessions",
+    response_model=ApiResponse[List[ChatSessionSummaryDto]],
+    summary="List active conversation sessions",
+    description="Lists distinct chat sessions, optionally filtered by folderId query parameter.",
+)
+def list_chat_sessions(
+    folderId: Optional[uuid.UUID] = Query(None, description="Optional smart folder ID to filter sessions"),
+    limit: int = Query(default=20, ge=1, le=50, description="Maximum sessions to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> ApiResponse[List[ChatSessionSummaryDto]]:
+    service = ChatEngineService(db)
+    sessions = service.get_sessions(
+        user_id=current_user.Id, folder_id=folderId, limit=limit
+    )
+    return ApiResponse.ok(
+        data=sessions, message=f"Retrieved {len(sessions)} active chat sessions."
+    )
+
+
+@router.get(
     "/sessions/{folderId}",
     response_model=ApiResponse[List[ChatSessionSummaryDto]],
     summary="List active conversation sessions in a folder",
-    description="Lists distinct chat sessions with last message preview and message count.",
+    description="Lists distinct chat sessions in a folder with last message preview and message count.",
 )
-def get_chat_sessions(
+def get_folder_chat_sessions(
     folderId: uuid.UUID,
     limit: int = Query(default=20, ge=1, le=50, description="Maximum sessions to return"),
     db: Session = Depends(get_db),

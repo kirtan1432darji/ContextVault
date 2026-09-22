@@ -12,12 +12,16 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, db: Session):
         super().__init__(User, db)
 
-    def get_by_email(self, email: str) -> Optional[User]:
-        stmt = select(User).where(User.Email == email.strip().lower(), User.IsDeleted == False)
+    def get_by_email(self, email: str, include_deleted: bool = False) -> Optional[User]:
+        stmt = select(User).where(User.Email == email.strip().lower())
+        if not include_deleted:
+            stmt = stmt.where(User.IsDeleted == False)
         return self.db.scalars(stmt).first()
 
-    def get_by_username(self, username: str) -> Optional[User]:
-        stmt = select(User).where(User.Username == username.strip(), User.IsDeleted == False)
+    def get_by_username(self, username: str, include_deleted: bool = False) -> Optional[User]:
+        stmt = select(User).where(User.Username == username.strip())
+        if not include_deleted:
+            stmt = stmt.where(User.IsDeleted == False)
         return self.db.scalars(stmt).first()
 
     def get_by_identifier(self, identifier: str) -> Optional[User]:

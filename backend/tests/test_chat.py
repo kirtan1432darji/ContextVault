@@ -1,5 +1,11 @@
 import uuid
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from app.services.prompt_builder_service import PromptBuilderService
+from app.services.citation_service import CitationService
+from app.repositories.chat_repository import ChatRepository
+from app.models.screenshot import Screenshot
+from app.models.chat import ChatMessage, ChatSession
 
 
 def _setup_test_data(client: TestClient, auth_headers: dict):
@@ -199,6 +205,65 @@ def test_chat_suggestions(client: TestClient, auth_headers: dict):
     assert any("statement" in s.lower() or "balance" in s.lower() or "spending" in s.lower() or "task" in s.lower() for s in data["suggestions"])
 
 
+def test_chat_sessions_query_endpoint(client: TestClient, auth_headers: dict):
+    category_id, _, _ = _setup_test_data(client, auth_headers)
+    session_id = str(uuid.uuid4())
+
+    # Create message
+    client.post(
+        "/api/chat/message",
+        headers=auth_headers,
+        json={
+            "sessionId": session_id,
+            "folderId": category_id,
+            "content": "Testing sessions query endpoint.",
+        },
+    )
+
+    # 1. Query /api/chat/sessions without folderId
+    resp_all = client.get("/api/chat/sessions", headers=auth_headers)
+    assert resp_all.status_code == 200
+    data_all = resp_all.json()["data"]
+    assert len(data_all) >= 1
+    assert any(s["sessionId"] == session_id for s in data_all)
+
+    # 2. Query /api/chat/sessions with folderId query param
+    resp_filtered = client.get(f"/api/chat/sessions?folderId={category_id}", headers=auth_headers)
+    assert resp_filtered.status_code == 200
+    data_filtered = resp_filtered.json()["data"]
+    assert len(data_filtered) >= 1
+    assert any(s["sessionId"] == session_id for s in data_filtered)
+
+
+def test_delete_chat_history_for_folder(client: TestClient, auth_headers: dict):
+    category_id, _, _ = _setup_test_data(client, auth_headers)
+
+    # Post message
+    client.post(
+        "/api/chat/message",
+        headers=auth_headers,
+        json={
+            "folderId": category_id,
+            "content": "Message to be cleared with entire folder history.",
+        },
+    )
+
+    # Verify history exists
+    hist_before = client.get(f"/api/chat/history/{category_id}", headers=auth_headers)
+    assert hist_before.status_code == 200
+    assert hist_before.json()["data"]["totalCount"] >= 2
+
+    # Delete history for folder
+    del_resp = client.delete(f"/api/chat/history/{category_id}", headers=auth_headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["data"] >= 2
+
+    # Verify history is now empty
+    hist_after = client.get(f"/api/chat/history/{category_id}", headers=auth_headers)
+    assert hist_after.status_code == 200
+    assert hist_after.json()["data"]["totalCount"] == 0
+
+
 def test_chat_sessions_and_delete(client: TestClient, auth_headers: dict):
     category_id, _, _ = _setup_test_data(client, auth_headers)
     session_id = str(uuid.uuid4())
@@ -214,7 +279,7 @@ def test_chat_sessions_and_delete(client: TestClient, auth_headers: dict):
         },
     )
 
-    # Get sessions
+    # Get sessions via path param
     sess_resp = client.get(
         f"/api/chat/sessions/{category_id}",
         headers=auth_headers,
@@ -254,3 +319,83 @@ def test_chat_message_global_no_folder(client: TestClient, auth_headers: dict):
     data = resp.json()["data"]
     assert data["role"] == "assistant"
     assert "ContextVault" in data["content"]
+
+
+def test_prompt_builder_service_unit():
+    service = PromptBuilderService()
+    assert service.detect_intent("What is my total spending?") == PromptBuilderService.INTENT_FINANCE
+    assert service.detect_intent("What are my pending tasks?") == PromptBuilderService.INTENT_TASKS
+    assert service.detect_intent("Who is Dr. Smith?") == PromptBuilderService.INTENT_CONTACTS
+    assert service.detect_intent("Summarize this folder") == PromptBuilderService.INTENT_SUMMARY
+    assert service.detect_intent("Show me the timeline") == PromptBuilderService.INTENT_TIMELINE
+    assert service.detect_intent("Random text without keywords") == PromptBuilderService.INTENT_GENERAL
+
+
+def test_citation_service_unit():
+    service = CitationService()
+    fake_screenshot = Screenshot(
+        Id=uuid.uuid4(),
+        UserId=uuid.uuid4(),
+        FileName="invoice_sample.png",
+        OCRText="Invoice for $99.99 paid with credit card at Target",
+        DetectedApp="Target",
+        DeviceFolder="/DCIM/Screenshots",
+    )
+    citation = service.build_citation(fake_screenshot)
+    assert citation.fileName == "invoice_sample.png"
+    assert "Target" in citation.snippet or "$99.99" in citation.snippet
+
+    citations = service.find_citations_for_query("credit card target", [fake_screenshot])
+    assert len(citations) == 1
+    assert citations[0].screenshotId == fake_screenshot.Id
+
+    serialized = service.serialize_citations(citations)
+    deserialized = service.deserialize_citations(serialized)
+    assert len(deserialized) == 1
+    assert deserialized[0].screenshotId == fake_screenshot.Id
+
+
+def test_chat_repository_crud(db_session: Session):
+    repo = ChatRepository(db_session)
+    user_id = uuid.uuid4()
+    folder_id = uuid.uuid4()
+
+    # 1. create_session
+    session = repo.create_session(user_id=user_id, folder_id=folder_id, title="Test Session")
+    assert session.Id is not None
+    assert session.UserId == user_id
+    assert session.FolderId == folder_id
+
+    # 2. get_session
+    fetched_session = repo.get_session(session.Id, user_id)
+    assert fetched_session is not None
+    assert fetched_session.Id == session.Id
+
+    # 3. save_message
+    msg = repo.save_message(
+        user_id=user_id,
+        session_id=session.Id,
+        role="user",
+        message="Hello World",
+        folder_id=folder_id,
+    )
+    assert msg.Id is not None
+    assert msg.Message == "Hello World"
+
+    # 4. get_chat_history
+    history = repo.get_chat_history(user_id=user_id, folder_id=folder_id)
+    assert len(history) == 1
+    assert history[0].Id == msg.Id
+
+    # 5. get_recent_sessions
+    sessions = repo.get_recent_sessions(user_id=user_id, folder_id=folder_id)
+    assert len(sessions) == 1
+    assert sessions[0]["sessionId"] == session.Id
+
+    # 6. delete_session
+    deleted = repo.delete_session(user_id=user_id, session_id=session.Id)
+    assert deleted is True
+
+    # Check history after delete
+    history_after = repo.get_chat_history(user_id=user_id, session_id=session.Id)
+    assert len(history_after) == 0
