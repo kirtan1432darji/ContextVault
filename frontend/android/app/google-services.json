@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "104928374829",
+    "project_id": "contextvault-app",
+    "storage_bucket": "contextvault-app.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:104928374829:android:a4b3c2d1e0f98765",
+        "android_client_info": {
+          "package_name": "com.contextvault.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD-ContextVaultProductionKey2026Mock"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:104928374829:android:b5c4d3e2f1a09876",
+        "android_client_info": {
+          "package_name": "com.contextvault"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD-ContextVaultProductionKey2026Mock"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

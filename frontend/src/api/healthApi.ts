@@ -3,6 +3,7 @@ import { apiClient } from './apiClient';
 import { ApiConstants } from './apiConstants';
 import { API_BASE_URL, REQUEST_TIMEOUT_MS } from '../config/apiConfig';
 import { Result } from '../utils/result';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
 
 export interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy' | string;
@@ -71,49 +72,19 @@ export class HealthApi {
 
   /**
    * Pings the Docker backend, measuring client-to-server round-trip latency in milliseconds.
+   * Delegates to BackendConnectionManager as the single source of truth.
    */
   async pingServer(customUrl?: string): Promise<PingResult> {
-    const targetBase = customUrl || apiClient.getBaseUrl();
-    const healthUrl = targetBase.endsWith('/api')
-      ? `${targetBase}/health`
-      : `${targetBase}/api/health`;
-
-    const start = Date.now();
-    try {
-      const response = await axios.get(healthUrl, {
-        timeout: 10000,
-        headers: {
-          'Cache-Control': 'no-cache',
-          Accept: 'application/json',
-        },
-      });
-      const latencyMs = Date.now() - start;
-
-      const data = (response.data as any)?.data || response.data;
-      const isHealthy = response.status === 200 && data?.status === 'healthy';
-
-      return {
-        isHealthy,
-        latencyMs,
-        status: data?.status || (response.status === 200 ? 'healthy' : 'degraded'),
-        database: data?.database || 'unknown',
-        version: data?.version || '1.0.0',
-        baseUrl: targetBase,
-      };
-    } catch (err: any) {
-      const latencyMs = Date.now() - start;
-      const errorMessage = this.formatErrorMessage(err);
-
-      return {
-        isHealthy: false,
-        latencyMs,
-        status: 'unreachable',
-        database: 'disconnected',
-        version: 'unknown',
-        baseUrl: targetBase,
-        errorMessage,
-      };
-    }
+    const res = await BackendConnectionManager.ping(customUrl);
+    return {
+      isHealthy: res.isHealthy,
+      latencyMs: res.latencyMs,
+      status: res.status,
+      database: res.database,
+      version: res.version,
+      baseUrl: res.baseUrl,
+      errorMessage: res.errorMessage,
+    };
   }
 
   private formatErrorMessage(err: any): string {

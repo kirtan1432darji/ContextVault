@@ -14,6 +14,9 @@ export interface SavedSearchItem {
   iconName: string;
   colorHex: string;
   createdAt: string;
+  filters?: SearchFilterState;
+  lastUsedAt?: string;
+  useCount?: number;
 }
 
 export type SearchDateRange = 'all' | 'today' | '7days' | '30days';

@@ -44,6 +44,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Synchronize Environment Configuration
+        working-directory: frontend
+        run: npm run sync-env
+
       - name: Grant Execute Permission to Gradle Wrapper
         working-directory: frontend/android
         run: chmod +x gradlew

@@ -15,10 +15,16 @@ export const StorageKeys = {
   ACCESS_TOKEN: 'cv_auth_access_token',
   REFRESH_TOKEN: 'cv_auth_refresh_token',
   USER_PROFILE: 'cv_auth_user_profile',
-  THEME_PREFERENCE: 'cv_app_theme_preference',
+  THEME_MODE: 'theme_mode',
+  THEME_PREFERENCE: 'theme_mode',
   REMEMBER_ME: 'cv_auth_remember_me',
   REMEMBERED_IDENTIFIER: 'cv_auth_remembered_identifier',
   IS_ONBOARDED: 'cv_app_is_onboarded',
+  IS_GUEST: 'is_guest',
+  IS_AUTHENTICATED: 'is_authenticated',
+  GUEST_SESSION_CREATED_AT: 'guest_session_created_at',
+  NOTIFICATIONS: 'cv_vault_notifications',
+  BACKEND_URL_OVERRIDE: 'backend_url_override',
 };
 
 export const StorageService = {
@@ -112,18 +118,62 @@ export const StorageService = {
     this.setObject(StorageKeys.USER_PROFILE, user);
   },
 
-  getThemePreference(): ThemeMode {
-    const mode = this.getString(StorageKeys.THEME_PREFERENCE) as ThemeMode;
+  getThemeMode(): ThemeMode {
+    const mode = (this.getString(StorageKeys.THEME_MODE) || this.getString('cv_app_theme_preference')) as ThemeMode | null;
     return mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system';
   },
 
-  setThemePreference(theme: ThemeMode): void {
+  setThemeMode(theme: ThemeMode): void {
+    this.setString(StorageKeys.THEME_MODE, theme);
     this.setString(StorageKeys.THEME_PREFERENCE, theme);
+  },
+
+  getThemePreference(): ThemeMode {
+    return this.getThemeMode();
+  },
+
+  setThemePreference(theme: ThemeMode): void {
+    this.setThemeMode(theme);
   },
 
   clearAuthSession(): void {
     this.removeItem(StorageKeys.ACCESS_TOKEN);
     this.removeItem(StorageKeys.REFRESH_TOKEN);
     this.removeItem(StorageKeys.USER_PROFILE);
+    this.setBoolean(StorageKeys.IS_AUTHENTICATED, false);
+  },
+
+  // Guest Session Helpers
+  isGuest(): boolean {
+    return this.getBoolean(StorageKeys.IS_GUEST);
+  },
+
+  setGuestSession(): void {
+    this.setBoolean(StorageKeys.IS_GUEST, true);
+    this.setBoolean(StorageKeys.IS_AUTHENTICATED, false);
+    this.setString(StorageKeys.GUEST_SESSION_CREATED_AT, new Date().toISOString());
+  },
+
+  clearGuestSession(): void {
+    this.setBoolean(StorageKeys.IS_GUEST, false);
+    this.removeItem(StorageKeys.IS_GUEST);
+    this.removeItem(StorageKeys.GUEST_SESSION_CREATED_AT);
+  },
+
+  getGuestSessionCreatedAt(): string | null {
+    return this.getString(StorageKeys.GUEST_SESSION_CREATED_AT);
+  },
+
+  // Backend URL MMKV Persistence
+  getBackendUrlOverride(): string | null {
+    return this.getString(StorageKeys.BACKEND_URL_OVERRIDE);
+  },
+
+  setBackendUrlOverride(url: string): void {
+    this.setString(StorageKeys.BACKEND_URL_OVERRIDE, url);
+  },
+
+  clearBackendUrlOverride(): void {
+    this.removeItem(StorageKeys.BACKEND_URL_OVERRIDE);
   },
 };

@@ -7,12 +7,15 @@ export interface AuthContextType {
   user: UserModel | null;
   currentUser: UserModel | null;
   isAuthenticated: boolean;
+  isGuest: boolean;
   isLoading: boolean;
   loading: boolean;
   error: string | null;
   isDeveloperMode: boolean;
   login: (payload: LoginPayload) => Promise<boolean>;
   register: (payload: RegisterPayload) => Promise<boolean>;
+  loginAsGuest: () => void;
+  exitGuestMode: () => void;
   logout: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   loadSession: () => Promise<boolean>;
@@ -36,12 +39,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user: DEVELOPER_MODE ? (store.user || MOCK_DEVELOPER_USER) : store.user,
       currentUser: DEVELOPER_MODE ? (store.currentUser || MOCK_DEVELOPER_USER) : store.currentUser,
       isAuthenticated: DEVELOPER_MODE ? true : store.isAuthenticated,
+      isGuest: DEVELOPER_MODE ? false : store.isGuest,
       isLoading: DEVELOPER_MODE ? false : (store.loading || store.isInitializing),
       loading: DEVELOPER_MODE ? false : store.loading,
       error: store.error,
       isDeveloperMode: DEVELOPER_MODE,
       login: store.login,
       register: store.register,
+      loginAsGuest: store.loginAsGuest,
+      exitGuestMode: store.exitGuestMode,
       logout: store.logout,
       refreshSession: store.refreshSession,
       loadSession: store.loadSession,
@@ -51,11 +57,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       store.user,
       store.currentUser,
       store.isAuthenticated,
+      store.isGuest,
       store.loading,
       store.isInitializing,
       store.error,
       store.login,
       store.register,
+      store.loginAsGuest,
+      store.exitGuestMode,
       store.logout,
       store.refreshSession,
       store.loadSession,
@@ -74,12 +83,15 @@ export const useAuth = (): AuthContextType => {
       user: DEVELOPER_MODE ? (store.user || MOCK_DEVELOPER_USER) : store.user,
       currentUser: DEVELOPER_MODE ? (store.currentUser || MOCK_DEVELOPER_USER) : store.currentUser,
       isAuthenticated: DEVELOPER_MODE ? true : store.isAuthenticated,
+      isGuest: DEVELOPER_MODE ? false : store.isGuest,
       isLoading: DEVELOPER_MODE ? false : (store.loading || store.isInitializing),
       loading: DEVELOPER_MODE ? false : store.loading,
       error: store.error,
       isDeveloperMode: DEVELOPER_MODE,
       login: store.login,
       register: store.register,
+      loginAsGuest: store.loginAsGuest,
+      exitGuestMode: store.exitGuestMode,
       logout: store.logout,
       refreshSession: store.refreshSession,
       loadSession: store.loadSession,

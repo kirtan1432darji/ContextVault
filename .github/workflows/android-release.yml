@@ -1,0 +1,178 @@
+name: Android Production Release CI/CD
+
+on:
+  push:
+    branches:
+      - frontend-dev
+    tags:
+      - 'v*'
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/android-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-build:
+    name: Test, Validate & Build Android Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Synchronize Environment Configuration
+        working-directory: frontend
+        run: npm run sync-env
+
+      - name: Run TypeScript Typecheck (Strict Validation)
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Run Jest Unit Tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Configure Production Signing Keystore
+        working-directory: frontend/android
+        run: |
+          if [ -n "${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding release keystore from GitHub Secrets..."
+            echo "${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/contextvault-release.keystore
+          else
+            echo "Generating production release keystore for CI build..."
+            keytool -genkeypair -v \
+              -keystore app/contextvault-release.keystore \
+              -alias contextvault-key \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "ContextVault2026!" \
+              -keypass "ContextVault2026!" \
+              -dname "CN=ContextVault, OU=Mobile, O=ContextVault, L=San Francisco, ST=California, C=US"
+          fi
+
+          echo "storePassword=ContextVault2026!" > keystore.properties
+          echo "keyPassword=ContextVault2026!" >> keystore.properties
+          echo "keyAlias=contextvault-key" >> keystore.properties
+          echo "storeFile=contextvault-release.keystore" >> keystore.properties
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        working-directory: frontend/android
+        run: chmod +x gradlew
+
+      - name: Build Android Release APK
+        working-directory: frontend/android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verify Release APK Asset
+        run: |
+          APK_PATH="frontend/android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::Release APK not found at: $APK_PATH"
+            exit 1
+          fi
+          echo "Release APK verified successfully:"
+          ls -lh "$APK_PATH"
+
+      - name: Upload Release APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextVault-Release-APK
+          path: frontend/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      - name: Publish or Update Latest GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG_NAME="latest"
+          RELEASE_TITLE="Latest ContextVault Release APK"
+          SOURCE_APK="frontend/android/app/build/outputs/apk/release/app-release.apk"
+          TARGET_APK="frontend/ContextVault.apk"
+          cp "$SOURCE_APK" "$TARGET_APK"
+
+          echo "Configuring Git identity..."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Moving Git tag '$TAG_NAME' to commit ${{ github.sha }}..."
+          git tag -f "$TAG_NAME" "${{ github.sha }}"
+          git push -f origin "$TAG_NAME"
+
+          BUILD_TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/releases/latest/download/ContextVault.apk"
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          RELEASE_BODY=$(printf "### ContextVault Android Production Release (Latest Build)\n\n- **Branch**: \`frontend-dev\`\n- **Commit**: [%s](%s)\n- **Built At**: %s\n- **Direct Download**: [%s](%s)\n\n*Features Backend Connection Manager, runtime Wi-Fi IP configuration, offline health detection, and Vision AI foundation.*" "${{ github.sha }}" "$COMMIT_URL" "$BUILD_TIMESTAMP" "ContextVault.apk" "$DOWNLOAD_URL")
+
+          echo "Checking if GitHub Release '$TAG_NAME' exists..."
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release '$TAG_NAME' exists. Updating title, notes, and latest status..."
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+
+            echo "Uploading and overwriting $TARGET_APK asset..."
+            gh release upload "$TAG_NAME" "$TARGET_APK" --clobber
+          else
+            echo "Release '$TAG_NAME' does not exist. Creating new release..."
+            gh release create "$TAG_NAME" "$TARGET_APK" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_BODY" \
+              --latest
+          fi
+
+          echo "Verifying published release assets..."
+          gh release view "$TAG_NAME"
+
+      - name: Build Android App Bundle (.aab) on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: frontend/android
+        run: ./gradlew bundleRelease --no-daemon --stacktrace
+
+      - name: Verify Release AAB Asset on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          AAB_PATH="frontend/android/app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB_PATH" ]; then
+            echo "::error::Release AAB not found at: $AAB_PATH"
+            exit 1
+          fi
+          echo "Release AAB verified successfully:"
+          ls -lh "$AAB_PATH"
+
+      - name: Upload Release AAB as Workflow Artifact on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextVault-Release-AAB
+          path: frontend/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30

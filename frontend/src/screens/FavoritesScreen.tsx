@@ -52,7 +52,15 @@ export const FavoritesScreen: React.FC = () => {
               onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
               style={[styles.gridItem, { width: COLUMN_WIDTH }]}
             >
-              <ScreenshotImageThumbnail filePath={item.filePath} style={styles.gridThumb} />
+              <ScreenshotImageThumbnail
+                screenshot={item}
+                filePath={item.filePath}
+                localPath={item.localPath}
+                contentUri={item.contentUri}
+                thumbnailUri={item.thumbnailUri}
+                deviceAssetId={item.deviceAssetId}
+                style={styles.gridThumb}
+              />
               <View style={styles.metaRow}>
                 <Text numberOfLines={1} style={[styles.titleText, { color: theme.colors.textPrimary }]}>
                   {item.categoryName}
@@ -76,8 +84,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   subtitle: {
@@ -93,7 +102,7 @@ const styles = StyleSheet.create({
   gridThumb: {
     width: '100%',
     height: 200,
-    borderRadius: 14,
+    borderRadius: 10,
   },
   metaRow: {
     marginTop: 6,
@@ -103,7 +112,7 @@ const styles = StyleSheet.create({
   },
   titleText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     flex: 1,
     marginRight: 4,
   },

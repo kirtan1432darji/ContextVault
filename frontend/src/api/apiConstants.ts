@@ -15,6 +15,7 @@ export const ApiConstants = {
   authProfile: '/auth/profile',
   authRefresh: '/auth/refresh',
   authLogout: '/auth/logout',
+  authForgotPassword: '/auth/forgot-password',
 
   // Screenshot Endpoints
   screenshots: '/screenshots',

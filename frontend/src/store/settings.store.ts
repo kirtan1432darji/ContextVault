@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ApiConstants } from '../api/apiConstants';
-import { ThemeMode } from '../theme';
+import { ThemeMode } from '../theme/theme';
+import { StorageService } from '../utils/storage';
 
 interface SettingsState {
   themeMode: ThemeMode;
@@ -10,6 +11,7 @@ interface SettingsState {
   screenshotNotifications: boolean;
   scanOnlyScreenshots: boolean;
   useMockAi: boolean;
+  analyzeOnImport: boolean;
   lastScanTimestamp: string | null;
   recentSearches: string[];
 
@@ -21,24 +23,31 @@ interface SettingsState {
   setScreenshotNotifications: (enabled: boolean) => void;
   setScanOnlyScreenshots: (enabled: boolean) => void;
   setUseMockAi: (enabled: boolean) => void;
+  setAnalyzeOnImport: (enabled: boolean) => void;
   setLastScanTimestamp: (timestamp: string) => void;
   addRecentSearch: (query: string) => void;
   removeRecentSearch: (query: string) => void;
   clearRecentSearches: () => void;
 }
 
+const initialThemeMode: ThemeMode = StorageService.getThemeMode();
+
 export const useSettingsStore = create<SettingsState>((set) => ({
-  themeMode: 'system',
+  themeMode: initialThemeMode,
   backendUrl: ApiConstants.defaultBaseUrl,
   autoScanOnLaunch: true,
   autoDetectScreenshots: true,
   screenshotNotifications: true,
   scanOnlyScreenshots: true,
   useMockAi: false,
+  analyzeOnImport: false,
   lastScanTimestamp: null,
   recentSearches: [],
 
-  setThemeMode: (mode: ThemeMode) => set({ themeMode: mode }),
+  setThemeMode: (mode: ThemeMode) => {
+    StorageService.setThemeMode(mode);
+    set({ themeMode: mode });
+  },
   setBackendUrl: (url: string) => set({ backendUrl: url }),
   setAutoScanOnLaunch: (enabled: boolean) => set({ autoScanOnLaunch: enabled }),
   setAutoDetectScreenshots: (enabled: boolean) => set({ autoDetectScreenshots: enabled }),
@@ -46,6 +55,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ screenshotNotifications: enabled }),
   setScanOnlyScreenshots: (enabled: boolean) => set({ scanOnlyScreenshots: enabled }),
   setUseMockAi: (enabled: boolean) => set({ useMockAi: enabled }),
+  setAnalyzeOnImport: (enabled: boolean) => set({ analyzeOnImport: enabled }),
   setLastScanTimestamp: (timestamp: string) => set({ lastScanTimestamp: timestamp }),
 
   addRecentSearch: (query: string) => {

@@ -1,59 +1,65 @@
 export const Colors = {
-  // Brand Palette - Premium Deep Indigo, Electric Violet & Neon Teal
-  primary: '#6366F1',
-  primaryDark: '#4F46E5',
-  primaryLight: '#818CF8',
+  // Brand Palette - Material 3 Blue & Neutral Production Accents
+  primary: '#1A73E8',
+  primaryDark: '#174EA6',
+  primaryLight: '#E8F0FE',
 
-  secondary: '#06B6D4',
-  secondaryDark: '#0891B2',
-  secondaryLight: '#22D3EE',
+  secondary: '#5F6368',
+  secondaryDark: '#3C4043',
+  secondaryLight: '#F1F3F4',
 
-  tertiary: '#EC4899',
-  accent: '#8B5CF6',
+  tertiary: '#0284C7',
+  accent: '#1A73E8',
 
-  // Light Theme
+  // Light Theme - Flat, Neutral (Google Photos / Notion / Google Drive)
   light: {
-    background: '#F8FAFC',
+    background: '#FFFFFF',
     surface: '#FFFFFF',
+    surfaceVariant: '#F8F9FA',
     card: '#FFFFFF',
-    textPrimary: '#0F172A',
-    textSecondary: '#64748B',
-    textMuted: '#94A3B8',
-    border: '#E2E8F0',
-    divider: '#F1F5F9',
+    cardBorder: '#E5E7EB',
+    textPrimary: '#1F2937',
+    textSecondary: '#5F6368',
+    textMuted: '#9CA3AF',
+    border: '#E5E7EB',
+    divider: '#F1F3F4',
     tabBar: '#FFFFFF',
+    inputBackground: '#F8F9FA',
   },
 
-  // Dark Theme
+  // Dark Theme - Neutral Deep Charcoal (Material 3 Dark / Linear Dark)
   dark: {
-    background: '#0B0F19',
-    surface: '#131B2E',
-    card: '#1E293B',
-    textPrimary: '#F8FAFC',
-    textSecondary: '#94A3B8',
-    textMuted: '#64748B',
-    border: '#334155',
-    divider: '#1E293B',
-    tabBar: '#0E1424',
+    background: '#121212',
+    surface: '#1E1E1E',
+    surfaceVariant: '#252525',
+    card: '#1E1E1E',
+    cardBorder: '#2E2E2E',
+    textPrimary: '#F9FAFB',
+    textSecondary: '#9AA0A6',
+    textMuted: '#71717A',
+    border: '#2E2E2E',
+    divider: '#252525',
+    tabBar: '#18181B',
+    inputBackground: '#202124',
   },
 
-  // Category Accent Colors
+  // Category Accent Colors (Google Workspace / Material 3 Palette)
   categories: {
-    finance: '#10B981',
-    social: '#3B82F6',
-    work: '#8B5CF6',
-    code: '#F59E0B',
-    shopping: '#EC4899',
-    travel: '#14B8A6',
+    finance: '#1E8E3E',
+    social: '#1A73E8',
+    work: '#0284C7',
+    code: '#E37400',
+    shopping: '#D93025',
+    travel: '#00897B',
     memes: '#F97316',
-    unsorted: '#64748B',
+    unsorted: '#5F6368',
   },
 
   // Status & Confidence Colors
-  success: '#10B981',
-  warning: '#F59E0B',
-  error: '#EF4444',
-  info: '#3B82F6',
+  success: '#1E8E3E',
+  warning: '#E37400',
+  error: '#D93025',
+  info: '#1A73E8',
 
   getConfidenceColor(confidence: number): string {
     if (confidence >= 0.85) return Colors.success;

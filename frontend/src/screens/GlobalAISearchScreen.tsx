@@ -23,9 +23,13 @@ import {
   SearchFilterBar,
   VoiceSearchModal,
   RecentAndSavedSearches,
+  SaveSearchModal,
 } from '../components/search';
 import { EmptyStateView } from '../components/EmptyStateView';
-import { GlobalSearchResultItem } from '../models';
+import { FeatureLockCard } from '../components/FeatureLockCard';
+import { useAuthStore } from '../store/auth.store';
+import { GlobalSearchResultItem, SavedSearchItem } from '../models';
+import { searchSuggestionService } from '../services/search/SearchSuggestionService';
 
 type RouteProps = RouteProp<RootStackParamList, 'GlobalAISearch'>;
 
@@ -46,24 +50,52 @@ export const GlobalAISearchScreen: React.FC = () => {
   const recentSearches = useSearchStore((s) => s.recentSearches);
   const savedSearches = useSearchStore((s) => s.savedSearches);
   const isVoiceModalOpen = useSearchStore((s) => s.isVoiceModalOpen);
+  const lastVoiceQuery = useSearchStore((s) => s.lastVoiceQuery);
+  const isSaveModalOpen = useSearchStore((s) => s.isSaveModalOpen);
+  const editingSavedSearch = useSearchStore((s) => s.editingSavedSearch);
+  const saveModalInitialQuery = useSearchStore((s) => s.saveModalInitialQuery);
+  const isGuest = useAuthStore((s) => s.isGuest);
 
   const setQuery = useSearchStore((s) => s.setQuery);
   const setFilter = useSearchStore((s) => s.setFilter);
   const resetFilters = useSearchStore((s) => s.resetFilters);
   const executeSearch = useSearchStore((s) => s.executeSearch);
+  const executeVoiceSearch = useSearchStore((s) => s.executeVoiceSearch);
   const loadRecentAndSavedSearches = useSearchStore((s) => s.loadRecentAndSavedSearches);
   const deleteRecentSearch = useSearchStore((s) => s.deleteRecentSearch);
   const clearAllRecentSearches = useSearchStore((s) => s.clearAllRecentSearches);
   const toggleSaveSearch = useSearchStore((s) => s.toggleSaveSearch);
+  const savePinnedSearch = useSearchStore((s) => s.savePinnedSearch);
+  const updateSavedSearch = useSearchStore((s) => s.updateSavedSearch);
+  const deleteSavedSearch = useSearchStore((s) => s.deleteSavedSearch);
+  const openSaveModal = useSearchStore((s) => s.openSaveModal);
+  const closeSaveModal = useSearchStore((s) => s.closeSaveModal);
   const setVoiceModalOpen = useSearchStore((s) => s.setVoiceModalOpen);
 
   const [viewMode, setViewMode] = useState<'relevance' | 'grouped'>('relevance');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // Check if current query is saved
   const isCurrentQuerySaved = React.useMemo(() => {
     if (!query.trim()) return false;
     return savedSearches.some((s) => s.query.toLowerCase() === query.trim().toLowerCase());
   }, [query, savedSearches]);
+
+  useEffect(() => {
+    let active = true;
+    if (query.trim().length >= 1) {
+      searchSuggestionService.getSuggestions(query, 5).then((items) => {
+        if (active) {
+          setSuggestions(items.filter((item) => item.toLowerCase() !== query.trim().toLowerCase()));
+        }
+      });
+    } else {
+      setSuggestions([]);
+    }
+    return () => {
+      active = false;
+    };
+  }, [query]);
 
   useEffect(() => {
     loadRecentAndSavedSearches();
@@ -90,8 +122,10 @@ export const GlobalAISearchScreen: React.FC = () => {
   };
 
   const handleTogglePin = () => {
-    if (!query.trim()) return;
-    toggleSaveSearch(query.trim());
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const existing = savedSearches.find((s) => s.query.toLowerCase() === trimmed.toLowerCase());
+    openSaveModal(trimmed, existing || null);
   };
 
   const renderGroupedResults = () => {
@@ -145,7 +179,7 @@ export const GlobalAISearchScreen: React.FC = () => {
           {navigation.canGoBack() && (
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+              style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
               accessibilityLabel="Go back"
             >
               <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
@@ -200,10 +234,9 @@ export const GlobalAISearchScreen: React.FC = () => {
                 styles.pinBtn,
                 {
                   backgroundColor: isCurrentQuerySaved
-                    ? `${theme.colors.primary}25`
-                    : theme.isDark
-                    ? '#1E293B'
-                    : '#F1F5F9',
+                    ? `${theme.colors.primary}20`
+                    : theme.colors.card,
+                  borderColor: theme.colors.border,
                 },
               ]}
               accessibilityLabel="Pin this search"
@@ -217,12 +250,40 @@ export const GlobalAISearchScreen: React.FC = () => {
           )}
         </View>
 
+        {/* Guest Search Mode Banner */}
+        {isGuest && (
+          <View style={[styles.offlineBanner, { backgroundColor: `${theme.colors.accent}15` }]}>
+            <Icon name="lock-closed" size={14} color={theme.colors.accent} style={{ marginRight: 6 }} />
+            <Text style={[styles.offlineBannerText, { color: theme.colors.accent }]}>
+              Guest Mode: Searching on-device OCR & SQLite knowledge base. Cloud AI is locked.
+            </Text>
+          </View>
+        )}
+
         {/* Offline Indicator Banner */}
-        {isOffline && (
+        {!isGuest && isOffline && (
           <View style={[styles.offlineBanner, { backgroundColor: `${theme.colors.warning}15` }]}>
             <Icon name="cloud-offline-outline" size={14} color={theme.colors.warning} style={{ marginRight: 6 }} />
             <Text style={[styles.offlineBannerText, { color: theme.colors.warning }]}>
               Offline Search Mode: Searching on-device OCR & SQLite knowledge base.
+            </Text>
+          </View>
+        )}
+
+        {/* Voice Search Origin Pill */}
+        {lastVoiceQuery && query.trim().length > 0 && (
+          <View
+            style={[
+              styles.voiceSearchPill,
+              {
+                backgroundColor: `${theme.colors.primary}15`,
+                borderColor: `${theme.colors.primary}30`,
+              },
+            ]}
+          >
+            <Icon name="mic" size={13} color={theme.colors.primary} style={{ marginRight: 6 }} />
+            <Text numberOfLines={1} style={[styles.voiceSearchPillText, { color: theme.colors.primary }]}>
+              Voice recognized: "{lastVoiceQuery}"
             </Text>
           </View>
         )}
@@ -238,12 +299,40 @@ export const GlobalAISearchScreen: React.FC = () => {
             onSelectQuery={handleSelectSuggestion}
             onDeleteRecent={deleteRecentSearch}
             onClearAllRecent={clearAllRecentSearches}
-            onDeleteSaved={(id) => toggleSaveSearch(savedSearches.find((s) => s.id === id)?.query || '')}
+            onDeleteSaved={deleteSavedSearch}
+            onOpenSaveModal={(q, existing) => openSaveModal(q, existing)}
           />
         </ScrollView>
       ) : (
         /* Active Query: Filters, AI Answer Card, Results */
         <View style={styles.activeContentContainer}>
+          {/* Dynamic Autocomplete Suggestions */}
+          {suggestions.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.suggestionRow}
+              contentContainerStyle={styles.suggestionRowContent}
+            >
+              {suggestions.map((sug, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSelectSuggestion(sug)}
+                  style={[
+                    styles.suggestionChip,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                >
+                  <Icon name="search-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                  <Text style={[styles.suggestionChipText, { color: theme.colors.textPrimary }]}>{sug}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
           {/* Material 3 Filter Chips */}
           <SearchFilterBar
             filters={activeFilters}
@@ -259,13 +348,23 @@ export const GlobalAISearchScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={
               <View>
-                {/* AI Answer Card */}
-                {aiAnswer && (
-                  <AIAnswerCard
-                    data={aiAnswer}
-                    loading={loading}
-                    onSelectFollowUp={handleSelectSuggestion}
+                {/* AI Answer Card / Lock */}
+                {isGuest ? (
+                  <FeatureLockCard
+                    compact
+                    title="Ask ContextVault AI Locked"
+                    description="Sign in to unlock natural language AI summaries and cross-folder synthesis."
+                    onSignIn={() => navigation.navigate('Login')}
+                    onCreateAccount={() => navigation.navigate('Register')}
                   />
+                ) : (
+                  aiAnswer && (
+                    <AIAnswerCard
+                      data={aiAnswer}
+                      loading={loading}
+                      onSelectFollowUp={handleSelectSuggestion}
+                    />
+                  )
                 )}
 
                 {/* View Mode Switcher (Relevance vs Grouped) */}
@@ -370,7 +469,29 @@ export const GlobalAISearchScreen: React.FC = () => {
       <VoiceSearchModal
         visible={isVoiceModalOpen}
         onClose={() => setVoiceModalOpen(false)}
-        onSpeechResult={handleSelectSuggestion}
+        onSpeechResult={executeVoiceSearch}
+      />
+
+      {/* 4. Save Search Modal */}
+      <SaveSearchModal
+        visible={isSaveModalOpen}
+        query={saveModalInitialQuery || query}
+        existingItem={editingSavedSearch}
+        onClose={closeSaveModal}
+        onSave={async (q, saveTitle, iconName, colorHex) => {
+          if (editingSavedSearch) {
+            await updateSavedSearch(editingSavedSearch.id, {
+              title: saveTitle,
+              iconName,
+              colorHex,
+            });
+          } else {
+            await savePinnedSearch(q, saveTitle, iconName, colorHex);
+          }
+        }}
+        onDelete={async (id) => {
+          await deleteSavedSearch(id);
+        }}
       />
     </SafeAreaView>
   );
@@ -393,7 +514,8 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -404,7 +526,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 22,
     borderWidth: 1,
   },
   input: {
@@ -423,7 +545,8 @@ const styles = StyleSheet.create({
   pinBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -514,4 +637,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 12,
   },
+  voiceSearchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  voiceSearchPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  suggestionRow: {
+    maxHeight: 38,
+    marginVertical: 4,
+  },
+  suggestionRowContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  suggestionChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
 });
+

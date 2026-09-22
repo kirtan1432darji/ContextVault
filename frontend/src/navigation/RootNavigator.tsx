@@ -11,12 +11,22 @@ import {
   FolderDetailScreen,
   FolderContextScreen,
   ContextAIChatScreen,
+  ContextChatScreen,
   ScreenshotDetailScreen,
   PrivacyPolicyScreen,
   ScannerStatusScreen,
   GlobalAISearchScreen,
   StorageScreen,
   QADebugPanelScreen,
+  NotificationCenterScreen,
+  RecycleBinScreen,
+  FolderAnalyticsScreen,
+  BackendSettingsScreen,
+  BackendConnectionScreen,
+  VisionDebugScreen,
+  ScreenshotDiagnosticsScreen,
+  AIQueueScreen,
+  MemoryTimelineScreen,
 } from '../screens';
 import { useAuthStore } from '../store/auth.store';
 import { DEVELOPER_MODE } from '../config/developerConfig';
@@ -25,7 +35,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const canAccessProtected = DEVELOPER_MODE || isAuthenticated;
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const canAccessProtected = DEVELOPER_MODE || isAuthenticated || isGuest;
 
   return (
     <Stack.Navigator
@@ -41,6 +52,16 @@ export const RootNavigator: React.FC = () => {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen
+        name="BackendConnection"
+        component={BackendConnectionScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="BackendSettings"
+        component={BackendConnectionScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
 
       {/* 2. Protected Routes */}
       {canAccessProtected ? (
@@ -58,7 +79,12 @@ export const RootNavigator: React.FC = () => {
           />
           <Stack.Screen
             name="ContextAIChat"
-            component={ContextAIChatScreen}
+            component={ContextChatScreen}
+            options={{ animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="ContextChat"
+            component={ContextChatScreen}
             options={{ animation: 'slide_from_bottom' }}
           />
           <Stack.Screen
@@ -89,6 +115,41 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen
             name="QADebugPanel"
             component={QADebugPanelScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="NotificationCenter"
+            component={NotificationCenterScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="RecycleBin"
+            component={RecycleBinScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="FolderAnalytics"
+            component={FolderAnalyticsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="VisionDebug"
+            component={VisionDebugScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="ScreenshotDiagnostics"
+            component={ScreenshotDiagnosticsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="AIQueue"
+            component={AIQueueScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="MemoryTimeline"
+            component={MemoryTimelineScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </>

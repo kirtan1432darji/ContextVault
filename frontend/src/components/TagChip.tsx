@@ -13,12 +13,13 @@ interface TagChipProps {
 
 export const TagChip: React.FC<TagChipProps> = ({
   label,
-  colorHex = '#6366F1',
+  colorHex,
   onPress,
   onRemove,
   selected = false,
 }) => {
   const theme = useAppTheme();
+  const activeColor = colorHex || theme.colors.primary;
 
   return (
     <TouchableOpacity
@@ -28,11 +29,15 @@ export const TagChip: React.FC<TagChipProps> = ({
         styles.chip,
         {
           backgroundColor: selected
-            ? colorHex
+            ? activeColor
             : theme.isDark
-            ? '#1E293B'
-            : '#F1F5F9',
-          borderColor: selected ? colorHex : theme.colors.border,
+            ? '#252525'
+            : '#F1F3F4',
+          borderColor: selected
+            ? activeColor
+            : theme.isDark
+            ? '#333333'
+            : '#E5E7EB',
         },
       ]}
     >
@@ -43,8 +48,8 @@ export const TagChip: React.FC<TagChipProps> = ({
             color: selected
               ? '#FFFFFF'
               : theme.isDark
-              ? '#E2E8F0'
-              : '#334155',
+              ? '#E5E7EB'
+              : '#374151',
           },
         ]}
       >
@@ -71,16 +76,16 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
     marginRight: 6,
     marginBottom: 6,
   },
   text: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   removeButton: {
     marginLeft: 4,

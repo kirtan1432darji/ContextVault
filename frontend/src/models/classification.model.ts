@@ -6,6 +6,9 @@ export interface ExtractedEntitiesDto {
   merchants: string[];
   projectNames: string[];
   dates: string[];
+  merchant?: string;
+  amount?: string | number;
+  [key: string]: any;
 }
 
 export interface ClassificationResultModel {
@@ -34,7 +37,7 @@ export interface ClassificationCacheRecord {
   entitiesJson?: string;
   confidence: number;
   summary?: string;
-  source: 'backend' | 'local';
+  source: 'backend' | 'local' | 'vision_ai';
   cachedAt: string;
 }
 

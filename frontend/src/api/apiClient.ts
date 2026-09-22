@@ -14,6 +14,61 @@ import { useAuthStore } from '../store/auth.store';
 import { useSettingsStore } from '../store/settings.store';
 import { StorageService } from '../utils/storage';
 import { DEVELOPER_MODE } from '../config/developerConfig';
+import { EnvironmentManager } from '../config/EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
+
+/**
+ * Maps raw Axios and HTTP errors to consistent, user-friendly error messages
+ * as specified in ContextVault Sprint P0-A requirements.
+ */
+export function formatApiErrorMessage(error: any, baseUrl: string): string {
+  if (!error) return 'An unexpected error occurred.';
+
+  const code = (error.code || '').toUpperCase();
+  const rawMsg = error.message || '';
+  const status = error.response?.status;
+  const backendMsg =
+    error.response?.data?.message ||
+    error.response?.data?.detail ||
+    (Array.isArray(error.response?.data?.errors) && error.response.data.errors[0]);
+
+  if (code === 'ECONNREFUSED' || rawMsg.includes('ECONNREFUSED')) {
+    return 'Backend server unavailable';
+  }
+  if (
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    rawMsg.toLowerCase().includes('timeout')
+  ) {
+    return 'Backend timed out';
+  }
+  if (
+    code === 'ERR_NETWORK' ||
+    code === 'NETWORK_ERROR' ||
+    rawMsg.includes('Network Error') ||
+    !error.response
+  ) {
+    return 'Unable to connect to ContextVault backend';
+  }
+
+  if (status === 401) {
+    return backendMsg || 'Invalid email/username or password';
+  }
+  if (status === 403) {
+    return backendMsg || 'Access denied';
+  }
+  if (status === 404) {
+    return backendMsg || 'API endpoint not found';
+  }
+  if (status === 409) {
+    return backendMsg || 'Email or username already exists';
+  }
+  if (status >= 500) {
+    return backendMsg || 'Backend server error. Please retry later.';
+  }
+
+  return backendMsg || rawMsg || 'Cannot connect to ContextVault backend';
+}
 
 class ApiClient {
   private axiosInstance: AxiosInstance;
@@ -21,8 +76,9 @@ class ApiClient {
   private failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
 
   constructor() {
+    const initialUrl = BackendConnectionManager.getApiUrl();
     this.axiosInstance = axios.create({
-      baseURL: ApiConstants.defaultBaseUrl,
+      baseURL: initialUrl,
       timeout: ApiConstants.connectTimeout,
       headers: {
         'Content-Type': 'application/json',
@@ -31,6 +87,10 @@ class ApiClient {
         'X-Client-Version': '1.0.0',
       },
     });
+
+    if (EnvironmentManager.isDeveloperModeAvailable()) {
+      console.log(`[ApiClient] Configured baseURL: ${initialUrl} [Env: ${EnvironmentManager.getEnvironment()}]`);
+    }
 
     this.setupInterceptors();
   }
@@ -51,33 +111,50 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // 1. Request Interceptor: Attach Bearer Token & Dynamic Base URL
+    // 1. Request Interceptor: Attach Bearer Token, Validate URL & Set Base URL dynamically
     this.axiosInstance.interceptors.request.use(
       (config) => {
-        const dynamicUrl = useSettingsStore.getState().backendUrl;
-        if (dynamicUrl && dynamicUrl !== config.baseURL) {
-          config.baseURL = dynamicUrl;
+        const dynamicUrl = BackendConnectionManager.getApiUrl();
+        if (!BackendConnectionManager.isValidUrl(dynamicUrl)) {
+          return Promise.reject(new Error(`Invalid ContextVault backend URL: ${dynamicUrl}`));
         }
+        config.baseURL = dynamicUrl;
+        config.timeout = ApiConstants.connectTimeout || 30000;
 
         const token = useAuthStore.getState().accessToken || StorageService.getAccessToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         config.headers['X-Request-Id'] = Date.now().toString();
+
+        if (EnvironmentManager.isDeveloperModeAvailable()) {
+          console.log(`[ApiClient] Request to [${config.baseURL}] ${config.url || ''}`);
+        }
         return config;
       },
       (error) => Promise.reject(error)
     );
 
-    // 2. Response Interceptor: 401 Refresh Token Retries
+    // 2. Response Interceptor: 401 Refresh Token Retries, Temporary Network Failure Retry, Error Mapping
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+        const originalRequest = (error.config || {}) as AxiosRequestConfig & {
+          _retry?: boolean;
+          _networkRetry?: boolean;
+        };
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const requestUrl = originalRequest.url || '';
+        const isAuthEndpoint =
+          requestUrl.includes(ApiConstants.authLogin) ||
+          requestUrl.includes(ApiConstants.authRegister) ||
+          requestUrl.includes(ApiConstants.authRefresh) ||
+          requestUrl.includes('/auth/login') ||
+          requestUrl.includes('/auth/register');
+
+        // Handle 401 Unauthorized with token refresh (for protected endpoints only)
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           if (DEVELOPER_MODE) {
-            // In Developer Mode, skip token refresh and avoid session eviction
             return Promise.reject(error);
           }
 
@@ -107,11 +184,10 @@ class ApiClient {
           }
 
           try {
-            const refreshRes = await axios.post(
-              `${this.getBaseUrl()}${ApiConstants.authRefresh}`,
+            const refreshRes = await this.axiosInstance.post(
+              ApiConstants.authRefresh,
               { refreshToken },
               {
-                timeout: ApiConstants.connectTimeout,
                 headers: { 'Content-Type': 'application/json' },
               }
             );
@@ -142,11 +218,30 @@ class ApiClient {
           }
         }
 
-        // Handle network unreachable / Docker host down or timeout errors with user-friendly messages
-        if (!error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
-          error.message = `Cannot connect to ContextVault Docker backend at ${this.getBaseUrl()}. Please ensure container 'contextvault-api' is running on Ubuntu host.`;
-        } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-          error.message = 'Connection to ContextVault backend timed out after 30 seconds.';
+        // Retry once for temporary network failures
+        const isNetworkFailure =
+          !error.response ||
+          error.code === 'ERR_NETWORK' ||
+          error.code === 'ECONNREFUSED' ||
+          error.code === 'ECONNABORTED';
+
+        if (isNetworkFailure && !originalRequest._networkRetry) {
+          originalRequest._networkRetry = true;
+          if (EnvironmentManager.isDeveloperModeAvailable()) {
+            console.log(`[ApiClient] Temporary network failure on ${requestUrl}. Retrying once...`);
+          }
+          return this.axiosInstance(originalRequest);
+        }
+
+        // Standardized Error Mapping per specification
+        const formattedMessage = formatApiErrorMessage(error, this.getBaseUrl());
+        error.message = formattedMessage;
+        (error as any).userMessage = formattedMessage;
+
+        if (EnvironmentManager.isDeveloperModeAvailable()) {
+          console.log(
+            `[ApiClient] Error [${originalRequest.baseURL || this.getBaseUrl()}] ${requestUrl}: ${formattedMessage}`
+          );
         }
 
         return Promise.reject(error);
@@ -155,7 +250,32 @@ class ApiClient {
   }
 
   public getBaseUrl(): string {
-    return useSettingsStore.getState().backendUrl || ApiConstants.defaultBaseUrl;
+    return BackendConnectionManager.getApiUrl();
+  }
+
+  public getRawBaseUrl(): string {
+    return BackendConnectionManager.getBaseUrl();
+  }
+
+  public setBaseUrl(url: string): void {
+    BackendConnectionManager.setBaseUrl(url);
+    this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
+    useSettingsStore.getState().setBackendUrl(url);
+    // Sync to centralized api config and AsyncStorage
+    try {
+      const { setApiBaseUrl } = require('../config/api');
+      setApiBaseUrl(url);
+    } catch {}
+  }
+
+  public resetBaseUrl(): void {
+    BackendConnectionManager.resetBaseUrl();
+    this.axiosInstance.defaults.baseURL = BackendConnectionManager.getApiUrl();
+    useSettingsStore.getState().setBackendUrl(BackendConnectionManager.getBaseUrl());
+    try {
+      const { resetApiBaseUrl } = require('../config/api');
+      resetApiBaseUrl();
+    } catch {}
   }
 
   private unwrap<T>(responseData: any): T {

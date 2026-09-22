@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAppTheme } from '../../theme';
@@ -17,7 +18,17 @@ interface RecentAndSavedSearchesProps {
   onDeleteRecent: (id: string) => void;
   onClearAllRecent: () => void;
   onDeleteSaved: (id: string) => void;
+  onOpenSaveModal?: (query: string, existing?: SavedSearchItem) => void;
 }
+
+export const SEARCH_PRESETS = [
+  { title: 'UPI Payments', icon: 'card-outline', query: 'Show all UPI payments this month', color: '#6366F1', tag: 'Finance' },
+  { title: 'Amazon & Flipkart', icon: 'cart-outline', query: 'Invoices from Amazon or Flipkart', color: '#F59E0B', tag: 'Shopping' },
+  { title: 'Tax & Receipts', icon: 'receipt-outline', query: 'Tax invoices and expense receipts', color: '#10B981', tag: 'Expenses' },
+  { title: 'Code Bugs & Logs', icon: 'code-slash-outline', query: 'Flutter bug logs and error screenshots', color: '#3B82F6', tag: 'Dev' },
+  { title: 'Flight & Hotel', icon: 'airplane-outline', query: 'Flight tickets and hotel bookings', color: '#EC4899', tag: 'Travel' },
+  { title: 'IDs & Documents', icon: 'document-text-outline', query: 'Aadhaar, PAN cards and official docs', color: '#8B5CF6', tag: 'Official' },
+];
 
 export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
   recentSearches,
@@ -26,17 +37,24 @@ export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
   onDeleteRecent,
   onClearAllRecent,
   onDeleteSaved,
+  onOpenSaveModal,
 }) => {
   const theme = useAppTheme();
 
-  const DYNAMIC_SUGGESTIONS = [
-    { title: 'Payments this month', icon: 'cash-outline', query: 'Show all UPI payments this month' },
-    { title: 'Meetings this week', icon: 'calendar-outline', query: 'Meetings from this week' },
-    { title: 'Shopping under ₹500', icon: 'cart-outline', query: 'Shopping items under ₹500' },
-    { title: 'Invoices from Amazon', icon: 'receipt-outline', query: 'Invoices from Amazon' },
-    { title: 'Flutter code bugs', icon: 'code-slash-outline', query: 'Find Flutter screenshots' },
-    { title: 'NHDC records', icon: 'document-text-outline', query: 'Screenshots mentioning NHDC' },
-  ];
+  const handleClearAllPrompt = () => {
+    Alert.alert(
+      'Clear Search History',
+      'Are you sure you want to clear your entire search history? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: onClearAllRecent,
+        },
+      ]
+    );
+  };
 
   const formatTimestamp = (ts: string) => {
     try {
@@ -55,20 +73,30 @@ export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
     }
   };
 
+  const isQueryPinned = (q: string) => {
+    return savedSearches.some((s) => s.query.toLowerCase() === q.trim().toLowerCase());
+  };
+
   return (
     <View style={styles.container}>
-      {/* 1. Dynamic Intelligent Suggestions */}
+      {/* 1. Curated Search Presets */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>
-          INTELLIGENT SUGGESTIONS
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll}>
-          {DYNAMIC_SUGGESTIONS.map((item, idx) => (
+        <View style={styles.sectionHeader}>
+          <View style={styles.rowCenter}>
+            <Icon name="sparkles" size={14} color={theme.colors.primary} style={{ marginRight: 6 }} />
+            <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary, marginBottom: 0 }]}>
+              SMART SEARCH PRESETS
+            </Text>
+          </View>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsScroll}>
+          {SEARCH_PRESETS.map((item, idx) => (
             <TouchableOpacity
               key={idx}
               onPress={() => onSelectQuery(item.query)}
               style={[
-                styles.suggestionCard,
+                styles.presetCard,
                 {
                   backgroundColor: theme.colors.card,
                   borderColor: theme.colors.border,
@@ -76,13 +104,30 @@ export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
               ]}
               activeOpacity={0.7}
             >
-              <View style={[styles.suggestionIconBox, { backgroundColor: `${theme.colors.primary}18` }]}>
-                <Icon name={item.icon} size={16} color={theme.colors.primary} />
+              <View style={styles.presetTopRow}>
+                <View style={[styles.presetIconBox, { backgroundColor: `${item.color}20` }]}>
+                  <Icon name={item.icon} size={16} color={item.color} />
+                </View>
+                {onOpenSaveModal && (
+                  <TouchableOpacity
+                    onPress={() => onOpenSaveModal(item.query)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.presetPinBtn}
+                    accessibilityLabel={`Pin ${item.title}`}
+                  >
+                    <Icon
+                      name={isQueryPinned(item.query) ? 'bookmark' : 'bookmark-outline'}
+                      size={14}
+                      color={isQueryPinned(item.query) ? item.color : theme.colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
-              <Text style={[styles.suggestionTitle, { color: theme.colors.textPrimary }]}>
+
+              <Text style={[styles.presetTitle, { color: theme.colors.textPrimary }]}>
                 {item.title}
               </Text>
-              <Text numberOfLines={1} style={[styles.suggestionQuery, { color: theme.colors.textSecondary }]}>
+              <Text numberOfLines={2} style={[styles.presetQuery, { color: theme.colors.textSecondary }]}>
                 {item.query}
               </Text>
             </TouchableOpacity>
@@ -97,37 +142,60 @@ export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
             <View style={styles.rowCenter}>
               <Icon name="bookmark" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
               <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary, marginBottom: 0 }]}>
-                SAVED & PINNED SEARCHES
+                SAVED & PINNED SEARCHES ({savedSearches.length})
               </Text>
             </View>
           </View>
 
           <View style={styles.savedWrap}>
-            {savedSearches.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() => onSelectQuery(item.query)}
-                style={[
-                  styles.savedPill,
-                  {
-                    backgroundColor: theme.colors.card,
-                    borderColor: `${theme.colors.primary}30`,
-                  },
-                ]}
-              >
-                <Icon name={item.iconName || 'bookmark'} size={13} color={item.colorHex || theme.colors.primary} style={{ marginRight: 6 }} />
-                <Text style={[styles.savedTitle, { color: theme.colors.textPrimary }]}>
-                  {item.title}
-                </Text>
+            {savedSearches.map((item) => {
+              const accentColor = item.colorHex || theme.colors.primary;
+              return (
                 <TouchableOpacity
-                  onPress={() => onDeleteSaved(item.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.savedRemoveBtn}
+                  key={item.id}
+                  onPress={() => onSelectQuery(item.query)}
+                  onLongPress={() => onOpenSaveModal?.(item.query, item)}
+                  style={[
+                    styles.savedPill,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: `${accentColor}40`,
+                    },
+                  ]}
+                  activeOpacity={0.7}
                 >
-                  <Icon name="close-circle" size={14} color={theme.colors.textSecondary} />
+                  <View style={[styles.savedIconBox, { backgroundColor: `${accentColor}18` }]}>
+                    <Icon name={item.iconName || 'bookmark'} size={13} color={accentColor} />
+                  </View>
+
+                  <Text style={[styles.savedTitle, { color: theme.colors.textPrimary }]}>
+                    {item.title}
+                  </Text>
+
+                  {/* Edit Pencil (when modal handler present) */}
+                  {onOpenSaveModal && (
+                    <TouchableOpacity
+                      onPress={() => onOpenSaveModal(item.query, item)}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                      style={styles.savedActionBtn}
+                      accessibilityLabel="Edit saved search"
+                    >
+                      <Icon name="pencil" size={12} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Remove Button */}
+                  <TouchableOpacity
+                    onPress={() => onDeleteSaved(item.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
+                    style={styles.savedActionBtn}
+                    accessibilityLabel="Delete saved search"
+                  >
+                    <Icon name="close-circle" size={14} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         </View>
       )}
@@ -139,58 +207,85 @@ export const RecentAndSavedSearches: React.FC<RecentAndSavedSearchesProps> = ({
             <View style={styles.rowCenter}>
               <Icon name="time-outline" size={14} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
               <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary, marginBottom: 0 }]}>
-                RECENT SEARCHES
+                RECENT SEARCHES ({recentSearches.length})
               </Text>
             </View>
-            <TouchableOpacity onPress={onClearAllRecent} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={handleClearAllPrompt} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={[styles.clearAllText, { color: theme.colors.primary }]}>Clear History</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.recentList}>
-            {recentSearches.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() => onSelectQuery(item.query)}
-                style={[
-                  styles.recentRow,
-                  {
-                    backgroundColor: theme.colors.card,
-                    borderBottomColor: theme.colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.recentLeft}>
-                  <Icon name="search-outline" size={16} color={theme.colors.textSecondary} style={{ marginRight: 10 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={[styles.recentQueryText, { color: theme.colors.textPrimary }]}>
-                      {item.query}
-                    </Text>
-                    <View style={styles.recentMetaRow}>
-                      <Text style={[styles.recentTimeText, { color: theme.colors.textSecondary }]}>
-                        {formatTimestamp(item.timestamp)}
+            {recentSearches.map((item) => {
+              const pinned = isQueryPinned(item.query);
+              const matchingSaved = savedSearches.find((s) => s.query.toLowerCase() === item.query.toLowerCase());
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => onSelectQuery(item.query)}
+                  style={[
+                    styles.recentRow,
+                    {
+                      backgroundColor: theme.colors.card,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.recentLeft}>
+                    <View style={[styles.recentIconBox, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}>
+                      <Icon name="search-outline" size={14} color={theme.colors.textSecondary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.recentQueryText, { color: theme.colors.textPrimary }]}>
+                        {item.query}
                       </Text>
-                      {item.resultCount > 0 && (
-                        <>
-                          <Text style={[styles.recentDot, { color: theme.colors.textSecondary }]}>•</Text>
-                          <Text style={[styles.recentCountText, { color: theme.colors.textSecondary }]}>
-                            {item.resultCount} result{item.resultCount !== 1 ? 's' : ''}
-                          </Text>
-                        </>
-                      )}
+                      <View style={styles.recentMetaRow}>
+                        <Text style={[styles.recentTimeText, { color: theme.colors.textSecondary }]}>
+                          {formatTimestamp(item.timestamp)}
+                        </Text>
+                        {item.resultCount > 0 && (
+                          <>
+                            <Text style={[styles.recentDot, { color: theme.colors.textSecondary }]}>•</Text>
+                            <Text style={[styles.recentCountText, { color: theme.colors.textSecondary }]}>
+                              {item.resultCount} result{item.resultCount !== 1 ? 's' : ''}
+                            </Text>
+                          </>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
 
-                <TouchableOpacity
-                  onPress={() => onDeleteRecent(item.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.recentDeleteBtn}
-                >
-                  <Icon name="close" size={16} color={theme.colors.textSecondary} />
+                  {/* Actions: Pin / Bookmark and Delete */}
+                  <View style={styles.recentActionsRow}>
+                    {onOpenSaveModal && (
+                      <TouchableOpacity
+                        onPress={() => onOpenSaveModal(item.query, matchingSaved)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.recentActionBtn}
+                        accessibilityLabel={pinned ? 'Edit pinned search' : 'Pin to saved searches'}
+                      >
+                        <Icon
+                          name={pinned ? 'bookmark' : 'bookmark-outline'}
+                          size={16}
+                          color={pinned ? (matchingSaved?.colorHex || theme.colors.primary) : theme.colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      onPress={() => onDeleteRecent(item.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={styles.recentActionBtn}
+                      accessibilityLabel="Remove from history"
+                    >
+                      <Icon name="close" size={16} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
                 </TouchableOpacity>
-              </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         </View>
       )}
@@ -213,11 +308,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.6,
-    paddingHorizontal: 16,
-    marginBottom: 10,
   },
   rowCenter: {
     flexDirection: 'row',
@@ -227,31 +320,40 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  suggestionsScroll: {
-    paddingLeft: 16,
+  presetsScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
   },
-  suggestionCard: {
-    width: 160,
+  presetCard: {
+    width: 170,
     padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    marginRight: 10,
   },
-  suggestionIconBox: {
+  presetTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  presetIconBox: {
     width: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
   },
-  suggestionTitle: {
+  presetPinBtn: {
+    padding: 4,
+  },
+  presetTitle: {
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 4,
   },
-  suggestionQuery: {
+  presetQuery: {
     fontSize: 11,
+    lineHeight: 15,
   },
   savedWrap: {
     flexDirection: 'row',
@@ -262,36 +364,55 @@ const styles = StyleSheet.create({
   savedPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingLeft: 8,
+    paddingRight: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  savedIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
   },
   savedTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     marginRight: 6,
   },
-  savedRemoveBtn: {
-    padding: 2,
+  savedActionBtn: {
+    padding: 3,
+    marginLeft: 2,
   },
   recentList: {
     paddingHorizontal: 16,
+    gap: 8,
   },
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    marginBottom: 6,
+    borderWidth: 1,
   },
   recentLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
     marginRight: 8,
+  },
+  recentIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   recentQueryText: {
     fontSize: 13,
@@ -312,7 +433,12 @@ const styles = StyleSheet.create({
   recentCountText: {
     fontSize: 11,
   },
-  recentDeleteBtn: {
-    padding: 4,
+  recentActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recentActionBtn: {
+    padding: 6,
   },
 });

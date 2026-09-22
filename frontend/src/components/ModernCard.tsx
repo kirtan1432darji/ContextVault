@@ -13,15 +13,15 @@ export const ModernCard: React.FC<ModernCardProps> = ({ children, style, onPress
 
   const cardStyle: ViewStyle = {
     backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: theme.isDark ? '#2E2E2E' : '#E5E7EB',
     padding: theme.spacing.md,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: theme.isDark ? 0.3 : 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: theme.isDark ? 0.25 : 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   };
 
   if (onPress) {

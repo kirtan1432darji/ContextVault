@@ -1,18 +1,28 @@
 """
-Vision API Gateway Endpoints for ContextVault.
-Exposes unauthenticated LAN proxy routes under /api/vision for the mobile app,
-forwarding requests to the standalone Local Vision AI Server on RTX 4050.
+Vision API Gateway Endpoints for ContextVault (Sprint P2-C).
+Exposes LAN proxy routes under /api/vision for the mobile app,
+forwarding requests to the standalone Local Vision AI Server on RTX 4050
+and returning standardized production-ready metadata schemas.
 """
 
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
-import httpx
 
+from app.core.config import settings
 from app.core.logging import logger
 from app.services.vision_gateway_service import vision_gateway_service
 
-router = APIRouter(prefix="/vision", tags=["Vision Gateway"])
+router = APIRouter(prefix="/vision", tags=["Vision AI Gateway"])
+
+
+@router.get(
+    "/ping",
+    summary="Ping Local Vision AI Server",
+)
+async def ping_vision():
+    """Measures roundtrip latency and connectivity to Local Vision AI Server."""
+    return await vision_gateway_service.ping_server()
 
 
 @router.get(
@@ -20,7 +30,7 @@ router = APIRouter(prefix="/vision", tags=["Vision Gateway"])
     summary="Health check proxy for Local Vision AI Server",
 )
 async def check_vision_health():
-    """Returns connectivity and model loading status from the Local Vision Server."""
+    """Returns connectivity, active model, and GPU status."""
     return await vision_gateway_service.check_health()
 
 
@@ -29,44 +39,36 @@ async def check_vision_health():
     summary="Model information proxy for Local Vision AI Server",
 )
 async def get_vision_model_info():
-    """Retrieves active model name, precision, and GPU VRAM statistics."""
-    try:
-        return await vision_gateway_service.get_model_info()
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Vision Server Offline",
-        )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Vision Server Timeout",
-        )
-    except Exception as e:
-        logger.error(f"[VisionRouter] model-info proxy error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Vision Server Unavailable: {str(e)}",
-        )
+    """Retrieves active model name, precision, quantization, and GPU VRAM statistics."""
+    return await vision_gateway_service.get_model_info()
 
 
 @router.post(
     "/analyze",
-    summary="Proxy single screenshot analysis to Local Vision AI Server",
+    summary="Analyze single screenshot image using Vision AI",
 )
 async def analyze_screenshot(
-    image: UploadFile = File(..., description="Preprocessed screenshot image binary"),
+    image: Optional[UploadFile] = File(None, description="Preprocessed screenshot image binary"),
+    file: Optional[UploadFile] = File(None, description="Alternative field for image binary"),
 ):
     """
     Receives preprocessed screenshot from mobile app, streams in-memory to Local Vision Server,
-    and returns structured scene metadata (category, confidence, summary, tags, entities).
-    Images are never saved to disk or SQL Server.
+    normalizes the output, and returns standardized metadata including OCR text, merchant,
+    amount, currency, dates, entities, tags, summary, and folder hierarchy.
+    Zero disk storage.
     """
-    filename = image.filename or "screenshot.jpg"
-    content_type = image.content_type or "image/jpeg"
+    target = image or file
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No image file provided in multipart request (expected 'image' or 'file')",
+        )
+
+    filename = target.filename or "screenshot.jpg"
+    content_type = target.content_type or "image/jpeg"
 
     try:
-        file_bytes = await image.read()
+        file_bytes = await target.read()
         if not file_bytes:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -79,25 +81,8 @@ async def analyze_screenshot(
             content_type=content_type,
         )
         return result
-
-    except httpx.ConnectError:
-        logger.error("[VisionRouter] Connection refused to Local Vision Server.")
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"error": "Vision Server Offline", "detail": "Cannot reach Vision Server on LAN."},
-        )
-    except httpx.TimeoutException:
-        logger.error("[VisionRouter] Vision inference request timed out.")
-        return JSONResponse(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            content={"error": "Vision Server Timeout", "detail": "Vision inference exceeded timeout limit."},
-        )
-    except httpx.HTTPStatusError as e:
-        logger.error(f"[VisionRouter] Vision Server returned error status {e.response.status_code}")
-        return JSONResponse(
-            status_code=e.response.status_code,
-            content={"error": "Vision Analysis Failed", "detail": e.response.text},
-        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[VisionRouter] analyze proxy error: {e}")
         return JSONResponse(
@@ -105,12 +90,12 @@ async def analyze_screenshot(
             content={"error": "Vision Analysis Failed", "detail": str(e)},
         )
     finally:
-        await image.close()
+        await target.close()
 
 
 @router.post(
     "/batch",
-    summary="Proxy batch screenshot analysis to Local Vision AI Server",
+    summary="Batch screenshot analysis using Vision AI",
 )
 async def analyze_batch(
     images: List[UploadFile] = File(..., description="List of preprocessed screenshots"),
@@ -126,25 +111,15 @@ async def analyze_batch(
     try:
         for img in images:
             data = await img.read()
-            files_data.append((img.name or "images", data, img.filename or "screenshot.jpg"))
+            fname = img.filename or "screenshot.jpg"
+            files_data.append(("images", data, fname))
 
-        result = await vision_gateway_service.analyze_batch(files_data)
-        return result
-    except httpx.ConnectError:
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"error": "Vision Server Offline", "detail": "Cannot reach Vision Server on LAN."},
-        )
-    except httpx.TimeoutException:
-        return JSONResponse(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            content={"error": "Vision Server Timeout", "detail": "Batch inference timed out."},
-        )
+        return await vision_gateway_service.analyze_batch(files_data)
     except Exception as e:
         logger.error(f"[VisionRouter] batch proxy error: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "Vision Analysis Failed", "detail": str(e)},
+            content={"error": "Vision Batch Failed", "detail": str(e)},
         )
     finally:
         for img in images:

@@ -7,6 +7,9 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Modal,
+  Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -18,10 +21,15 @@ import { contextSyncService } from '../services/ContextSyncService';
 import { ocrCacheRepository } from '../database/repositories/ocrCacheRepository';
 import { classificationCacheRepository } from '../database/repositories/classificationCacheRepository';
 import { OCRCacheRecord, ClassificationCacheRecord, ExtractedEntitiesDto } from '../models';
+import { visionRepository } from '../database/repositories/VisionRepository';
+import { visionAIService } from '../services/visionAIService';
+import { VisionCacheRecord } from '../vision/types';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
+import { ReclassifyModal } from '../components/ReclassifyModal';
 import { DateFormatter } from '../utils/dateFormatter';
 import { FileUtils } from '../utils/fileUtils';
+import { MediaStorePathResolver } from '../utils/MediaStorePathResolver';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScreenshotDetail'>;
 
@@ -31,12 +39,15 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
 
   const screenshot = useScreenshotStore((s) => s.screenshots.find((item) => item.id === id));
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAnalyzingVision, setIsAnalyzingVision] = useState(false);
+  const [visionRecord, setVisionRecord] = useState<VisionCacheRecord | null>(null);
 
   // OCR and Backend AI Cache States
   const [ocrRecord, setOcrRecord] = useState<OCRCacheRecord | null>(null);
   const [cacheRecord, setCacheRecord] = useState<ClassificationCacheRecord | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isReclassifyModalOpen, setIsReclassifyModalOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -50,10 +61,48 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         setCacheRecord(cache);
       }
     });
+    visionRepository.getVisionResult(id).then((vr) => {
+      if (isMounted && vr) {
+        setVisionRecord(vr);
+      }
+    });
     return () => {
       isMounted = false;
     };
   }, [id]);
+
+  const handleAnalyzeWithVisionAI = async () => {
+    if (!screenshot) return;
+    setIsAnalyzingVision(true);
+
+    try {
+      const targetPath = screenshot.localPath || screenshot.filePath;
+      const res = await visionAIService.analyzeScreenshot({
+        screenshotId: id,
+        filePath: targetPath,
+        fileHash: (screenshot as any).fileHash,
+        fileName: screenshot.fileName,
+        forceRefresh: true,
+      });
+
+      if (res.isSuccess && res.data) {
+        const vr = await visionRepository.getVisionResult(id);
+        const cr = await classificationCacheRepository.getCacheByScreenshotId(id);
+        setVisionRecord(vr);
+        setCacheRecord(cr);
+        Alert.alert(
+          'Vision Analysis Complete',
+          `Classified as ${res.data.category} (${res.data.confidence}% confidence)\n\nSummary: ${res.data.summary}`
+        );
+      } else {
+        Alert.alert(res.error || 'Vision Analysis Failed', 'Could not complete visual scene analysis.');
+      }
+    } catch (err: any) {
+      Alert.alert('Vision Analysis Failed', err?.message || 'Error executing vision analysis.');
+    } finally {
+      setIsAnalyzingVision(false);
+    }
+  };
 
   if (!screenshot) {
     return (
@@ -69,6 +118,28 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const handleToggleFavorite = async () => {
     useScreenshotStore.getState().toggleFavoriteLocal(id);
     await screenshotService.toggleFavorite(id);
+  };
+
+  const handleDeleteScreenshot = () => {
+    Alert.alert(
+      'Move to Recycle Bin',
+      `Move "${screenshot.fileName}" to the Recycle Bin?\n\nYou can restore it anytime from Settings > Recycle Bin. Original photos on your device will NOT be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move to Bin',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await useScreenshotStore.getState().softDeleteScreenshot(id);
+              navigation.goBack();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to move screenshot to Recycle Bin.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleCopyText = () => {
@@ -102,14 +173,126 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
     setIsSyncing(false);
   };
 
-  const uri = screenshot.filePath.startsWith('http') || screenshot.filePath.startsWith('file://')
-    ? screenshot.filePath
-    : `file://${screenshot.filePath}`;
+  const [imageError, setImageError] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [lastTap, setLastTap] = useState(0);
+  const [isImageLoading, setIsImageLoading] = useState(true);
+
+  // Full-resolution candidate order for detail inspection
+  const candidateUris = React.useMemo(() => {
+    const list: string[] = [];
+    const add = (u?: string | null) => {
+      if (u && typeof u === 'string') {
+        const clean = u.trim();
+        if (clean && !list.includes(clean)) list.push(clean);
+      }
+    };
+
+    // 1. Content URI (Scoped Storage compatible)
+    if (screenshot?.contentUri) {
+      add(MediaStorePathResolver.resolveContentUri(screenshot.contentUri));
+    } else if (screenshot?.deviceAssetId && /^\d+$/.test(screenshot.deviceAssetId)) {
+      add(`content://media/external/images/media/${screenshot.deviceAssetId}`);
+    }
+
+    // 2. Local normalized file URI (full-res)
+    const rawLocal = screenshot?.localPath || screenshot?.filePath;
+    if (rawLocal) {
+      add(MediaStorePathResolver.normalizeFileUri(rawLocal));
+    }
+
+    // 3. Cached 300px thumbnail fallback
+    if (screenshot?.thumbnailUri) {
+      add(MediaStorePathResolver.normalizeFileUri(screenshot.thumbnailUri));
+    }
+
+    return list;
+  }, [screenshot]);
+
+  useEffect(() => {
+    setImageError(false);
+    setCandidateIndex(0);
+    setIsImageLoading(true);
+  }, [candidateUris]);
+
+  const activeUri = candidateUris[candidateIndex] || '';
+
+  const handleImageError = () => {
+    if (candidateIndex + 1 < candidateUris.length) {
+      setCandidateIndex((prev) => prev + 1);
+      setIsImageLoading(true);
+    } else {
+      setImageError(true);
+      setIsImageLoading(false);
+    }
+  };
+
+  const handleRetryImage = () => {
+    setImageError(false);
+    setCandidateIndex(0);
+    setIsImageLoading(true);
+  };
+
+  // Swipe previous / next navigation across gallery
+  const allScreenshots = useScreenshotStore((s) => s.screenshots);
+  const currentIndex = allScreenshots.findIndex((item) => item.id === id);
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < allScreenshots.length - 1;
+
+  const navigateToPrevious = () => {
+    if (hasPrevious) {
+      navigation.setParams({ id: allScreenshots[currentIndex - 1].id });
+    }
+  };
+
+  const navigateToNext = () => {
+    if (hasNext) {
+      navigation.setParams({ id: allScreenshots[currentIndex + 1].id });
+    }
+  };
+
+  const touchStartX = React.useRef(0);
+  const touchStartY = React.useRef(0);
+
+  const handleTouchStart = (e: any) => {
+    touchStartX.current = e.nativeEvent.pageX;
+    touchStartY.current = e.nativeEvent.pageY;
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const dx = e.nativeEvent.pageX - touchStartX.current;
+    const dy = e.nativeEvent.pageY - touchStartY.current;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 60) {
+      if (dx > 0) {
+        navigateToPrevious();
+      } else {
+        navigateToNext();
+      }
+    }
+  };
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      setZoomScale((prev) => (prev > 1.2 ? 1 : 2.5));
+    }
+    setLastTap(now);
+  };
+
+  const handleZoomIn = () => setZoomScale((s) => Math.min(4, +(s + 0.5).toFixed(1)));
+  const handleZoomOut = () => setZoomScale((s) => Math.max(1, +(s - 0.5).toFixed(1)));
+  const handleZoomReset = () => setZoomScale(1);
+
+  const uri = activeUri;
 
   const ocrText = screenshot.ocrText || ocrRecord?.extractedText || '';
   const processingDuration = ocrRecord?.processingTime || 0;
   const ocrConfidence = ocrRecord?.confidence || screenshot.confidence || 0.88;
-  const isBackendAI = (screenshot.classificationSource === 'backend') || (cacheRecord?.source === 'backend');
+  const isManual = screenshot.classificationSource === 'manual' || (!screenshot.isAutoCategorized && screenshot.isReviewed);
+  const isBackendAI = !isManual && ((screenshot.classificationSource === 'backend') || (cacheRecord?.source === 'backend'));
+  const needsHumanReview = !screenshot.isReviewed && (screenshot.confidence < 0.7 || screenshot.categoryId === 'unsorted');
 
   // Parse extracted entities from backend cache
   let extractedEntities: ExtractedEntitiesDto = {
@@ -137,7 +320,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.actionBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -145,7 +328,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         <View style={styles.topBarActions}>
           <TouchableOpacity
             onPress={handleToggleFavorite}
-            style={[styles.actionBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+            style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
           >
             <Icon
               name={screenshot.isFavorite ? 'heart' : 'heart-outline'}
@@ -155,18 +338,145 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('ContextAIChat', { screenshotId: id })}
-            style={[styles.actionBtn, { backgroundColor: `${theme.colors.primary}20`, marginLeft: 8 }]}
+            style={[styles.actionBtn, { backgroundColor: `${theme.colors.primary}15`, borderColor: theme.colors.border, marginLeft: 8 }]}
           >
-            <Icon name="sparkles" size={20} color={theme.colors.primary} />
+            <Icon name="sparkles" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDeleteScreenshot}
+            style={[styles.actionBtn, { backgroundColor: `${theme.colors.error}15`, borderColor: theme.colors.border, marginLeft: 8 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Move to Recycle Bin"
+          >
+            <Icon name="trash-outline" size={18} color={theme.colors.error} />
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Preview Image */}
-        <View style={[styles.imageContainer, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}>
-          <Image source={{ uri }} style={styles.image} resizeMode="contain" />
-        </View>
+        {imageError || !uri ? (
+          <View
+            style={[
+              styles.imageErrorContainer,
+              {
+                backgroundColor: theme.isDark ? '#1E293B' : '#FEF2F2',
+                borderColor: theme.isDark ? '#334155' : '#FCA5A5',
+              },
+            ]}
+          >
+            <Icon name="alert-circle-outline" size={36} color={theme.colors.error} />
+            <Text style={[styles.imageErrorTitle, { color: theme.colors.error }]}>
+              Screenshot Image Unavailable
+            </Text>
+            <Text style={[styles.imageErrorSubtext, { color: theme.colors.textSecondary }]}>
+              The image file was not found at the recorded local path or could not be decoded.
+            </Text>
+            <Text numberOfLines={2} style={[styles.imageErrorPath, { color: theme.colors.textMuted }]}>
+              {screenshot.filePath}
+            </Text>
+            <TouchableOpacity
+              onPress={handleRetryImage}
+              style={[styles.retryLoadBtn, { backgroundColor: `${theme.colors.primary}18`, borderColor: theme.colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading screenshot"
+            >
+              <Icon name="refresh-outline" size={16} color={theme.colors.primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.retryLoadBtnText, { color: theme.colors.primary }]}>Retry Loading</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            style={[styles.imageContainer, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
+          >
+            <TouchableOpacity
+              activeOpacity={0.92}
+              onPress={() => {
+                setZoomScale(1);
+                setIsZoomModalOpen(true);
+              }}
+              style={styles.imageTouchable}
+              accessibilityRole="button"
+              accessibilityLabel="Tap to zoom screenshot full-screen"
+            >
+              <Image
+                source={{ uri, cache: 'force-cache' }}
+                style={styles.image}
+                resizeMode="contain"
+                onLoadStart={() => setIsImageLoading(true)}
+                onLoadEnd={() => setIsImageLoading(false)}
+                onError={handleImageError}
+              />
+              {isImageLoading && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Previous navigation chevron */}
+            {hasPrevious && (
+              <TouchableOpacity
+                onPress={navigateToPrevious}
+                style={[styles.navArrowBtn, styles.navArrowLeft]}
+                accessibilityRole="button"
+                accessibilityLabel="Previous screenshot"
+              >
+                <Icon name="chevron-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+
+            {/* Next navigation chevron */}
+            {hasNext && (
+              <TouchableOpacity
+                onPress={navigateToNext}
+                style={[styles.navArrowBtn, styles.navArrowRight]}
+                accessibilityRole="button"
+                accessibilityLabel="Next screenshot"
+              >
+                <Icon name="chevron-forward" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.zoomHintPill}>
+              <Icon name="scan-outline" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.zoomHintText}>Tap to Zoom • Swipe for Next</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Needs Human Review Alert Banner */}
+        {needsHumanReview && (
+          <View
+            style={[
+              styles.needsReviewBanner,
+              {
+                backgroundColor: theme.isDark ? '#78350F35' : '#FFFBEB',
+                borderColor: theme.isDark ? '#92400E' : '#FDE68A',
+              },
+            ]}
+          >
+            <Icon name="alert-circle" size={20} color="#F59E0B" style={{ marginRight: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.needsReviewBannerTitle, { color: theme.isDark ? '#FCD34D' : '#92400E' }]}>
+                Action Required: Human Review
+              </Text>
+              <Text style={[styles.needsReviewBannerSubtext, { color: theme.isDark ? '#FDE68A' : '#B45309' }]}>
+                AI confidence is low or category is unsorted.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsReclassifyModalOpen(true)}
+              style={styles.needsReviewActionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Review and Reclassify"
+            >
+              <Text style={styles.needsReviewActionBtnText}>Review</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* 1. Category, AI Source & Confidence Card */}
         <ModernCard style={styles.card}>
@@ -204,35 +514,257 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
             <View
               style={[
                 styles.sourceBadge,
-                { backgroundColor: isBackendAI ? `${theme.colors.success}18` : `${theme.colors.accent}18` },
+                {
+                  backgroundColor: isManual
+                    ? `${theme.colors.primary}18`
+                    : isBackendAI
+                    ? `${theme.colors.success}18`
+                    : `${theme.colors.accent}18`,
+                },
               ]}
             >
               <Icon
-                name={isBackendAI ? 'cloud-done-outline' : 'phone-portrait-outline'}
+                name={
+                  isManual
+                    ? 'checkmark-circle-outline'
+                    : isBackendAI
+                    ? 'cloud-done-outline'
+                    : 'phone-portrait-outline'
+                }
                 size={14}
-                color={isBackendAI ? theme.colors.success : theme.colors.accent}
+                color={
+                  isManual
+                    ? theme.colors.primary
+                    : isBackendAI
+                    ? theme.colors.success
+                    : theme.colors.accent
+                }
                 style={{ marginRight: 5 }}
               />
               <Text
                 style={[
                   styles.sourceBadgeText,
-                  { color: isBackendAI ? theme.colors.success : theme.colors.accent },
+                  {
+                    color: isManual
+                      ? theme.colors.primary
+                      : isBackendAI
+                      ? theme.colors.success
+                      : theme.colors.accent,
+                  },
                 ]}
               >
-                {isBackendAI ? 'Backend AI Synchronized' : 'On-Device Heuristic'}
+                {isManual
+                  ? 'Manually Verified & Reclassified'
+                  : isBackendAI
+                  ? 'Backend AI Synchronized'
+                  : 'On-Device Heuristic'}
               </Text>
             </View>
           </View>
 
-          {/* Sync / Re-analyze CTA */}
+          {/* Dual CTAs: Manual Reclassify and Backend AI Sync */}
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              onPress={() => setIsReclassifyModalOpen(true)}
+              style={[
+                styles.reclassifyBtn,
+                {
+                  flex: 1,
+                  backgroundColor: `${theme.colors.primary}15`,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Manually Reclassify Screenshot"
+            >
+              <Icon name="color-wand-outline" size={16} color={theme.colors.primary} />
+              <Text style={[styles.reclassifyText, { color: theme.colors.primary }]}>
+                Reclassify
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSyncWithBackendAI}
+              disabled={isSyncing}
+              style={[
+                styles.reclassifyBtn,
+                {
+                  flex: 1,
+                  borderColor: theme.colors.border,
+                  marginLeft: 10,
+                  opacity: isSyncing ? 0.6 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Sync with Backend AI"
+            >
+              <Icon name="sync-outline" size={16} color={theme.colors.textPrimary} />
+              <Text style={[styles.reclassifyText, { color: theme.colors.textPrimary }]}>
+                {isSyncing ? 'Syncing...' : 'Sync AI'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ModernCard>
+
+        {/* Local Vision AI Scene Intelligence Card (Sprint P1-B) */}
+        <ModernCard style={styles.card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="sparkles" size={18} color="#8B5CF6" />
+              <Text style={[styles.cardTitle, { color: theme.colors.textPrimary, marginLeft: 8 }]}>
+                Local Vision AI Analysis
+              </Text>
+            </View>
+            <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#8B5CF620' }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#8B5CF6' }}>
+                RTX 4050
+              </Text>
+            </View>
+          </View>
+
+          {visionRecord ? (() => {
+            let visionEntities: Record<string, any> = {};
+            try {
+              visionEntities = JSON.parse(visionRecord.detected_entities || '{}');
+            } catch {}
+
+            let visionTags: string[] = [];
+            try {
+              visionTags = JSON.parse(visionRecord.detected_objects || '[]');
+            } catch {}
+
+            const visionTitle = visionRecord.application_name || visionEntities.title || screenshot.fileName;
+            const visionConfidence =
+              visionRecord.confidence != null && visionRecord.confidence > 0
+                ? Math.round(visionRecord.confidence * (visionRecord.confidence <= 1 ? 100 : 1))
+                : 100;
+            const visionMerchant =
+              visionEntities.merchant ||
+              (Array.isArray(visionEntities.merchants) ? visionEntities.merchants[0] : visionEntities.merchants);
+            const visionAmount =
+              visionEntities.amount ||
+              (Array.isArray(visionEntities.amounts) ? visionEntities.amounts[0] : visionEntities.amounts);
+            const visionPoints: string[] = Array.isArray(visionEntities.points) ? visionEntities.points : [];
+
+            return (
+              <View style={{ marginTop: 6 }}>
+                {/* AI Title */}
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    AI Title
+                  </Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 2 }}>
+                    {visionTitle}
+                  </Text>
+                </View>
+
+                {/* AI Summary */}
+                {visionRecord.summary ? (
+                  <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.colors.surfaceVariant }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B5CF6', marginBottom: 4 }}>
+                      AI Summary
+                    </Text>
+                    <Text style={{ fontSize: 13, lineHeight: 18, color: theme.colors.textPrimary }}>
+                      {visionRecord.summary}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Key Bullet Points */}
+                {visionPoints.length > 0 && (
+                  <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.isDark ? '#1E293B80' : '#F8FAFC' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B5CF6', marginBottom: 6 }}>
+                      Bullet Points
+                    </Text>
+                    {visionPoints.map((pt, idx) => (
+                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <Text style={{ color: '#8B5CF6', marginRight: 6, fontSize: 12 }}>•</Text>
+                        <Text style={{ fontSize: 12, color: theme.colors.textPrimary, flex: 1, lineHeight: 16 }}>
+                          {pt}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Merchant & Amount Badges */}
+                {(visionMerchant || visionAmount) && (
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                    {visionMerchant ? (
+                      <View style={{ flex: 1, padding: 8, borderRadius: 8, backgroundColor: '#3B82F615' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#3B82F6' }}>Merchant</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 2 }}>
+                          {String(visionMerchant)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {visionAmount ? (
+                      <View style={{ flex: 1, padding: 8, borderRadius: 8, backgroundColor: '#10B98115' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#10B981' }}>Amount</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#10B981', marginTop: 2 }}>
+                          {String(visionAmount)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Tags */}
+                {visionTags.length > 0 && (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary, marginBottom: 6 }}>
+                      Tags
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {visionTags.map((tag, idx) => (
+                        <TagChip key={idx} label={tag} colorHex="#8B5CF6" />
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Confidence & Model Engine Meta */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Confidence</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#10B981' }}>
+                    {visionConfidence}%
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Model Engine</Text>
+                  <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                    {visionRecord.model_version || 'Qwen2.5-VL-3B-Instruct'}
+                  </Text>
+                </View>
+              </View>
+            );
+          })() : (
+            <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginVertical: 8 }}>
+              This screenshot has not been analyzed by the local Vision AI engine yet.
+            </Text>
+          )}
+
           <TouchableOpacity
-            onPress={handleSyncWithBackendAI}
-            disabled={isSyncing}
-            style={[styles.reclassifyBtn, { borderColor: theme.colors.primary }]}
+            onPress={handleAnalyzeWithVisionAI}
+            disabled={isAnalyzingVision}
+            style={[
+              styles.reclassifyBtn,
+              {
+                backgroundColor: '#8B5CF618',
+                borderColor: '#8B5CF6',
+                marginTop: 8,
+                opacity: isAnalyzingVision ? 0.6 : 1,
+              },
+            ]}
           >
-            <Icon name="sync-outline" size={16} color={theme.colors.primary} />
-            <Text style={[styles.reclassifyText, { color: theme.colors.primary }]}>
-              {isSyncing ? 'Synchronizing with AI Engine...' : 'Sync with Backend AI'}
+            {isAnalyzingVision ? (
+              <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+            ) : (
+              <Icon name="sparkles-outline" size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
+            )}
+            <Text style={[styles.reclassifyText, { color: '#8B5CF6', fontWeight: '600' }]}>
+              {isAnalyzingVision ? 'Analyzing on RTX 4050...' : visionRecord ? 'Re-analyze with AI' : 'Analyze with AI'}
             </Text>
           </TouchableOpacity>
         </ModernCard>
@@ -297,7 +829,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
                 </Text>
                 <View style={styles.tagsWrap}>
                   {extractedEntities.urls.map((u, idx) => (
-                    <TagChip key={idx} label={u} colorHex="#6366F1" />
+                    <TagChip key={idx} label={u} colorHex={theme.colors.primary} />
                   ))}
                 </View>
               </View>
@@ -453,6 +985,108 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           ) : null}
         </ModernCard>
       </ScrollView>
+
+      {/* Fullscreen Pinch-to-Zoom Lightbox Modal */}
+      <Modal
+        visible={isZoomModalOpen}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={() => setIsZoomModalOpen(false)}
+        testID="screenshot-zoom-modal"
+      >
+        <View style={styles.modalBackdrop}>
+          {/* Modal Top Bar */}
+          <View style={styles.modalTopBar}>
+            <TouchableOpacity
+              onPress={() => setIsZoomModalOpen(false)}
+              style={styles.modalCloseBtn}
+              accessibilityLabel="Close full screen view"
+            >
+              <Icon name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={styles.modalTitleBox}>
+              <Text numberOfLines={1} style={styles.modalTitleText}>
+                {screenshot.fileName}
+              </Text>
+              <Text style={styles.modalMetaText}>
+                {screenshot.width} x {screenshot.height} px • {FileUtils.formatBytes(screenshot.fileSize)}
+              </Text>
+            </View>
+
+            {/* Zoom Controls Toolbar */}
+            <View style={styles.modalControlsRow}>
+              <TouchableOpacity
+                onPress={handleZoomOut}
+                disabled={zoomScale <= 1}
+                style={[styles.zoomControlBtn, zoomScale <= 1 && styles.zoomBtnDisabled]}
+                accessibilityLabel="Zoom out"
+              >
+                <Icon name="remove" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleZoomReset}
+                style={styles.zoomScaleBadge}
+                accessibilityLabel="Reset zoom"
+              >
+                <Text style={styles.zoomScaleText}>{zoomScale.toFixed(1)}x</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleZoomIn}
+                disabled={zoomScale >= 4}
+                style={[styles.zoomControlBtn, zoomScale >= 4 && styles.zoomBtnDisabled]}
+                accessibilityLabel="Zoom in"
+              >
+                <Icon name="add" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Interactive Zoom Viewport */}
+          <ScrollView
+            style={styles.modalScrollView}
+            contentContainerStyle={styles.modalScrollContent}
+            maximumZoomScale={4.0}
+            minimumZoomScale={1.0}
+            centerContent={true}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleDoubleTap}
+              style={styles.modalImageTouchable}
+            >
+              <Image
+                source={{ uri, cache: 'force-cache' }}
+                style={[
+                  styles.modalImage,
+                  {
+                    transform: [{ scale: zoomScale }],
+                  },
+                ]}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Double Tap Hint Footer */}
+          <View style={styles.modalFooter}>
+            <Text style={styles.modalFooterText}>
+              Double tap to zoom • Pinch with two fingers to inspect details
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manual Reclassification Modal */}
+      <ReclassifyModal
+        visible={isReclassifyModalOpen}
+        screenshot={screenshot}
+        onClose={() => setIsReclassifyModalOpen(false)}
+      />
     </View>
   );
 };
@@ -476,7 +1110,8 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -489,9 +1124,37 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     height: 320,
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 16,
+    position: 'relative',
+  },
+  imageTouchable: {
+    width: '100%',
+    height: '100%',
+  },
+  imageLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  navArrowBtn: {
+    position: 'absolute',
+    top: '42%',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  navArrowLeft: {
+    left: 10,
+  },
+  navArrowRight: {
+    right: 10,
   },
   image: {
     width: '100%',
@@ -507,8 +1170,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryName: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subcategoryName: {
     fontSize: 14,
@@ -553,6 +1216,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
   reclassifyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,6 +1234,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  needsReviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  needsReviewBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  needsReviewBannerSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  needsReviewActionBtn: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  needsReviewActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -670,5 +1366,150 @@ const styles = StyleSheet.create({
   metaVal: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  imageErrorContainer: {
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  imageErrorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  imageErrorSubtext: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  imageErrorPath: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  retryLoadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  retryLoadBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  zoomHintPill: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  zoomHintText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  modalTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 44,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    zIndex: 10,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitleBox: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  modalTitleText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalMetaText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  modalControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  zoomControlBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomBtnDisabled: {
+    opacity: 0.35,
+  },
+  zoomScaleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginHorizontal: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  zoomScaleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImageTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalFooter: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  },
+  modalFooterText: {
+    color: '#94A3B8',
+    fontSize: 12,
   },
 });

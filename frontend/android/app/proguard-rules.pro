@@ -44,3 +44,19 @@
 # 7. MMKV / AsyncStorage
 -keep class com.tencent.mmkv.** { *; }
 -keep class com.reactnativecommunity.asyncstorage.** { *; }
+
+# 8. FastImage
+-keep public class com.dylanvann.fastimage.* { *; }
+-keep public class com.dylanvann.fastimage.** { *; }
+-dontwarn com.bumptech.glide.**
+
+# 9. Firebase Crashlytics & Error Reporting
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-keepclassmembers class com.google.firebase.crashlytics.** { *; }
+-dontwarn com.google.firebase.crashlytics.**
+-dontwarn com.google.android.gms.**
+
+# 10. Flipper
+-keep class com.facebook.flipper.** { *; }
+-dontwarn com.facebook.flipper.**

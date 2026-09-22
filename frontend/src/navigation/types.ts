@@ -30,6 +30,15 @@ export type RootStackParamList = {
     categoryName?: string;
     screenshotId?: string;
   };
+  ContextChat:
+    | {
+        folderId?: string;
+        folderName?: string;
+        categoryId?: string;
+        categoryName?: string;
+        initialQuery?: string;
+      }
+    | undefined;
   ScreenshotDetail: {
     id: string;
   };
@@ -43,6 +52,20 @@ export type RootStackParamList = {
   ScannerStatus: undefined;
   Storage: undefined;
   QADebugPanel: undefined;
+  NotificationCenter: undefined;
+  RecycleBin: undefined;
+  FolderAnalytics:
+    | {
+        categoryId?: string;
+        categoryName?: string;
+      }
+    | undefined;
+  BackendSettings: undefined;
+  BackendConnection: undefined;
+  VisionDebug: { screenshotId?: string } | undefined;
+  ScreenshotDiagnostics: undefined;
+  AIQueue: undefined;
+  MemoryTimeline: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

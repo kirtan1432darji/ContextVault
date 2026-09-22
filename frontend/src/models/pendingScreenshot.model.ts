@@ -4,6 +4,9 @@ export interface PendingScreenshot {
   id: string;
   deviceAssetId: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   fileName: string;
   fileSize: number;
   fileHash: string;
@@ -28,6 +31,9 @@ export interface PendingScreenshot {
 export interface DetectedScreenshotEvent {
   deviceAssetId?: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   fileName?: string;
   fileSize?: number;
   fileHash?: string;

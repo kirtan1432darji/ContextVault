@@ -1,10 +1,17 @@
 import { databaseService } from '../database';
 import { ScreenshotModel, ScreenshotFilter } from '../../models';
+import { thumbnailService } from '../../services/ThumbnailService';
 
 export class ScreenshotRepository {
   async getAllScreenshots(filter: ScreenshotFilter = {}): Promise<ScreenshotModel[]> {
     const conditions: string[] = [];
     const params: any[] = [];
+
+    if (filter.isDeleted === true) {
+      conditions.push('is_deleted = 1');
+    } else {
+      conditions.push('(is_deleted = 0 OR is_deleted IS NULL)');
+    }
 
     if (filter.categoryId && filter.categoryId !== 'all') {
       conditions.push('category_id = ?');
@@ -35,6 +42,31 @@ export class ScreenshotRepository {
     return rows.map(this.mapRowToModel);
   }
 
+  async countScreenshots(filter: ScreenshotFilter = {}): Promise<number> {
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (filter.isDeleted === true) {
+      conditions.push('is_deleted = 1');
+    } else {
+      conditions.push('(is_deleted = 0 OR is_deleted IS NULL)');
+    }
+
+    if (filter.categoryId && filter.categoryId !== 'all') {
+      conditions.push('category_id = ?');
+      params.push(filter.categoryId);
+    }
+
+    if (filter.isFavorite) {
+      conditions.push('is_favorite = 1');
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `SELECT COUNT(*) as count FROM screenshots ${whereClause}`;
+    const rows = await databaseService.executeQuery(sql, params);
+    return rows.length > 0 ? rows[0].count : 0;
+  }
+
   async getScreenshotById(id: string): Promise<ScreenshotModel | null> {
     const rows = await databaseService.executeQuery(
       'SELECT * FROM screenshots WHERE id = ? LIMIT 1',
@@ -44,19 +76,113 @@ export class ScreenshotRepository {
     return this.mapRowToModel(rows[0]);
   }
 
-  async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
-    const rows = await databaseService.executeQuery(
-      'SELECT * FROM screenshots WHERE category_id = ? ORDER BY created_at DESC',
-      [categoryId]
-    );
+  async getScreenshotsForCategory(
+    categoryId: string,
+    categoryName?: string,
+    descendantIds?: string[]
+  ): Promise<ScreenshotModel[]> {
+    const ids = descendantIds && descendantIds.length > 0 ? descendantIds : [categoryId];
+    const placeholders = ids.map(() => '?').join(',');
+    const params: any[] = [...ids];
+
+    let query = `
+      SELECT * FROM screenshots 
+      WHERE (
+        coalesce(folder_id, category_id) IN (${placeholders})
+    `;
+
+    if (categoryName && categoryName.trim().length > 0) {
+      const cleanName = categoryName.trim();
+      query += ` OR LOWER(category_name) = LOWER(?) OR folder_path LIKE ?`;
+      params.push(cleanName);
+      params.push(`%"${cleanName}"%`);
+    }
+
+    query += `
+      )
+      AND (is_deleted = 0 OR is_deleted IS NULL)
+      ORDER BY created_at DESC
+    `;
+
+    const rows = await databaseService.executeQuery(query, params);
     return rows.map(this.mapRowToModel);
+  }
+
+  async getScreenshotsByCategoryId(categoryId: string): Promise<ScreenshotModel[]> {
+    return this.getScreenshotsForCategory(categoryId);
   }
 
   async getNeedsReviewCount(): Promise<number> {
     const rows = await databaseService.executeQuery(
-      `SELECT COUNT(*) as count FROM screenshots WHERE is_reviewed = 0 AND (confidence < 0.70 OR category_id = 'unsorted')`
+      `SELECT COUNT(*) as count FROM screenshots WHERE is_reviewed = 0 AND (confidence < 0.70 OR category_id = 'unsorted') AND (is_deleted = 0 OR is_deleted IS NULL)`
     );
     return rows.length > 0 ? rows[0].count : 0;
+  }
+
+  async getDeletedScreenshots(): Promise<ScreenshotModel[]> {
+    const rows = await databaseService.executeQuery(
+      'SELECT * FROM screenshots WHERE is_deleted = 1 ORDER BY deleted_at DESC, created_at DESC'
+    );
+    return rows.map(this.mapRowToModel);
+  }
+
+  async softDeleteScreenshot(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 1, deleted_at = ? WHERE id = ?',
+      [now, id]
+    );
+  }
+
+  async restoreScreenshot(id: string): Promise<void> {
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 0, deleted_at = NULL WHERE id = ?',
+      [id]
+    );
+  }
+
+  async restoreAllScreenshots(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT id FROM screenshots WHERE is_deleted = 1'
+    );
+    if (rows.length === 0) return 0;
+    await databaseService.executeCommand(
+      'UPDATE screenshots SET is_deleted = 0, deleted_at = NULL WHERE is_deleted = 1'
+    );
+    return rows.length;
+  }
+
+  async permanentDeleteScreenshot(id: string): Promise<void> {
+    const s = await this.getScreenshotById(id);
+    if (s?.thumbnailUri) {
+      thumbnailService.deleteThumbnail(s.thumbnailUri).catch(() => {});
+    }
+    await databaseService.executeCommand('DELETE FROM screenshot_tags WHERE screenshot_id = ?', [id]);
+    await databaseService.executeCommand('DELETE FROM ocr_cache WHERE screenshot_id = ?', [id]);
+    await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
+  }
+
+  async emptyRecycleBin(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT id FROM screenshots WHERE is_deleted = 1'
+    );
+    const count = rows.length;
+    if (count === 0) return 0;
+    await databaseService.executeCommand(
+      'DELETE FROM screenshot_tags WHERE screenshot_id IN (SELECT id FROM screenshots WHERE is_deleted = 1)'
+    );
+    await databaseService.executeCommand(
+      'DELETE FROM ocr_cache WHERE screenshot_id IN (SELECT id FROM screenshots WHERE is_deleted = 1)'
+    );
+    await databaseService.executeCommand('DELETE FROM screenshots WHERE is_deleted = 1');
+    return count;
+  }
+
+  async getRecycleBinCount(): Promise<number> {
+    const rows = await databaseService.executeQuery(
+      'SELECT COUNT(*) as count FROM screenshots WHERE is_deleted = 1'
+    );
+    return rows[0]?.count || 0;
   }
 
   async hasScreenshot(deviceAssetId?: string, filePath?: string): Promise<boolean> {
@@ -78,27 +204,46 @@ export class ScreenshotRepository {
   }
 
   async insertScreenshot(screenshot: ScreenshotModel): Promise<void> {
+    const localPath = screenshot.localPath || screenshot.filePath;
+    const contentUri = screenshot.contentUri || (screenshot.deviceAssetId && /^\d+$/.test(screenshot.deviceAssetId) ? `content://media/external/images/media/${screenshot.deviceAssetId}` : null);
+    const thumbnailUri = screenshot.thumbnailUri || null;
+    const createdOn = screenshot.createdOn || screenshot.createdAt;
+    const folderId = screenshot.folderId || screenshot.categoryId;
+    const mimeType = screenshot.mimeType || (screenshot.fileName?.endsWith('.jpg') || screenshot.fileName?.endsWith('.jpeg') ? 'image/jpeg' : 'image/png');
+
+    const analysisStatus = screenshot.analysisStatus || (screenshot.ocrStatus === 'completed' ? 'Completed' : screenshot.ocrStatus === 'processing' ? 'Processing' : screenshot.ocrStatus === 'failed' ? 'Failed' : 'Pending');
+    const analysisProcessingTime = screenshot.analysisProcessingTime || 0;
+
     const sql = `
       INSERT OR REPLACE INTO screenshots (
-        id, device_asset_id, file_path, file_name, created_at,
-        width, height, file_size, category_id, category_name,
-        subcategory, confidence, source_app, detected_app,
-        keywords_json, is_auto_categorized, is_favorite,
-        is_reviewed, is_synced, ocr_status, ocr_text,
-        last_scanned_at, is_mock, classification_source, folder_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, device_asset_id, file_path, local_path, content_uri,
+        thumbnail_uri, file_name, created_at, created_on,
+        width, height, file_size, mime_type, category_id,
+        folder_id, category_name, subcategory, confidence,
+        source_app, detected_app, keywords_json, is_auto_categorized,
+        is_favorite, is_reviewed, is_synced, ocr_status,
+        ocr_text, analysis_status, analysis_processing_time,
+        last_scanned_at, is_mock, classification_source,
+        folder_path, is_deleted, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
       screenshot.id,
       screenshot.deviceAssetId || '',
       screenshot.filePath,
+      localPath,
+      contentUri,
+      thumbnailUri,
       screenshot.fileName,
       screenshot.createdAt,
+      createdOn,
       screenshot.width,
       screenshot.height,
       screenshot.fileSize,
+      mimeType,
       screenshot.categoryId,
+      folderId,
       screenshot.categoryName,
       screenshot.subcategory || '',
       screenshot.confidence,
@@ -111,10 +256,14 @@ export class ScreenshotRepository {
       screenshot.isSynced ? 1 : 0,
       screenshot.ocrStatus,
       screenshot.ocrText || null,
+      analysisStatus,
+      analysisProcessingTime,
       screenshot.lastScannedAt || null,
       screenshot.isMock ? 1 : 0,
       screenshot.classificationSource || 'local',
       screenshot.folderPath ? JSON.stringify(screenshot.folderPath) : null,
+      screenshot.isDeleted ? 1 : 0,
+      screenshot.deletedAt || null,
     ]);
   }
 
@@ -129,7 +278,7 @@ export class ScreenshotRepository {
     subcategory: string,
     confidence: number,
     tags: string[],
-    source: 'backend' | 'local' = 'backend',
+    source: 'backend' | 'local' | 'manual' = 'backend',
     folderPath?: string[]
   ): Promise<void> {
     await databaseService.executeCommand(
@@ -156,8 +305,78 @@ export class ScreenshotRepository {
     );
   }
 
+  async reclassifyScreenshot(
+    id: string,
+    categoryId: string,
+    categoryName: string,
+    subcategory: string,
+    tags: string[] = [],
+    folderPath?: string[]
+  ): Promise<void> {
+    const folderJson = folderPath
+      ? JSON.stringify(folderPath)
+      : JSON.stringify([categoryName, subcategory].filter(Boolean));
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET 
+        category_id = ?, 
+        category_name = ?, 
+        subcategory = ?, 
+        confidence = 1.0, 
+        keywords_json = ?, 
+        is_auto_categorized = 0,
+        is_reviewed = 1,
+        classification_source = 'manual',
+        folder_path = ?
+       WHERE id = ?`,
+      [
+        categoryId,
+        categoryName,
+        subcategory,
+        JSON.stringify(tags),
+        folderJson,
+        id,
+      ]
+    );
+  }
+
   async deleteScreenshot(id: string): Promise<void> {
     await databaseService.executeCommand('DELETE FROM screenshots WHERE id = ?', [id]);
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const now = new Date().toISOString();
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET is_deleted = 1, deleted_at = ? WHERE id IN (${placeholders})`,
+      [now, ...ids]
+    );
+    return ids.length;
+  }
+
+  async bulkSetFavorite(ids: string[], isFavorite: boolean): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET is_favorite = ? WHERE id IN (${placeholders})`,
+      [isFavorite ? 1 : 0, ...ids]
+    );
+    return ids.length;
+  }
+
+  async bulkUpdateCategory(
+    ids: string[],
+    categoryId: string,
+    categoryName: string,
+    subcategory = ''
+  ): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET category_id = ?, category_name = ?, subcategory = ?, is_auto_categorized = 0 WHERE id IN (${placeholders})`,
+      [categoryId, categoryName, subcategory, ...ids]
+    );
+    return ids.length;
   }
 
   private mapRowToModel = (row: any): ScreenshotModel => {
@@ -175,16 +394,32 @@ export class ScreenshotRepository {
       }
     } catch {}
 
+    const localPath = row.local_path || row.file_path;
+    let contentUri = row.content_uri;
+    if (!contentUri && row.device_asset_id && /^\d+$/.test(row.device_asset_id)) {
+      contentUri = `content://media/external/images/media/${row.device_asset_id}`;
+    }
+    const thumbnailUri = row.thumbnail_uri || undefined;
+    const mimeType = row.mime_type || (row.file_name?.endsWith('.jpg') || row.file_name?.endsWith('.jpeg') ? 'image/jpeg' : 'image/png');
+    const folderId = row.folder_id || row.category_id;
+    const createdOn = row.created_on || row.created_at;
+
     return {
       id: row.id,
       deviceAssetId: row.device_asset_id || '',
       filePath: row.file_path,
+      localPath,
+      contentUri,
+      thumbnailUri,
       fileName: row.file_name,
       createdAt: row.created_at,
+      createdOn,
       width: row.width,
       height: row.height,
       fileSize: row.file_size,
+      mimeType,
       categoryId: row.category_id,
+      folderId,
       categoryName: row.category_name,
       subcategory: row.subcategory || '',
       folderPath,
@@ -196,8 +431,12 @@ export class ScreenshotRepository {
       isFavorite: Boolean(row.is_favorite),
       isReviewed: Boolean(row.is_reviewed),
       isSynced: Boolean(row.is_synced),
+      isDeleted: Boolean(row.is_deleted),
+      deletedAt: row.deleted_at || undefined,
       ocrStatus: row.ocr_status,
       ocrText: row.ocr_text,
+      analysisStatus: row.analysis_status || (row.ocr_status === 'completed' ? 'Completed' : row.ocr_status === 'processing' ? 'Processing' : row.ocr_status === 'failed' ? 'Failed' : 'Pending'),
+      analysisProcessingTime: row.analysis_processing_time || 0,
       lastScannedAt: row.last_scanned_at,
       classificationSource: row.classification_source || (row.is_synced ? 'backend' : 'local'),
       tags: keywords.slice(0, 5).map((kw) => ({

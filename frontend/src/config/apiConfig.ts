@@ -1,25 +1,17 @@
+import { getApiBaseUrl, getEndpointUrl as getCentralEndpointUrl, setApiBaseUrl } from './api';
+
 /**
  * ContextVault Central API Configuration
- *
- * Configured for Docker FastAPI backend running on Ubuntu laptop (10.193.167.152:8000).
- * Decoupled from native modules to ensure seamless operation on both physical devices and debug APKs.
+ * Delegates directly to src/config/api.ts for dynamic backend discovery.
  */
-const DEFAULT_HOST_URL = 'http://10.193.167.152:8000';
-
-function resolveBaseUrl(): string {
-  // Allow optional global or environment overrides if defined
-  const globalEnv = (typeof global !== 'undefined' && (global as any).__CONTEXTVAULT_API_URL__) || null;
-  if (globalEnv && typeof globalEnv === 'string' && globalEnv.trim().length > 0) {
-    return globalEnv.trim().replace(/\/+$/, '');
-  }
-
-  return DEFAULT_HOST_URL;
+export function resolveBaseUrl(): string {
+  return getApiBaseUrl();
 }
 
 /**
- * Normalized FastAPI Backend Host URL (e.g. "http://10.193.167.152:8000")
+ * Normalized FastAPI Backend Host URL
  */
-export const API_BASE_URL: string = resolveBaseUrl();
+export const API_BASE_URL: string = getApiBaseUrl();
 
 /**
  * Standard API Timeout in milliseconds (30 seconds)
@@ -32,18 +24,11 @@ export const REQUEST_TIMEOUT_MS = 30000;
 export const API_V1_PREFIX = '/api';
 
 /**
- * Helper to generate a fully qualified API endpoint URL.
- *
- * @example
- * getEndpointUrl('/health') // -> "http://10.193.167.152:8000/api/health"
- * getEndpointUrl('/auth/login') // -> "http://10.193.167.152:8000/api/auth/login"
+ * Helper to generate a fully qualified API endpoint URL dynamically.
+ * Delegates to centralized api configuration.
  */
 export function getEndpointUrl(path: string): string {
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  if (cleanPath.startsWith('/api/')) {
-    return `${API_BASE_URL}${cleanPath}`;
-  }
-  return `${API_BASE_URL}${API_V1_PREFIX}${cleanPath}`;
+  return getCentralEndpointUrl(path);
 }
 
 /**
@@ -52,6 +37,7 @@ export function getEndpointUrl(path: string): string {
 export const API_ENDPOINTS = {
   // Health & System
   HEALTH: '/api/health',
+  ROOT_HEALTH: '/health',
   VERSION: '/api/version',
   ROOT: '/',
 
@@ -72,12 +58,23 @@ export const API_ENDPOINTS = {
   FOLDER_CONTEXT: (id: string) => `/api/context/${id}`,
   CHAT_MESSAGE: '/api/chat/message',
   SEARCH: '/api/search',
+
+  // Vision Gateway (Local RTX 4050 Server)
+  VISION_HEALTH: '/api/vision/health',
+  VISION_PING: '/api/vision/ping',
+  VISION_MODEL_INFO: '/api/vision/model-info',
+  VISION_ANALYZE: '/api/vision/analyze',
+  VISION_BATCH: '/api/vision/batch',
 } as const;
+
+export { getApiBaseUrl, setApiBaseUrl };
 
 export default {
   API_BASE_URL,
   REQUEST_TIMEOUT_MS,
   API_V1_PREFIX,
   getEndpointUrl,
+  getApiBaseUrl,
+  setApiBaseUrl,
   API_ENDPOINTS,
 };

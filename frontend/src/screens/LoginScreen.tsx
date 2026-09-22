@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,26 +10,51 @@ import {
   Platform,
   ScrollView,
   Switch,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useAuthStore } from '../store/auth.store';
 import { StorageService, StorageKeys } from '../utils/storage';
+import { backendConnectionService } from '../services/BackendConnectionService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useAppTheme();
-  const { login, loading, error } = useAuthStore();
+  const { login, loading, error, loginAsGuest, clearError } = useAuthStore();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [showHealthDialog, setShowHealthDialog] = useState(false);
+  const [healthErrorData, setHealthErrorData] = useState<{ url: string; message: string } | null>(null);
+
+  // Clear stale errors whenever LoginScreen gains or loses focus
+  useFocusEffect(
+    useCallback(() => {
+      clearError();
+      setLocalError(null);
+      return () => {
+        clearError();
+        setLocalError(null);
+      };
+    }, [clearError])
+  );
+
+  const handleContinueAsGuest = () => {
+    clearError();
+    loginAsGuest();
+    navigation.replace('MainTabs', { screen: 'Home' });
+  };
 
   useEffect(() => {
     const savedRemember = StorageService.getBoolean(StorageKeys.REMEMBER_ME);
@@ -44,6 +69,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLogin = async () => {
     setLocalError(null);
+    clearError();
 
     const cleanIdentifier = identifier.trim();
     if (!cleanIdentifier) {
@@ -52,6 +78,20 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
     }
     if (!password) {
       setLocalError('Please enter your password.');
+      return;
+    }
+
+    // Pre-flight health check before authentication
+    setCheckingHealth(true);
+    const healthResult = await backendConnectionService.pingBackend();
+    setCheckingHealth(false);
+
+    if (!healthResult.isHealthy) {
+      setHealthErrorData({
+        url: healthResult.baseUrl,
+        message: healthResult.errorMessage || 'Cannot connect to ContextVault backend.',
+      });
+      setShowHealthDialog(true);
       return;
     }
 
@@ -88,8 +128,16 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
         >
           {/* Header Brand */}
           <View style={styles.header}>
-            <View style={[styles.logoBadge, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="scan" size={38} color={theme.colors.primary} />
+            <View
+              style={[
+                styles.logoBadge,
+                {
+                  backgroundColor: theme.isDark ? '#1E1E1E' : '#E8F0FE',
+                  borderColor: theme.isDark ? '#2E2E2E' : '#D2E3FC',
+                },
+              ]}
+            >
+              <Icon name="albums-outline" size={34} color={theme.colors.primary} />
             </View>
             <Text style={[styles.welcomeTitle, { color: theme.colors.textPrimary }]}>
               Welcome Back
@@ -117,7 +165,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: theme.isDark ? '#131B2E' : '#F8FAFC',
+                  backgroundColor: theme.colors.inputBackground,
                   borderColor: theme.colors.border,
                 },
               ]}
@@ -133,6 +181,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setIdentifier(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -151,7 +200,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               style={[
                 styles.inputWrapper,
                 {
-                  backgroundColor: theme.isDark ? '#131B2E' : '#F8FAFC',
+                  backgroundColor: theme.colors.inputBackground,
                   borderColor: theme.colors.border,
                 },
               ]}
@@ -166,6 +215,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 onChangeText={(val) => {
                   setPassword(val);
                   if (localError) setLocalError(null);
+                  if (error) clearError();
                 }}
                 editable={!loading}
               />
@@ -197,7 +247,11 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               </View>
 
               <TouchableOpacity
-                onPress={() => navigation.navigate('ForgotPassword')}
+                onPress={() => {
+                  clearError();
+                  setLocalError(null);
+                  navigation.navigate('ForgotPassword');
+                }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={[styles.forgotPasswordText, { color: theme.colors.primary }]}>
@@ -210,13 +264,13 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                { backgroundColor: theme.colors.primary, opacity: loading ? 0.75 : 1 },
+                { backgroundColor: theme.colors.primary, opacity: loading || checkingHealth ? 0.75 : 1 },
               ]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || checkingHealth}
               activeOpacity={0.85}
             >
-              {loading ? (
+              {loading || checkingHealth ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
@@ -225,6 +279,37 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+              <Text style={[styles.dividerText, { color: theme.colors.textMuted }]}>OR</Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+            </View>
+
+            {/* Continue as Guest Button (Sprint P0) */}
+            <TouchableOpacity
+              style={[
+                styles.guestButton,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? '#1F293750' : '#F8FAFC',
+                },
+              ]}
+              onPress={handleContinueAsGuest}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Continue as Guest without creating an account"
+            >
+              <Icon name="person-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.guestButtonText, { color: theme.colors.textPrimary }]}>
+                Continue as Guest
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.guestDisclaimer, { color: theme.colors.textSecondary }]}>
+              Use ContextVault without an account. Your data stays only on this device.
+            </Text>
           </View>
 
           {/* Footer - Register Navigation */}
@@ -232,7 +317,13 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
               Don't have an account?{' '}
             </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <TouchableOpacity
+              onPress={() => {
+                clearError();
+                setLocalError(null);
+                navigation.navigate('Register');
+              }}
+            >
               <Text style={[styles.registerLink, { color: theme.colors.primary }]}>
                 Create Account
               </Text>
@@ -240,6 +331,67 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Material 3 Health Check Dialog */}
+      <Modal
+        visible={showHealthDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHealthDialog(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.m3Dialog,
+              { backgroundColor: theme.isDark ? '#1E293B' : '#FFFFFF' },
+            ]}
+          >
+            <View style={[styles.m3IconContainer, { backgroundColor: '#EF444418' }]}>
+              <Icon name="cloud-offline-outline" size={28} color="#EF4444" />
+            </View>
+            <Text style={[styles.m3DialogTitle, { color: theme.colors.textPrimary }]}>
+              Cannot connect to ContextVault backend.
+            </Text>
+            <Text style={[styles.m3DialogMessage, { color: theme.colors.textSecondary }]}>
+              Unable to reach backend server at:
+              {'\n'}
+              <Text style={{ fontWeight: '600', color: theme.colors.textPrimary }}>
+                {healthErrorData?.url}
+              </Text>
+              {'\n\n'}
+              Please ensure your FastAPI backend is running and accessible on your Wi-Fi/LAN network, or update your host IP in Backend Settings.
+            </Text>
+
+            <View style={styles.m3ActionRow}>
+              <TouchableOpacity
+                style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
+                onPress={() => {
+                  setShowHealthDialog(false);
+                  navigation.navigate('BackendSettings');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Open Backend Settings"
+              >
+                <Text style={[styles.m3TonalBtnText, { color: theme.colors.primary }]}>
+                  Backend Settings
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.m3PrimaryBtn, { backgroundColor: theme.colors.primary }]}
+                onPress={() => {
+                  setShowHealthDialog(false);
+                  handleLogin();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Retry Connection"
+              >
+                <Text style={styles.m3PrimaryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -258,17 +410,18 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   welcomeTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 6,
   },
   welcomeSubtitle: {
@@ -296,7 +449,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: 8,
     marginTop: 12,
   },
@@ -304,9 +457,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    height: 52,
+    height: 50,
   },
   inputIcon: {
     marginRight: 10,
@@ -329,29 +482,25 @@ const styles = StyleSheet.create({
   },
   rememberMeText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     marginLeft: 4,
   },
   forgotPasswordText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 54,
-    borderRadius: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 4,
+    height: 50,
+    borderRadius: 12,
+    elevation: 1,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
@@ -363,6 +512,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   registerLink: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  guestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  guestButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  guestDisclaimer: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 10,
+    paddingHorizontal: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  m3Dialog: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  m3IconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  m3DialogTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  m3DialogMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  m3ActionRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  m3TonalBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  m3TonalBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  m3PrimaryBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  m3PrimaryBtnText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },

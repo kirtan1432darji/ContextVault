@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+import { MediaStorePathResolver } from './MediaStorePathResolver';
+
 export const FileUtils = {
   formatBytes(bytes: number, decimals = 1): string {
     if (bytes === 0) return '0 B';
@@ -50,5 +53,84 @@ export const FileUtils = {
     const p3 = (h1 >>> 0).toString(16).padStart(16, '0');
     const p4 = (h2 >>> 0).toString(16).padStart(16, '0');
     return (p1 + p2 + p3 + p4).substring(0, 64);
+  },
+
+  /**
+   * Normalizes a local or remote screenshot file path into a valid URI
+   * that React Native Image components can reliably resolve.
+   */
+  normalizeImageUri(filePath: string): string {
+    if (!filePath || typeof filePath !== 'string' || filePath.trim().length === 0) {
+      return '';
+    }
+    const trimmed = filePath.trim();
+
+    // 1. Android Content URI (e.g. content://media/external/images/media/123)
+    if (trimmed.startsWith('content://')) {
+      return trimmed;
+    }
+
+    // 2. Web or Remote URLs
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+
+    // 3. Base64 Data URI
+    if (trimmed.startsWith('data:image/')) {
+      return trimmed;
+    }
+
+    // 4. Already has file:// scheme
+    if (trimmed.startsWith('file://')) {
+      return trimmed;
+    }
+
+    // 5. Windows path (e.g. C:\path\to\image.png or C:/path/to/image.png)
+    if (/^[a-zA-Z]:[/\\]/.test(trimmed)) {
+      const forwardSlashes = trimmed.replace(/\\/g, '/');
+      return `file:///${forwardSlashes}`;
+    }
+
+    // 6. Absolute Unix / Android path (e.g. /storage/emulated/0/...)
+    if (trimmed.startsWith('/')) {
+      return `file://${trimmed}`;
+    }
+
+    // 7. Fallback prefix with file://
+    return `file://${trimmed}`;
+  },
+
+  /**
+   * Checks if a given URI string is structurally non-empty and well-formed.
+   */
+  isValidImageUri(uri: string): boolean {
+    if (!uri || typeof uri !== 'string') return false;
+    const clean = uri.trim();
+    if (clean.length === 0) return false;
+    return (
+      clean.startsWith('content://') ||
+      clean.startsWith('file://') ||
+      clean.startsWith('http://') ||
+      clean.startsWith('https://') ||
+      clean.startsWith('data:image/')
+    );
+  },
+
+  /**
+   * Resolves an ordered list of candidate URIs for displaying a screenshot.
+   * Handles Android 10+ (API 29+) Scoped Storage by leveraging MediaStore
+   * Content URIs (e.g. content://media/external/images/media/{deviceAssetId})
+   * and provides graceful fallback to direct file:// URIs and vice versa.
+   */
+  getImageCandidateUris(filePath?: string, deviceAssetId?: string): string[] {
+    return MediaStorePathResolver.getCandidateUris({ filePath, deviceAssetId });
+  },
+
+  /**
+   * Resolves the primary best-effort URI for an image.
+   */
+  resolveImageUri(filePath?: string, deviceAssetId?: string): string {
+    const candidates = this.getImageCandidateUris(filePath, deviceAssetId);
+    return candidates.length > 0 ? candidates[0] : (filePath ? this.normalizeImageUri(filePath) : '');
   },
 };

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CategoryModel, DEFAULT_CATEGORIES } from '../models';
+import { CategoryModel, FolderStatistics, DEFAULT_CATEGORIES } from '../models';
 import { categoryRepository } from '../database/repositories/categoryRepository';
 
 export interface CategoryTreeNode extends CategoryModel {
@@ -11,15 +11,25 @@ interface CategoryState {
   categories: CategoryModel[];
   selectedCategoryId: string | null;
   expandedFolderIds: string[];
+  folderSortBy: 'count' | 'recent';
   isLoading: boolean;
   error: string | null;
 
+  folderStats: Record<string, FolderStatistics>;
+
   // Actions
   setCategories: (categories: CategoryModel[]) => void;
+  setFolderSortBy: (sort: 'count' | 'recent') => void;
   loadCategories: () => Promise<void>;
+  refreshCategories: () => Promise<void>;
   selectCategory: (categoryId: string | null) => void;
   setCategoryCount: (categoryId: string, count: number) => void;
   toggleExpandFolder: (id: string) => void;
+  updateFolderCover: (folderId: string, coverUri: string) => Promise<void>;
+  updateFolderCounts: (folderId: string) => Promise<void>;
+  rebuildSmartFolders: () => Promise<void>;
+  getFolderStats: (folderId: string) => Promise<FolderStatistics>;
+  loadFolderStats: (folderId: string) => Promise<FolderStatistics>;
 
   // Manual folder management
   createFolder: (
@@ -38,6 +48,7 @@ interface CategoryState {
   getCategoryById: (id: string) => CategoryModel | undefined;
   getRootCategories: () => CategoryModel[];
   getSubcategories: (parentId: string) => CategoryModel[];
+  getDescendantCategoryIds: (categoryId: string) => string[];
   getCategoryTree: () => CategoryTreeNode[];
 }
 
@@ -45,10 +56,14 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   categories: DEFAULT_CATEGORIES,
   selectedCategoryId: null,
   expandedFolderIds: [],
+  folderSortBy: 'count',
   isLoading: false,
   error: null,
+  folderStats: {},
 
   setCategories: (categories: CategoryModel[]) => set({ categories }),
+
+  setFolderSortBy: (sort: 'count' | 'recent') => set({ folderSortBy: sort }),
 
   loadCategories: async () => {
     set({ isLoading: true, error: null });
@@ -58,6 +73,10 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     } catch (err: any) {
       set({ error: err?.message || 'Failed to load categories', isLoading: false });
     }
+  },
+
+  refreshCategories: async () => {
+    return get().loadCategories();
   },
 
   selectCategory: (categoryId: string | null) => set({ selectedCategoryId: categoryId }),
@@ -77,6 +96,47 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     } else {
       set({ expandedFolderIds: [...current, id] });
     }
+  },
+
+  updateFolderCover: async (folderId: string, coverUri: string) => {
+    await categoryRepository.updateFolderCover(folderId, coverUri, true);
+    set((state) => ({
+      categories: state.categories.map((c) =>
+        c.id === folderId ? { ...c, coverUri, manualCoverUri: coverUri } : c
+      ),
+    }));
+  },
+
+  updateFolderCounts: async (folderId: string) => {
+    await categoryRepository.updateFolderCounts(folderId);
+    const all = await categoryRepository.getAllCategories();
+    set({ categories: all });
+  },
+
+  rebuildSmartFolders: async () => {
+    set({ isLoading: true });
+    try {
+      await categoryRepository.rebuildSmartFolders();
+      const all = await categoryRepository.getAllCategories();
+      set({ categories: all, isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Failed to rebuild folders', isLoading: false });
+    }
+  },
+
+  getFolderStats: async (folderId: string) => {
+    return categoryRepository.getFolderStatistics(folderId);
+  },
+
+  loadFolderStats: async (folderId: string) => {
+    const stats = await categoryRepository.getFolderStatistics(folderId);
+    set((state) => ({
+      folderStats: {
+        ...state.folderStats,
+        [folderId]: stats,
+      },
+    }));
+    return stats;
   },
 
   createFolder: async (name, parentId = null, iconName = 'folder-outline', colorHex = '6366F1') => {
@@ -138,6 +198,26 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     return get().categories.filter(
       (c) => c.parentId === parentId || c.parentCategoryId === parentId
     );
+  },
+
+  getDescendantCategoryIds: (categoryId: string) => {
+    const all = get().categories;
+    const result: string[] = [categoryId];
+    const queue: string[] = [categoryId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = all.filter(
+        (c) =>
+          (c.parentId === current || c.parentCategoryId === current) &&
+          !result.includes(c.id)
+      );
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
   },
 
   getCategoryTree: () => {

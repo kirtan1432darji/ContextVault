@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ScreenshotModel } from '../models';
 import { FileUtils } from '../utils/fileUtils';
-import { ocrService } from './ocrService';
-import { classificationService } from './classificationService';
+import { visionAIService } from './visionAIService';
 import { notificationService } from './notificationService';
 import { useScreenshotStore } from '../store/screenshot.store';
-import { useCategoryStore } from '../store/category.store';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { smartFolderClassificationService } from './SmartFolderClassificationService';
 
 export interface DiscoveredMediaAsset {
   id: string;
@@ -34,6 +34,10 @@ export class ScreenshotScannerService {
     this.processedHashes.add(hash);
   }
 
+  /**
+   * Processes a discovered screenshot asset directly through the Vision AI Pipeline (Sprint P2-C).
+   * Completely bypasses legacy OCR, streaming straight to Vision AI for full multimodal understanding.
+   */
   async processScreenshotAsset(asset: DiscoveredMediaAsset): Promise<ScreenshotModel | null> {
     const timestamp = new Date(asset.createdAt).getTime() || Date.now();
     if (this.isAlreadyProcessed(asset.id, asset.filePath, asset.fileSize, timestamp)) {
@@ -43,13 +47,15 @@ export class ScreenshotScannerService {
 
     const screenshotId = uuidv4();
 
-    // 1. Initial Model
+    // 1. Initial Screenshot Record in SQLite
     const initialScreenshot: ScreenshotModel = {
       id: screenshotId,
       deviceAssetId: asset.id,
       filePath: asset.filePath,
+      localPath: asset.filePath,
       fileName: asset.fileName,
       createdAt: asset.createdAt,
+      createdOn: asset.createdAt,
       width: asset.width || 1080,
       height: asset.height || 2400,
       fileSize: asset.fileSize,
@@ -57,80 +63,50 @@ export class ScreenshotScannerService {
       categoryName: 'Unsorted',
       subcategory: '',
       confidence: 0.0,
+      isAutoCategorized: true,
       isFavorite: false,
       isReviewed: false,
       isSynced: false,
       ocrStatus: 'processing',
+      analysisStatus: 'Processing',
+      classificationSource: 'vision_ai',
       tags: [],
       lastScannedAt: new Date().toISOString(),
     };
 
+    try {
+      await screenshotRepository.insertScreenshot(initialScreenshot);
+    } catch {}
     useScreenshotStore.getState().addOrUpdateScreenshot(initialScreenshot);
 
-    // 2. OCR Step
+    // 2. Vision AI Processing
     let ocrText = '';
-    let ocrConfidence = 0.85;
-    const ocrRes = await ocrService.extractText(screenshotId, asset.filePath);
-    if (ocrRes.isSuccess && ocrRes.data) {
-      ocrText = ocrRes.data.rawText;
-      ocrConfidence = ocrRes.data.confidence;
+    const visionRes = await visionAIService.analyzeScreenshot({
+      screenshotId,
+      filePath: asset.filePath,
+      fileName: asset.fileName,
+      imageDimensions: { width: asset.width, height: asset.height },
+    });
+
+    if (visionRes.isSuccess && visionRes.data) {
+      ocrText = visionRes.data.ocr_text;
     }
 
-    // 3. Classification Step
-    const classRes = await classificationService.classifyScreenshot({
+    // 3. Smart Folder 5-Tier Classification & Auto-Organization
+    const organizedScreenshot = await smartFolderClassificationService.assignScreenshotToSmartFolder({
       screenshotId,
       fileName: asset.fileName,
       filePath: asset.filePath,
+      localPath: asset.filePath,
       ocrText,
+      fileSize: asset.fileSize,
+      forceRefresh: true,
     });
 
-    let targetCatId = 'unsorted';
-    let targetCatName = 'Unsorted';
-    let subcategory = 'General';
-    let confidence = ocrConfidence;
-    const tags: any[] = [];
-
-    if (classRes.isSuccess && classRes.data) {
-      targetCatId = classRes.data.categoryId;
-      targetCatName = classRes.data.categoryName;
-      subcategory = classRes.data.subcategory;
-      confidence = classRes.data.confidence;
-
-      classRes.data.suggestedTags.forEach((t) => {
-        tags.push({
-          id: `tag_${t.toLowerCase().replace(/\s+/g, '_')}`,
-          name: t,
-          colorHex: '6366F1',
-        });
-      });
-    }
-
-    // 4. Update Model
-    const organizedScreenshot: ScreenshotModel = {
-      ...initialScreenshot,
-      categoryId: targetCatId,
-      categoryName: targetCatName,
-      subcategory,
-      confidence,
-      ocrText,
-      ocrStatus: 'completed',
-      isReviewed: confidence >= 0.85,
-      isSynced: true,
-      tags,
-    };
-
-    useScreenshotStore.getState().addOrUpdateScreenshot(organizedScreenshot);
-
-    // Refresh Category counts
-    const cat = useCategoryStore.getState().getCategoryById(targetCatId);
-    if (cat) {
-      useCategoryStore.getState().setCategoryCount(targetCatId, (cat.screenshotCount || 0) + 1);
-    }
-
-    // 5. Notification
+    // 4. Notification
     await notificationService.showScreenshotOrganizedNotification({
-      categoryName: targetCatName,
-      subcategory,
+      categoryName: organizedScreenshot.categoryName,
+      subcategory: organizedScreenshot.subcategory || 'General',
       fileName: asset.fileName,
     });
 

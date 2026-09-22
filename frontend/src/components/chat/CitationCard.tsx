@@ -28,6 +28,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation, onPress })
     >
       <View style={styles.thumbnailBox}>
         <ScreenshotImageThumbnail
+          thumbnailUri={citation.thumbnailPath}
           filePath={citation.thumbnailPath || ''}
           style={styles.thumb}
           borderRadius={8}

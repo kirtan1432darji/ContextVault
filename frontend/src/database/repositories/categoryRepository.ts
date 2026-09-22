@@ -1,5 +1,5 @@
 import { databaseService } from '../database';
-import { CategoryModel } from '../../models';
+import { CategoryModel, FolderStatistics } from '../../models';
 
 export class CategoryRepository {
   async getAllCategories(): Promise<CategoryModel[]> {
@@ -152,29 +152,48 @@ export class CategoryRepository {
     return currentCategory!;
   }
 
-  async updateScreenshotCount(categoryId: string): Promise<number> {
-    const [rows] = await Promise.all([
-      databaseService.executeQuery(
-        'SELECT COUNT(*) as count FROM screenshots WHERE category_id = ?',
-        [categoryId]
-      ),
-    ]);
-    const count = rows.length > 0 ? rows[0].count : 0;
+  async getDescendantCategoryIds(categoryId: string): Promise<string[]> {
+    const all = await this.getAllCategories();
+    const result: string[] = [categoryId];
+    const queue: string[] = [categoryId];
 
-    await databaseService.executeCommand(
-      'UPDATE categories SET screenshot_count = ? WHERE id = ?',
-      [count, categoryId]
-    );
-    return count;
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = all.filter(
+        (c) =>
+          (c.parentId === current || c.parentCategoryId === current) &&
+          !result.includes(c.id)
+      );
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
+  }
+
+  async updateScreenshotCount(categoryId: string): Promise<number> {
+    const stats = await this.updateFolderCounts(categoryId);
+    return stats.count;
+  }
+
+  async updateAllAncestorCounts(categoryId: string): Promise<void> {
+    let currentId: string | null = categoryId;
+    const visited = new Set<string>();
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      await this.updateFolderCounts(currentId);
+      const cat = await this.getCategoryById(currentId);
+      currentId = cat?.parentId || cat?.parentCategoryId || null;
+    }
   }
 
   async recalculateAllCounts(): Promise<void> {
-    await databaseService.executeCommand(`
-      UPDATE categories
-      SET screenshot_count = (
-        SELECT COUNT(*) FROM screenshots WHERE screenshots.category_id = categories.id
-      )
-    `);
+    const all = await this.getAllCategories();
+    for (const cat of all) {
+      await this.updateFolderCounts(cat.id);
+    }
   }
 
   async renameCategory(id: string, newName: string): Promise<void> {
@@ -266,7 +285,7 @@ export class CategoryRepository {
 
   async getUnsortedCount(): Promise<number> {
     const rows = await databaseService.executeQuery(
-      'SELECT COUNT(*) as count FROM screenshots WHERE category_id = "unsorted"'
+      'SELECT COUNT(*) as count FROM screenshots WHERE category_id = "unsorted" AND (is_deleted = 0 OR is_deleted IS NULL)'
     );
     return rows.length > 0 ? rows[0].count : 0;
   }
@@ -281,6 +300,243 @@ export class CategoryRepository {
       'DELETE FROM categories WHERE id = ? AND is_system = 0',
       [id]
     );
+  }
+
+  /**
+   * Finds a Smart Folder by its category name (case-insensitive) or matches built-in aliases.
+   */
+  async getFolderByCategory(categoryName: string): Promise<CategoryModel | null> {
+    const clean = (categoryName || '').trim();
+    if (!clean) return null;
+
+    let cat = await this.getCategoryByName(clean);
+    if (cat) return cat;
+
+    const rows = await databaseService.executeQuery(
+      'SELECT * FROM categories WHERE LOWER(name) = LOWER(?) OR LOWER(id) = LOWER(?) LIMIT 1',
+      [clean, clean.toLowerCase().replace(/\s+/g, '_')]
+    );
+    if (rows.length > 0) return this.mapRowToModel(rows[0]);
+
+    return null;
+  }
+
+  /**
+   * Assigns a screenshot to a specific folder.
+   * If isManual is true, flags classification_source as 'manual' and confidence as 1.0.
+   */
+  async assignScreenshotToFolder(
+    screenshotId: string,
+    folderId: string,
+    isManual = false
+  ): Promise<void> {
+    const targetFolder = await this.getCategoryById(folderId);
+    if (!targetFolder) throw new Error(`Target folder ${folderId} not found.`);
+
+    const now = new Date().toISOString();
+    const source = isManual ? 'manual' : 'local';
+    const autoCat = isManual ? 0 : 1;
+
+    await databaseService.executeCommand(
+      `UPDATE screenshots SET 
+        category_id = ?, 
+        folder_id = ?, 
+        category_name = ?,
+        is_auto_categorized = ?,
+        classification_source = ?,
+        confidence = CASE WHEN ? = 1 THEN 1.0 ELSE confidence END,
+        is_reviewed = CASE WHEN ? = 1 THEN 1 ELSE is_reviewed END,
+        last_scanned_at = ?
+       WHERE id = ?`,
+      [
+        targetFolder.id,
+        targetFolder.id,
+        targetFolder.name,
+        autoCat,
+        source,
+        isManual ? 1 : 0,
+        isManual ? 1 : 0,
+        now,
+        screenshotId,
+      ]
+    );
+
+    // Update folder counts & covers for ancestor hierarchy
+    await this.updateAllAncestorCounts(targetFolder.id);
+  }
+
+  /**
+   * Moves a screenshot from its current folder to targetFolderId.
+   * Treats this as a manual override.
+   */
+  async moveScreenshot(screenshotId: string, targetFolderId: string): Promise<void> {
+    const oldScreenshot = await databaseService.executeQuery(
+      'SELECT category_id, folder_id FROM screenshots WHERE id = ? LIMIT 1',
+      [screenshotId]
+    );
+    const oldFolderId = oldScreenshot.length > 0 ? (oldScreenshot[0].folder_id || oldScreenshot[0].category_id) : null;
+
+    await this.assignScreenshotToFolder(screenshotId, targetFolderId, true);
+
+    if (oldFolderId && oldFolderId !== targetFolderId) {
+      await this.updateAllAncestorCounts(oldFolderId);
+    }
+  }
+
+  /**
+   * Automatically calculates or manually sets a folder cover image.
+   * Selection Rules:
+   * 1. Manual cover override if explicitly provided / set
+   * 2. Favorite screenshot with highest confidence
+   * 3. Highest confidence screenshot
+   * 4. Latest screenshot
+   */
+  async updateFolderCover(
+    folderId: string,
+    coverUri?: string,
+    manualOverride = false
+  ): Promise<string | null> {
+    if (manualOverride && coverUri) {
+      await databaseService.executeCommand(
+        'UPDATE categories SET manual_cover_uri = ?, cover_uri = ?, updated_at = ? WHERE id = ?',
+        [coverUri, coverUri, new Date().toISOString(), folderId]
+      );
+      return coverUri;
+    }
+
+    const cat = await this.getCategoryById(folderId);
+    if (cat?.manualCoverUri) {
+      return cat.manualCoverUri;
+    }
+
+    const descendantIds = await this.getDescendantCategoryIds(folderId);
+    const placeholders = descendantIds.map(() => '?').join(',');
+
+    const query = `
+      SELECT coalesce(thumbnail_uri, content_uri, local_path, file_path) as uri,
+             is_favorite, confidence, created_at
+      FROM screenshots
+      WHERE (coalesce(folder_id, category_id) IN (${placeholders}))
+        AND (is_deleted = 0 OR is_deleted IS NULL)
+        AND (coalesce(thumbnail_uri, content_uri, local_path, file_path) IS NOT NULL)
+      ORDER BY is_favorite DESC, confidence DESC, created_at DESC
+      LIMIT 1
+    `;
+
+    const rows = await databaseService.executeQuery(query, descendantIds);
+    const chosenCover = rows.length > 0 ? rows[0].uri : null;
+
+    await databaseService.executeCommand(
+      'UPDATE categories SET cover_uri = ?, updated_at = ? WHERE id = ?',
+      [chosenCover, new Date().toISOString(), folderId]
+    );
+
+    return chosenCover;
+  }
+
+  /**
+   * Updates screenshot count, storage size, average confidence, and cover for a folder.
+   */
+  async updateFolderCounts(folderId: string): Promise<{ count: number; storageSize: number; avgConfidence: number }> {
+    const descendantIds = await this.getDescendantCategoryIds(folderId);
+    const placeholders = descendantIds.map(() => '?').join(',');
+
+    const statsSql = `
+      SELECT 
+        COUNT(*) as count,
+        COALESCE(SUM(file_size), 0) as storage_size,
+        COALESCE(AVG(confidence), 0.0) as avg_conf
+      FROM screenshots
+      WHERE (coalesce(folder_id, category_id) IN (${placeholders}))
+        AND (is_deleted = 0 OR is_deleted IS NULL)
+    `;
+
+    const rows = await databaseService.executeQuery(statsSql, descendantIds);
+    const count = rows.length > 0 ? Number(rows[0].count) : 0;
+    const storageSize = rows.length > 0 ? Number(rows[0].storage_size) : 0;
+    const avgConfidence = rows.length > 0 ? Number(rows[0].avg_conf) : 0.0;
+    const now = new Date().toISOString();
+
+    await databaseService.executeCommand(
+      `UPDATE categories SET 
+        screenshot_count = ?,
+        storage_size_bytes = ?,
+        average_confidence = ?,
+        updated_at = ?
+       WHERE id = ?`,
+      [count, storageSize, avgConfidence, now, folderId]
+    );
+
+    await this.updateFolderCover(folderId);
+
+    return { count, storageSize, avgConfidence };
+  }
+
+  /**
+   * Compiles comprehensive statistics for a folder.
+   */
+  async getFolderStatistics(folderId: string): Promise<FolderStatistics> {
+    const cat = await this.getCategoryById(folderId);
+    const descendantIds = await this.getDescendantCategoryIds(folderId);
+    const placeholders = descendantIds.map(() => '?').join(',');
+
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as count,
+        SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END) as fav_count,
+        SUM(CASE WHEN ocr_status = 'completed' THEN 1 ELSE 0 END) as ocr_count,
+        SUM(CASE WHEN (SELECT 1 FROM vision_cache WHERE vision_cache.screenshot_id = screenshots.id LIMIT 1) = 1 THEN 1 ELSE 0 END) as vision_count,
+        COALESCE(AVG(confidence), 0.0) as avg_confidence,
+        COALESCE(SUM(file_size), 0) as storage_size,
+        MAX(created_at) as last_created
+      FROM screenshots
+      WHERE (coalesce(folder_id, category_id) IN (${placeholders}))
+        AND (is_deleted = 0 OR is_deleted IS NULL)
+    `;
+
+    const rows = await databaseService.executeQuery(statsQuery, descendantIds);
+    const r = rows[0] || {};
+
+    return {
+      categoryId: folderId,
+      categoryName: cat?.name || 'Smart Folder',
+      screenshotCount: Number(r.count || 0),
+      favoriteCount: Number(r.fav_count || 0),
+      ocrCount: Number(r.ocr_count || 0),
+      visionCount: Number(r.vision_count || 0),
+      averageConfidence: Number(r.avg_confidence || 0.0),
+      storageSizeBytes: Number(r.storage_size || 0),
+      lastAnalysisTime: r.last_created || cat?.updatedAt || null,
+      coverUri: cat?.coverUri || null,
+      manualCoverUri: cat?.manualCoverUri || null,
+    };
+  }
+
+  /**
+   * Returns categories sorted by screenshot count or recently updated/created.
+   */
+  async getSortedFolders(sortBy: 'count' | 'recent' = 'count', limit = 20): Promise<CategoryModel[]> {
+    const orderClause =
+      sortBy === 'recent'
+        ? 'coalesce(updated_at, created_on) DESC, screenshot_count DESC'
+        : 'screenshot_count DESC, is_favorite DESC, name ASC';
+
+    const rows = await databaseService.executeQuery(
+      `SELECT * FROM categories WHERE id != "unsorted" ORDER BY ${orderClause} LIMIT ?`,
+      [limit]
+    );
+    return rows.map(this.mapRowToModel);
+  }
+
+  /**
+   * Rebuilds all smart folders, recalculates ancestor counts, and selects covers.
+   */
+  async rebuildSmartFolders(): Promise<{ processed: number; updated: number }> {
+    const allCategories = await this.getAllCategories();
+    for (const cat of allCategories) {
+      await this.updateFolderCounts(cat.id);
+    }
+    return { processed: allCategories.length, updated: allCategories.length };
   }
 
   private mapRowToModel(row: any): CategoryModel {
@@ -300,6 +556,11 @@ export class CategoryRepository {
       isFavorite: Boolean(row.is_favorite),
       path: row.path || `/${row.name}`,
       createdOn: row.created_on || new Date().toISOString(),
+      updatedAt: row.updated_at || row.created_on || new Date().toISOString(),
+      coverUri: row.cover_uri || null,
+      manualCoverUri: row.manual_cover_uri || null,
+      averageConfidence: row.average_confidence != null ? Number(row.average_confidence) : 0,
+      storageSizeBytes: row.storage_size_bytes != null ? Number(row.storage_size_bytes) : 0,
       subCategories: [],
     };
   }

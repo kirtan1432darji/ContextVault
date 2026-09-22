@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
@@ -19,6 +19,10 @@ import { useCategoryStore, CategoryTreeNode } from '../store/category.store';
 import { smartFolderService } from '../services/SmartFolderService';
 import { CategoryModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
+import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
+import { useScreenshotStore } from '../store/screenshot.store';
+import { FileUtils } from '../utils/fileUtils';
+import { DateFormatter } from '../utils/dateFormatter';
 
 export const SmartFoldersScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -32,6 +36,7 @@ export const SmartFoldersScreen: React.FC = () => {
   const renameFolder = useCategoryStore((s) => s.renameFolder);
   const toggleFavorite = useCategoryStore((s) => s.toggleFavorite);
   const deleteFolder = useCategoryStore((s) => s.deleteFolder);
+  const screenshots = useScreenshotStore((s) => s.screenshots);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isOrganizing, setIsOrganizing] = useState(false);
@@ -43,9 +48,17 @@ export const SmartFoldersScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<CategoryModel | null>(null);
   const [folderNameInput, setFolderNameInput] = useState('');
 
+  // Real-time synchronization when screen is focused or when screenshots change
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCategories();
+      useScreenshotStore.getState().loadScreenshots();
+    }, [loadCategories])
+  );
+
   useEffect(() => {
     loadCategories();
-  }, [loadCategories]);
+  }, [loadCategories, screenshots.length]);
 
   const handleOrganizeUnsorted = async () => {
     setIsOrganizing(true);
@@ -132,6 +145,23 @@ export const SmartFoldersScreen: React.FC = () => {
 
     const indentPadding = node.level * 20;
 
+    const descendantIds = useCategoryStore.getState().getDescendantCategoryIds(node.id);
+    const descendantIdSet = new Set(descendantIds);
+
+    const folderScreenshots = screenshots.filter(
+      (s) =>
+        descendantIdSet.has(s.categoryId) ||
+        (s.categoryName && s.categoryName.toLowerCase() === node.name.toLowerCase())
+    );
+
+    const displayCount = Math.max(node.screenshotCount || 0, folderScreenshots.length);
+    const totalSize = folderScreenshots.reduce((acc, s) => acc + (s.fileSize || 0), 0);
+    const lastUpdated = folderScreenshots.reduce((max, s) => {
+      const t = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      return t > max ? t : max;
+    }, 0);
+    const coverScreenshot = folderScreenshots[0];
+
     return (
       <View key={node.id} style={styles.nodeWrapper}>
         {matchesSearch && (
@@ -162,7 +192,7 @@ export const SmartFoldersScreen: React.FC = () => {
                 <View style={styles.chevronPlaceholder} />
               )}
 
-              {/* Folder Icon */}
+              {/* Folder Cover / Icon */}
               <TouchableOpacity
                 onPress={() =>
                   navigation.navigate('FolderDetail', {
@@ -172,7 +202,21 @@ export const SmartFoldersScreen: React.FC = () => {
                 }
                 style={[styles.iconBox, { backgroundColor: `${hex}18` }]}
               >
-                <Icon name={node.iconName || 'folder'} size={22} color={hex} />
+                {coverScreenshot ? (
+                  <ScreenshotImageThumbnail
+                    screenshot={coverScreenshot}
+                    filePath={coverScreenshot.filePath}
+                    localPath={coverScreenshot.localPath}
+                    contentUri={coverScreenshot.contentUri}
+                    thumbnailUri={coverScreenshot.thumbnailUri}
+                    deviceAssetId={coverScreenshot.deviceAssetId}
+                    style={styles.coverThumbnail}
+                    borderRadius={10}
+                    fallbackIcon={node.iconName || 'folder'}
+                  />
+                ) : (
+                  <Icon name={node.iconName || 'folder'} size={22} color={hex} />
+                )}
               </TouchableOpacity>
 
               {/* Folder Details */}
@@ -193,15 +237,17 @@ export const SmartFoldersScreen: React.FC = () => {
                     <Icon name="star" size={14} color="#F59E0B" style={{ marginLeft: 6 }} />
                   )}
                 </View>
-                <Text numberOfLines={1} style={[styles.folderPath, { color: theme.colors.textSecondary }]}>
-                  {node.path || `/${node.name}`}
+                <Text numberOfLines={1} style={[styles.folderMeta, { color: theme.colors.textSecondary }]}>
+                  {displayCount} {displayCount === 1 ? 'shot' : 'shots'}
+                  {totalSize > 0 ? ` • ${FileUtils.formatBytes(totalSize)}` : ''}
+                  {lastUpdated > 0 ? ` • ${DateFormatter.formatRelative(new Date(lastUpdated))}` : ''}
                 </Text>
               </TouchableOpacity>
 
               {/* Count Badge */}
               <View style={[styles.countBadge, { backgroundColor: `${theme.colors.primary}15` }]}>
                 <Text style={[styles.countBadgeText, { color: theme.colors.primary }]}>
-                  {node.screenshotCount || 0}
+                  {displayCount}
                 </Text>
               </View>
 
@@ -242,6 +288,56 @@ export const SmartFoldersScreen: React.FC = () => {
                 )}
               </View>
             </View>
+
+            {/* Folder Screenshot Previews (Sprint RN-03 / Gallery Restoration) */}
+            {folderScreenshots.length > 0 && (
+              <View style={styles.folderThumbnailsRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.thumbsScroll}
+                >
+                  {folderScreenshots.slice(0, 4).map((shot) => (
+                    <TouchableOpacity
+                      key={shot.id}
+                      onPress={() => navigation.navigate('ScreenshotDetail', { id: shot.id })}
+                      style={styles.folderThumbItem}
+                      accessibilityLabel={`View screenshot ${shot.fileName}`}
+                    >
+                      <ScreenshotImageThumbnail
+                        screenshot={shot}
+                        filePath={shot.filePath}
+                        localPath={shot.localPath}
+                        contentUri={shot.contentUri}
+                        thumbnailUri={shot.thumbnailUri}
+                        deviceAssetId={shot.deviceAssetId}
+                        style={styles.folderThumbImage}
+                        borderRadius={8}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                  {folderScreenshots.length > 4 && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        navigation.navigate('FolderDetail', {
+                          categoryId: node.id,
+                          categoryName: node.name,
+                        })
+                      }
+                      style={[
+                        styles.moreThumbsBadge,
+                        { backgroundColor: theme.isDark ? '#334155' : '#E2E8F0' },
+                      ]}
+                      accessibilityLabel={`View all ${folderScreenshots.length} screenshots in ${node.name}`}
+                    >
+                      <Text style={[styles.moreThumbsText, { color: theme.colors.textSecondary }]}>
+                        +{folderScreenshots.length - 4}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+            )}
           </ModernCard>
         )}
 
@@ -415,9 +511,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 12,
@@ -427,20 +523,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   addRootBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
   },
@@ -460,11 +556,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   organizeBtnText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -475,6 +571,7 @@ const styles = StyleSheet.create({
   },
   folderCard: {
     padding: 12,
+    borderRadius: 12,
   },
   cardMainRow: {
     flexDirection: 'row',
@@ -491,12 +588,18 @@ const styles = StyleSheet.create({
     width: 24,
   },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+    overflow: 'hidden',
+  },
+  coverThumbnail: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
   },
   folderTextContainer: {
     flex: 1,
@@ -507,22 +610,26 @@ const styles = StyleSheet.create({
   },
   folderName: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   folderPath: {
     fontSize: 11,
     marginTop: 2,
     fontFamily: 'monospace',
   },
+  folderMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
   countBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
     marginRight: 8,
   },
   countBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   actionIcons: {
     flexDirection: 'row',
@@ -540,10 +647,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
+    borderRadius: 12,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 12,
   },
   emptySubtitle: {
@@ -561,11 +669,12 @@ const styles = StyleSheet.create({
   modalBox: {
     width: '100%',
     maxWidth: 380,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 20,
+    borderWidth: 1,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
   },
   modalSubtitle: {
@@ -599,6 +708,37 @@ const styles = StyleSheet.create({
   },
   modalBtnText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
+  },
+  folderThumbnailsRow: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.15)',
+  },
+  thumbsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  folderThumbItem: {
+    marginRight: 8,
+  },
+  folderThumbImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+  },
+  moreThumbsBadge: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  moreThumbsText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

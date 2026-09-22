@@ -27,6 +27,9 @@ import {
   DateSeparator,
 } from '../components/chat';
 import { ChatMessageModel, ChatMessageCitation } from '../models';
+import { useAuthStore } from '../store/auth.store';
+import { FeatureLockCard } from '../components/FeatureLockCard';
+import { SafeAreaView, StatusBar } from 'react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ContextAIChat'>;
 
@@ -51,10 +54,14 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize conversation on mount or folder change
+  const isGuest = useAuthStore((s) => s.isGuest);
+
+  // Initialize conversation on mount or folder change (only if not guest)
   useEffect(() => {
-    initConversation(categoryId, categoryName, screenshotId);
-  }, [categoryId, categoryName, screenshotId]);
+    if (!isGuest) {
+      initConversation(categoryId, categoryName, screenshotId);
+    }
+  }, [categoryId, categoryName, screenshotId, isGuest]);
 
   // Auto-scroll to bottom when messages or typing state changes
   useEffect(() => {
@@ -125,6 +132,48 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
     return items;
   }, [messages]);
 
+  if (isGuest) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: theme.colors.card,
+              borderBottomColor: theme.colors.border,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+          >
+            <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleBox}>
+            <Text numberOfLines={1} style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
+              {categoryName} AI
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+              Context AI Chat
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+          <FeatureLockCard
+            title="Context AI Chat Locked"
+            featureName="Context AI Chat"
+            description="Sign in to ContextVault to chat with screenshots inside this folder, ask natural language questions, and extract entities."
+            onSignIn={() => navigation.navigate('Login')}
+            onCreateAccount={() => navigation.navigate('Register')}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -143,7 +192,7 @@ export const ContextAIChatScreen: React.FC<Props> = ({ route, navigation }) => {
       >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -387,17 +436,18 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   headerTitleBox: {
     flex: 1,
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   statusRow: {
     flexDirection: 'row',
@@ -412,7 +462,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',
@@ -461,17 +511,17 @@ const styles = StyleSheet.create({
     paddingTop: 36,
   },
   welcomeIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     marginBottom: 16,
   },
   welcomeTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
     textAlign: 'center',
   },

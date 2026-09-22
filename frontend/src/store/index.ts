@@ -6,3 +6,4 @@ export * from './chat.store';
 export * from './settings.store';
 export * from './scanner.store';
 export * from './search.store';
+export * from './vision.store';

@@ -7,6 +7,9 @@ export interface ChatMessageCitation {
   thumbnailPath?: string;
   folderPath?: string;
   confidence?: number;
+  merchant?: string;
+  amount?: number;
+  date?: string;
 }
 
 export interface ChatMessageModel {

@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
-  Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -15,10 +16,14 @@ import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useFolderContextStore } from '../store/folderContext.store';
 import { folderContextService } from '../services/FolderContextService';
+import { folderContextExportService, ExportFormat } from '../services/folderContextExportService';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { ScreenshotModel } from '../models';
 import { ModernCard } from '../components/ModernCard';
 import { TagChip } from '../components/TagChip';
+import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
+import { useAuthStore } from '../store/auth.store';
+import { FeatureLockCard } from '../components/FeatureLockCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderContext'>;
 
@@ -26,15 +31,21 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   const { categoryId, categoryName } = route.params;
   const theme = useAppTheme();
 
+  const isGuest = useAuthStore((s) => s.isGuest);
   const folderContext = useFolderContextStore((s) => s.getFolderContext(categoryId, categoryName));
   const isGenerating = useFolderContextStore((s) => s.isGenerating);
   const [loading, setLoading] = useState(false);
   const [screenshots, setScreenshots] = useState<ScreenshotModel[]>([]);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    loadContext();
+    if (!isGuest) {
+      loadContext();
+    }
     loadFolderScreenshots();
-  }, [categoryId]);
+  }, [categoryId, isGuest]);
 
   const loadFolderScreenshots = async () => {
     const items = await screenshotRepository.getScreenshotsByCategoryId(categoryId);
@@ -48,13 +59,76 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleManualRefresh = async () => {
+    if (isGuest) return;
     useFolderContextStore.getState().setGenerating(true);
     await folderContextService.generateFolderContext(categoryId, categoryName);
     await loadFolderScreenshots();
     useFolderContextStore.getState().setGenerating(false);
   };
 
+  const handleExportShare = async () => {
+    try {
+      setIsExporting(true);
+      await folderContextExportService.shareExport(
+        exportFormat,
+        folderContext,
+        categoryName,
+        screenshots
+      );
+      setExportModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message || 'Could not export folder context report.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const getPreviewText = (): string => {
+    if (exportFormat === 'markdown') {
+      return folderContextExportService.generateMarkdown(folderContext, categoryName, screenshots);
+    } else if (exportFormat === 'text') {
+      return folderContextExportService.generatePlainText(folderContext, categoryName, screenshots);
+    } else {
+      const lineCount = folderContextExportService.generatePlainText(folderContext, categoryName, screenshots).split('\n').length;
+      const estimatedPages = Math.max(1, Math.ceil(lineCount / 50));
+      return `[PDF DOCUMENT PREVIEW]\nTitle: ${categoryName} — Living Intelligence Report\nFormat: Standard US-Letter PDF 1.4\nPages: ~${estimatedPages}\nEncoding: Base64 Binary Stream\n\nIncluded Sections:\n- Executive Summary\n- Key Insights & Topics (${folderContext.keywords.length})\n- Extracted Entities & Financials\n- Action Items Checklist (${folderContext.tasks.length})\n- Chronological Timeline (${folderContext.timeline.length})\n- Source Screenshot Index (${screenshots.length})\n\nTap "Share / Save Report" below to open the Android Print & Share Sheet.`;
+    }
+  };
+
   const structured = folderContext.structuredEntities;
+
+  if (isGuest) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+          >
+            <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.titleBox}>
+            <Text numberOfLines={1} style={[styles.title, { color: theme.colors.textPrimary }]}>
+              {categoryName} Context
+            </Text>
+            <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+              Living Folder Intelligence
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+          <FeatureLockCard
+            title="Folder Context Locked"
+            featureName="Folder Context"
+            description="Sign in to ContextVault to generate AI summaries, extracted entities, action items, and timelines for your screenshots."
+            onSignIn={() => navigation.navigate('Login')}
+            onCreateAccount={() => navigation.navigate('Register')}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -62,7 +136,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backBtn, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}
+          style={[styles.backBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
         >
           <Icon name="arrow-back" size={20} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -75,6 +149,13 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
           </Text>
         </View>
         <View style={styles.topActions}>
+          <TouchableOpacity
+            onPress={() => setExportModalVisible(true)}
+            style={[styles.headerExportBtn, { backgroundColor: `${theme.colors.primary}20` }]}
+            accessibilityLabel="Export folder context report"
+          >
+            <Icon name="share-outline" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('ContextAIChat', { categoryId, categoryName })}
             style={[styles.headerAiBtn, { backgroundColor: `${theme.colors.primary}20` }]}
@@ -230,7 +311,7 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Text>
                 <View style={styles.chipsWrap}>
                   {structured.urls.map((u, i) => (
-                    <TagChip key={i} label={u} colorHex="#6366F1" />
+                    <TagChip key={i} label={u} colorHex={theme.colors.primary} />
                   ))}
                 </View>
               </View>
@@ -318,24 +399,29 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
               data={screenshots}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.screenshotsList}
-              renderItem={({ item }) => {
-                const uri = item.filePath.startsWith('http') || item.filePath.startsWith('file://')
-                  ? item.filePath
-                  : `file://${item.filePath}`;
-                return (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
-                    style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
-                  >
-                    <Image source={{ uri }} style={styles.screenshotThumb} resizeMode="cover" />
-                    <View style={styles.thumbLabelBox}>
-                      <Text numberOfLines={1} style={styles.thumbLabel}>
-                        {item.subcategory || item.fileName}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('ScreenshotDetail', { id: item.id })}
+                  style={[styles.screenshotThumbBox, { backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0' }]}
+                >
+                  <ScreenshotImageThumbnail
+                    screenshot={item}
+                    filePath={item.filePath}
+                    localPath={item.localPath}
+                    contentUri={item.contentUri}
+                    thumbnailUri={item.thumbnailUri}
+                    deviceAssetId={item.deviceAssetId}
+                    style={styles.screenshotThumb}
+                    borderRadius={8}
+                    showLoadingIndicator
+                  />
+                  <View style={styles.thumbLabelBox}>
+                    <Text numberOfLines={1} style={styles.thumbLabel}>
+                      {item.subcategory || item.fileName}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             />
           </View>
         )}
@@ -358,9 +444,247 @@ export const FolderContextScreen: React.FC<Props> = ({ route, navigation }) => {
           style={[styles.chatCta, { backgroundColor: theme.colors.primary }]}
         >
           <Icon name="chatbubble-ellipses" size={20} color="#FFFFFF" />
-          <Text style={styles.chatCtaText}>Ask Context AI about this Folder</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Export Context Modal */}
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.exportSheet,
+              {
+                backgroundColor: theme.colors.card,
+                borderColor: theme.colors.border,
+              },
+            ]}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  Export Living Context
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                  {categoryName} • Structured Dossier & Action Items
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setExportModalVisible(false)}
+                style={[
+                  styles.closeBtn,
+                  {
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon name="close" size={18} color={theme.colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Format Selector */}
+            <Text style={[styles.selectorLabel, { color: theme.colors.textSecondary }]}>
+              SELECT EXPORT FORMAT
+            </Text>
+            <View style={styles.formatTabsRow}>
+              {/* PDF Option */}
+              <TouchableOpacity
+                onPress={() => setExportFormat('pdf')}
+                style={[
+                  styles.formatTab,
+                  {
+                    backgroundColor:
+                      exportFormat === 'pdf'
+                        ? `${theme.colors.primary}18`
+                        : theme.colors.background,
+                    borderColor:
+                      exportFormat === 'pdf'
+                        ? theme.colors.primary
+                        : theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon
+                  name="document-text"
+                  size={20}
+                  color={
+                    exportFormat === 'pdf'
+                      ? theme.colors.primary
+                      : theme.colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.formatTabTitle,
+                    {
+                      color:
+                        exportFormat === 'pdf'
+                          ? theme.colors.primary
+                          : theme.colors.textPrimary,
+                    },
+                  ]}
+                >
+                  PDF
+                </Text>
+                <Text style={[styles.formatTabDesc, { color: theme.colors.textMuted }]}>
+                  Printable Doc
+                </Text>
+              </TouchableOpacity>
+
+              {/* Markdown Option */}
+              <TouchableOpacity
+                onPress={() => setExportFormat('markdown')}
+                style={[
+                  styles.formatTab,
+                  {
+                    backgroundColor:
+                      exportFormat === 'markdown'
+                        ? `${theme.colors.primary}18`
+                        : theme.colors.background,
+                    borderColor:
+                      exportFormat === 'markdown'
+                        ? theme.colors.primary
+                        : theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon
+                  name="code-slash"
+                  size={20}
+                  color={
+                    exportFormat === 'markdown'
+                      ? theme.colors.primary
+                      : theme.colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.formatTabTitle,
+                    {
+                      color:
+                        exportFormat === 'markdown'
+                          ? theme.colors.primary
+                          : theme.colors.textPrimary,
+                    },
+                  ]}
+                >
+                  Markdown
+                </Text>
+                <Text style={[styles.formatTabDesc, { color: theme.colors.textMuted }]}>
+                  Notion / Obsidian
+                </Text>
+              </TouchableOpacity>
+
+              {/* Text Option */}
+              <TouchableOpacity
+                onPress={() => setExportFormat('text')}
+                style={[
+                  styles.formatTab,
+                  {
+                    backgroundColor:
+                      exportFormat === 'text'
+                        ? `${theme.colors.primary}18`
+                        : theme.colors.background,
+                    borderColor:
+                      exportFormat === 'text'
+                        ? theme.colors.primary
+                        : theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon
+                  name="reader-outline"
+                  size={20}
+                  color={
+                    exportFormat === 'text'
+                      ? theme.colors.primary
+                      : theme.colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.formatTabTitle,
+                    {
+                      color:
+                        exportFormat === 'text'
+                          ? theme.colors.primary
+                          : theme.colors.textPrimary,
+                    },
+                  ]}
+                >
+                  Plain Text
+                </Text>
+                <Text style={[styles.formatTabDesc, { color: theme.colors.textMuted }]}>
+                  Universal TXT
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Preview Box */}
+            <Text
+              style={[
+                styles.selectorLabel,
+                { color: theme.colors.textSecondary, marginTop: 14 },
+              ]}
+            >
+              EXPORT PREVIEW
+            </Text>
+            <View
+              style={[
+                styles.previewContainer,
+                {
+                  backgroundColor: theme.colors.background,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <ScrollView
+                style={styles.previewScroll}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                <Text
+                  style={[
+                    styles.previewText,
+                    { color: theme.colors.textPrimary },
+                  ]}
+                >
+                  {getPreviewText()}
+                </Text>
+              </ScrollView>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                onPress={handleExportShare}
+                disabled={isExporting}
+                style={[
+                  styles.shareActionBtn,
+                  { backgroundColor: theme.colors.primary },
+                ]}
+              >
+                {isExporting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Icon name="share-social-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.shareActionBtnText}>
+                      Share / Save as {exportFormat.toUpperCase()}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -379,7 +703,8 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -389,7 +714,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 12,
@@ -399,17 +724,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  headerExportBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerAiBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   refreshBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -506,7 +838,7 @@ const styles = StyleSheet.create({
   screenshotThumbBox: {
     width: 100,
     height: 140,
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
     marginRight: 12,
   },
@@ -540,13 +872,109 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 12,
+    elevation: 1,
   },
   chatCtaText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginLeft: 8,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  exportSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    padding: 20,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectorLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  formatTabsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  formatTab: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formatTabTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  formatTabDesc: {
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  previewContainer: {
+    height: 140,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 16,
+  },
+  previewScroll: {
+    flex: 1,
+  },
+  previewText: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    lineHeight: 16,
+  },
+  modalActionsRow: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  shareActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 12,
+    gap: 8,
+  },
+  shareActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
+

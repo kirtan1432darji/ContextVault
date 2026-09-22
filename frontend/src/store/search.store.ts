@@ -8,6 +8,7 @@ import {
 } from '../models';
 import { globalSearchService } from '../services/GlobalSearchService';
 import { searchRepository } from '../database/repositories/searchRepository';
+import { voiceSearchService } from '../services/voiceSearchService';
 
 interface SearchState {
   query: string;
@@ -20,6 +21,10 @@ interface SearchState {
   recentSearches: RecentSearchItem[];
   savedSearches: SavedSearchItem[];
   isVoiceModalOpen: boolean;
+  lastVoiceQuery: string | null;
+  isSaveModalOpen: boolean;
+  editingSavedSearch: SavedSearchItem | null;
+  saveModalInitialQuery: string;
 
   // Actions
   setQuery: (q: string) => void;
@@ -29,8 +34,14 @@ interface SearchState {
   loadRecentAndSavedSearches: () => Promise<void>;
   deleteRecentSearch: (id: string) => Promise<void>;
   clearAllRecentSearches: () => Promise<void>;
+  savePinnedSearch: (query: string, title?: string, iconName?: string, colorHex?: string) => Promise<void>;
+  updateSavedSearch: (id: string, updates: { title?: string; iconName?: string; colorHex?: string }) => Promise<void>;
+  deleteSavedSearch: (idOrQuery: string) => Promise<void>;
   toggleSaveSearch: (query: string, title?: string) => Promise<void>;
+  openSaveModal: (query: string, existing?: SavedSearchItem | null) => void;
+  closeSaveModal: () => void;
   setVoiceModalOpen: (open: boolean) => void;
+  executeVoiceSearch: (recognizedText: string) => Promise<void>;
 }
 
 const DEFAULT_FILTERS: SearchFilterState = {
@@ -55,6 +66,10 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   recentSearches: [],
   savedSearches: [],
   isVoiceModalOpen: false,
+  lastVoiceQuery: null,
+  isSaveModalOpen: false,
+  editingSavedSearch: null,
+  saveModalInitialQuery: '',
 
   setQuery: (q: string) => {
     set({ query: q });
@@ -135,7 +150,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       });
 
       // Refresh recent searches list in store
-      get().loadRecentAndSavedSearches();
+      await get().loadRecentAndSavedSearches();
     } catch (err) {
       console.warn('[useSearchStore] Search error:', err);
       set({ loading: false });
@@ -165,6 +180,24 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ recentSearches: [] });
   },
 
+  savePinnedSearch: async (query: string, title?: string, iconName?: string, colorHex?: string) => {
+    await searchRepository.savePinnedSearch(query, title, iconName, colorHex);
+    const saved = await searchRepository.getSavedSearches();
+    set({ savedSearches: saved, isSaveModalOpen: false, editingSavedSearch: null });
+  },
+
+  updateSavedSearch: async (id: string, updates: { title?: string; iconName?: string; colorHex?: string }) => {
+    await searchRepository.updateSavedSearch(id, updates);
+    const saved = await searchRepository.getSavedSearches();
+    set({ savedSearches: saved, isSaveModalOpen: false, editingSavedSearch: null });
+  },
+
+  deleteSavedSearch: async (idOrQuery: string) => {
+    await searchRepository.deleteSavedSearch(idOrQuery);
+    const saved = await searchRepository.getSavedSearches();
+    set({ savedSearches: saved, isSaveModalOpen: false, editingSavedSearch: null });
+  },
+
   toggleSaveSearch: async (query: string, title?: string) => {
     const isSaved = await searchRepository.isSearchSaved(query);
     if (isSaved) {
@@ -176,7 +209,34 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ savedSearches: saved });
   },
 
+  openSaveModal: (query: string, existing?: SavedSearchItem | null) => {
+    set({
+      isSaveModalOpen: true,
+      saveModalInitialQuery: query,
+      editingSavedSearch: existing || null,
+    });
+  },
+
+  closeSaveModal: () => {
+    set({
+      isSaveModalOpen: false,
+      editingSavedSearch: null,
+      saveModalInitialQuery: '',
+    });
+  },
+
   setVoiceModalOpen: (open: boolean) => {
     set({ isVoiceModalOpen: open });
   },
+
+  executeVoiceSearch: async (recognizedText: string) => {
+    const normalized = voiceSearchService.normalizeVoiceQuery(recognizedText);
+    set({
+      query: normalized,
+      lastVoiceQuery: recognizedText,
+      isVoiceModalOpen: false,
+    });
+    await get().executeSearch(normalized);
+  },
 }));
+

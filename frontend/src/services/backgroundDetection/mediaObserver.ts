@@ -1,7 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { DetectedScreenshotEvent } from '../../models';
 
-const { MediaObserverModule } = NativeModules;
+const MediaObserverModule = NativeModules?.MediaObserverModule;
 
 export type ScreenshotDetectedListener = (event: DetectedScreenshotEvent) => void;
 
@@ -102,7 +102,17 @@ export class MediaObserverService {
   }
 
   async queryRecentScreenshots(limit = 20): Promise<DetectedScreenshotEvent[]> {
-    if (Platform.OS === 'android' && MediaObserverModule?.queryRecentScreenshots) {
+    return this.queryScreenshotsPaged(limit, 0);
+  }
+
+  async queryScreenshotsPaged(limit = 20, offset = 0): Promise<DetectedScreenshotEvent[]> {
+    if (Platform.OS === 'android' && MediaObserverModule?.queryScreenshotsPaged) {
+      try {
+        return await MediaObserverModule.queryScreenshotsPaged(limit, offset);
+      } catch (err) {
+        console.warn('[MediaObserver] Error querying screenshots paged:', err);
+      }
+    } else if (Platform.OS === 'android' && MediaObserverModule?.queryRecentScreenshots) {
       try {
         return await MediaObserverModule.queryRecentScreenshots(limit);
       } catch (err) {
@@ -110,6 +120,28 @@ export class MediaObserverService {
       }
     }
     return [];
+  }
+
+  async generateThumbnail(uriOrPath: string, targetSize = 300): Promise<string | null> {
+    if (Platform.OS === 'android' && MediaObserverModule?.generateThumbnail) {
+      try {
+        return await MediaObserverModule.generateThumbnail(uriOrPath, targetSize);
+      } catch (err) {
+        console.warn('[MediaObserver] Error generating native thumbnail:', err);
+      }
+    }
+    return null;
+  }
+
+  async deleteThumbnail(thumbnailUri: string): Promise<boolean> {
+    if (Platform.OS === 'android' && MediaObserverModule?.deleteThumbnail) {
+      try {
+        return await MediaObserverModule.deleteThumbnail(thumbnailUri);
+      } catch (err) {
+        console.warn('[MediaObserver] Error deleting native thumbnail:', err);
+      }
+    }
+    return false;
   }
 
   private handleScreenshotDetected = (event: DetectedScreenshotEvent) => {

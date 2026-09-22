@@ -1,48 +1,72 @@
 import { Result } from '../utils/result';
 import { ScreenshotModel, ScreenshotFilter } from '../models';
+import { screenshotRepository } from '../database/repositories/screenshotRepository';
+import { useScreenshotStore } from '../store/screenshot.store';
 import { apiClient } from '../api/apiClient';
 
 export class ScreenshotService {
+  /**
+   * Retrieves screenshots from the on-device SQLite database.
+   * Preserves privacy-first architecture (no binaries ever sent to backend).
+   */
   async getScreenshots(filter: ScreenshotFilter = {}): Promise<Result<ScreenshotModel[]>> {
-    const res = await apiClient.fetchScreenshots(filter);
-    if (res.isSuccess) {
-      const models: ScreenshotModel[] = res.data.map((item: any) => ({
-        id: item.id || item.screenshot_id,
-        deviceAssetId: item.deviceAssetId || item.device_asset_id || '',
-        filePath: item.filePath || item.file_path || '',
-        fileName: item.fileName || item.file_name || '',
-        createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-        width: item.width || 1080,
-        height: item.height || 2400,
-        fileSize: item.fileSize || item.file_size || 0,
-        categoryId: item.categoryId || item.category_id || 'unsorted',
-        categoryName: item.categoryName || item.category_name || 'Unsorted',
-        subcategory: item.subcategory || item.sub_category_name || '',
-        confidence: item.confidence || 0,
-        sourceApp: item.sourceApp || item.source_app,
-        detectedApp: item.detectedApp || item.detected_app,
-        isFavorite: Boolean(item.isFavorite || item.is_favorite),
-        isReviewed: Boolean(item.isReviewed || item.is_reviewed),
-        isSynced: Boolean(item.isSynced || item.is_synced),
-        ocrStatus: item.ocrStatus || item.ocr_status || 'completed',
-        ocrText: item.ocrText || item.ocr_text,
-        tags: Array.isArray(item.tags)
-          ? item.tags.map((t: any) =>
-              typeof t === 'string' ? { id: t, name: t, colorHex: '6366F1' } : t
-            )
-          : [],
-      }));
-      return Result.success(models);
+    try {
+      const items = await screenshotRepository.getAllScreenshots(filter);
+      return Result.success(items);
+    } catch (err: any) {
+      console.warn('[ScreenshotService] Error reading screenshots from SQLite:', err);
+      // Fallback to in-memory store
+      const memoryItems = useScreenshotStore.getState().screenshots;
+      if (memoryItems && memoryItems.length > 0) {
+        return Result.success(memoryItems);
+      }
+      return Result.failure(err?.message || 'Failed to query local screenshots');
     }
-    return Result.failure(res.error || 'Failed to fetch screenshots');
+  }
+
+  async getScreenshotById(id: string): Promise<Result<ScreenshotModel | null>> {
+    try {
+      const item = await screenshotRepository.getScreenshotById(id);
+      return Result.success(item);
+    } catch (err: any) {
+      return Result.failure(err?.message || 'Failed to get screenshot');
+    }
   }
 
   async toggleFavorite(id: string, isFavorite?: boolean): Promise<Result<boolean>> {
-    return apiClient.toggleFavorite(id, isFavorite);
+    try {
+      useScreenshotStore.getState().toggleFavoriteLocal(id);
+      const target = await screenshotRepository.getScreenshotById(id);
+      if (target) {
+        const nextFav = isFavorite !== undefined ? isFavorite : !target.isFavorite;
+        await screenshotRepository.updateScreenshot({
+          ...target,
+          isFavorite: nextFav,
+        });
+      }
+      // Non-blocking background sync with backend metadata if available
+      apiClient.toggleFavorite(id, isFavorite).catch(() => {});
+      return Result.success(true);
+    } catch (err: any) {
+      return Result.failure(err?.message || 'Failed to toggle favorite');
+    }
   }
 
   async markReviewed(id: string, isReviewed = true): Promise<Result<boolean>> {
-    return apiClient.toggleReview(id, isReviewed);
+    try {
+      useScreenshotStore.getState().markReviewedLocal(id);
+      const target = await screenshotRepository.getScreenshotById(id);
+      if (target) {
+        await screenshotRepository.updateScreenshot({
+          ...target,
+          isReviewed,
+        });
+      }
+      apiClient.toggleReview(id, isReviewed).catch(() => {});
+      return Result.success(true);
+    } catch (err: any) {
+      return Result.failure(err?.message || 'Failed to mark reviewed');
+    }
   }
 
   async updateCategory(
@@ -51,16 +75,31 @@ export class ScreenshotService {
     categoryName: string,
     subcategory = ''
   ): Promise<Result<boolean>> {
-    return apiClient.updateScreenshot(id, {
-      categoryId,
-      categoryName,
-      subcategory,
-      isReviewed: true,
-    });
+    try {
+      useScreenshotStore.getState().updateCategoryLocal(id, categoryId, categoryName, subcategory);
+      await screenshotRepository.reclassifyScreenshot(id, categoryId, categoryName, subcategory);
+      apiClient
+        .updateScreenshot(id, {
+          categoryId,
+          categoryName,
+          subcategory,
+          isReviewed: true,
+        })
+        .catch(() => {});
+      return Result.success(true);
+    } catch (err: any) {
+      return Result.failure(err?.message || 'Failed to update category');
+    }
   }
 
   async deleteScreenshot(id: string): Promise<Result<boolean>> {
-    return apiClient.deleteScreenshot(id);
+    try {
+      await useScreenshotStore.getState().softDeleteScreenshot(id);
+      apiClient.deleteScreenshot(id).catch(() => {});
+      return Result.success(true);
+    } catch (err: any) {
+      return Result.failure(err?.message || 'Failed to delete screenshot');
+    }
   }
 }
 

@@ -2,18 +2,25 @@ import { TagModel } from './tag.model';
 import { ExtractedEntitiesDto } from './classification.model';
 
 export type OCRStatus = 'none' | 'pending' | 'processing' | 'completed' | 'failed';
+export type AnalysisStatus = 'none' | 'Pending' | 'Processing' | 'Completed' | 'Failed' | 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ScreenshotModel {
   id: string;
   deviceAssetId: string;
   filePath: string;
+  localPath?: string;
+  contentUri?: string;
+  thumbnailUri?: string;
   fileName: string;
   createdAt: string;
+  createdOn?: string;
   width: number;
   height: number;
   fileSize: number;
+  mimeType?: string;
   categoryId: string;
   categoryName: string;
+  folderId?: string;
   subcategory: string;
   folderPath?: string[];
   confidence: number;
@@ -26,11 +33,15 @@ export interface ScreenshotModel {
   isSynced: boolean;
   ocrStatus: OCRStatus;
   ocrText?: string;
+  analysisStatus?: AnalysisStatus;
+  analysisProcessingTime?: number;
   tags: TagModel[];
   lastScannedAt?: string;
   isMock?: boolean;
-  classificationSource?: 'backend' | 'local';
+  classificationSource?: 'backend' | 'local' | 'manual' | 'vision_ai';
   entities?: ExtractedEntitiesDto;
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface ScreenshotFilter {
@@ -42,6 +53,7 @@ export interface ScreenshotFilter {
   isReviewed?: boolean;
   needsReview?: boolean;
   searchTerm?: string;
+  isDeleted?: boolean;
   limit?: number;
   offset?: number;
 }

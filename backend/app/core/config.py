@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Vision AI Gateway (Local RTX 4050 / Standalone Server)
+    VISION_SERVER_URL: str = "http://localhost:8001"
+    VISION_TIMEOUT: int = 120
+    VISION_HEALTH_TIMEOUT: int = 5
+    VISION_MODEL: str = "Qwen2.5-VL-3B-Instruct"
+    VISION_ENABLED: bool = True
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/contextvault.log"

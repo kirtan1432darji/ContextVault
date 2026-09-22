@@ -206,3 +206,34 @@ alembic upgrade head
 # Start FastAPI server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+---
+
+## Production Release & Documentation
+
+### Version 1.0.0 Release Commands
+
+```bash
+# Frontend production validation & typecheck
+cd frontend
+npm run typecheck
+npm test
+
+# Build signed Android Release APK (minified via R8, resource shrunk)
+cd android
+./gradlew assembleRelease
+# Output: frontend/android/app/build/outputs/apk/release/app-release.apk
+
+# Build signed Android App Bundle (.aab) for Google Play Console
+./gradlew bundleRelease
+# Output: frontend/android/app/build/outputs/bundle/release/app-release.aab
+```
+
+### Technical Documentation Library
+
+- 📘 **[Architecture & Data Flow](docs/Architecture.md)** — Architectural blueprint, Scoped Storage dual-path resolution, on-device ML Kit OCR bridge.
+- 🌐 **[REST API Reference](docs/API.md)** — Complete API contracts, JWT authentication lifecycle, uniform envelopes.
+- 🗄️ **[SQLite Schema v5](docs/SQLite_Schema.md)** — Offline-first local database schema, tables, foreign keys, indexing strategy.
+- 📡 **[Backend API Endpoints](docs/Backend_API_EndPoints.md)** — Complete endpoint catalog with sample request & response bodies.
+- ✅ **[Release Checklist](docs/Release_Checklist.md)** — Production deployment criteria, quality gates, signing security.
+- 🧠 **[Architectural Blueprint (Brain.md)](Brain.md)** — Central source of truth for ContextVault system design.

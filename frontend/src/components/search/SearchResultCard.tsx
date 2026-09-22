@@ -43,8 +43,16 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
     <ModernCard style={styles.card}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.cardTouchable}>
         {/* Left Thumbnail */}
-        <View style={styles.thumbContainer}>
-          <ScreenshotImageThumbnail filePath={item.filePath} style={styles.thumb} />
+        <View style={[styles.thumbContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
+          <ScreenshotImageThumbnail
+            screenshot={item}
+            filePath={item.filePath}
+            localPath={item.localPath}
+            contentUri={item.contentUri}
+            thumbnailUri={item.thumbnailUri}
+            deviceAssetId={item.deviceAssetId}
+            style={styles.thumb}
+          />
           {item.isFavorite && (
             <View style={styles.favBadge}>
               <Icon name="heart" size={12} color="#EF4444" />
@@ -54,7 +62,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
 
         {/* Right Details */}
         <View style={styles.detailsContainer}>
-          {/* Top Row: Folder Path + Date */}
+          {/* Top Row: Folder Path + Score + Date */}
           <View style={styles.topRow}>
             <View style={[styles.folderBadge, { backgroundColor: `${theme.colors.primary}15` }]}>
               <Icon name="folder-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
@@ -62,9 +70,17 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
                 {folderPathStr}
               </Text>
             </View>
-            <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
-              {formattedDate}
-            </Text>
+            <View style={styles.topRightRow}>
+              {item.score !== undefined && item.score > 0 && (
+                <View style={[styles.scoreBadge, { backgroundColor: `${theme.colors.accent}18` }]}>
+                  <Icon name="speedometer-outline" size={10} color={theme.colors.accent} style={{ marginRight: 2 }} />
+                  <Text style={[styles.scoreText, { color: theme.colors.accent }]}>{item.score}</Text>
+                </View>
+              )}
+              <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
+                {formattedDate}
+              </Text>
+            </View>
           </View>
 
           {/* Title */}
@@ -73,7 +89,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
           </Text>
 
           {/* Match Reason Tag */}
-          <View style={[styles.matchReasonBadge, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}>
+          <View style={[styles.matchReasonBadge, { backgroundColor: theme.colors.surfaceVariant }]}>
             <Icon name="sparkles-outline" size={10} color={theme.colors.accent} style={{ marginRight: 4 }} />
             <Text numberOfLines={1} style={[styles.matchReasonText, { color: theme.colors.textSecondary }]}>
               {item.matchReason}
@@ -115,9 +131,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onPres
                         backgroundColor:
                           ent.type === 'amount'
                             ? `${theme.colors.success}18`
-                            : theme.isDark
-                            ? '#334155'
-                            : '#E2E8F0',
+                            : theme.colors.surfaceVariant,
                       },
                     ]}
                   >
@@ -157,12 +171,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   thumbContainer: {
-    width: 80,
-    height: 110,
-    borderRadius: 8,
+    width: 90,
+    height: 120,
+    borderRadius: 10,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#1E1E1E',
   },
   thumb: {
     width: '100%',
@@ -186,6 +200,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
+  },
+  topRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  scoreText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   folderBadge: {
     flexDirection: 'row',

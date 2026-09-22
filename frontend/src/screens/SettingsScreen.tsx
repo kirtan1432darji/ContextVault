@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -17,6 +18,7 @@ import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { useSettingsStore } from '../store/settings.store';
 import { useAuthStore } from '../store/auth.store';
+import { useScreenshotStore } from '../store/screenshot.store';
 import { ModernCard } from '../components/ModernCard';
 import { AppInfo } from '../utils/appConstants';
 import { apiClient } from '../api/apiClient';
@@ -26,6 +28,11 @@ import { loggerService } from '../services/loggerService';
 import { storageManagerService } from '../services/storageManagerService';
 import { demoModeService } from '../services/demoModeService';
 import { backupService } from '../services/backupService';
+import { EnvironmentManager } from '../config/EnvironmentManager';
+import { BackendConnectionManager } from '../services/BackendConnectionManager';
+import { getApiBaseUrl, setApiBaseUrl } from '../config/api';
+import { visionAIService, PingResult as VisionPingResult, VisionModelInfo } from '../services/visionAIService';
+import { visionInferenceQueue } from '../vision/VisionInferenceQueue';
 
 export const SettingsScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -41,12 +48,158 @@ export const SettingsScreen: React.FC = () => {
   const [testingHealth, setTestingHealth] = useState(false);
   const [pingResult, setPingResult] = useState<PingResult | null>(null);
 
+  const analyzeOnImport = useSettingsStore((s) => s.analyzeOnImport);
+  const setAnalyzeOnImport = useSettingsStore((s) => s.setAnalyzeOnImport);
+  const [testingVision, setTestingVision] = useState(false);
+  const [visionPing, setVisionPing] = useState<VisionPingResult | null>(null);
+  const [modelInfo, setModelInfo] = useState<VisionModelInfo | null>(null);
+
+  useEffect(() => {
+    visionAIService.getModelInfo().then((info) => {
+      if (info) setModelInfo(info);
+    });
+  }, []);
+
+  const handleTestVisionServer = async () => {
+    setTestingVision(true);
+    try {
+      const res = await visionAIService.pingVisionServer();
+      setVisionPing(res);
+      if (res.online) {
+        Alert.alert(
+          'Vision Server Online',
+          `Connected to Local Vision Server!\nModel: ${res.model || 'Qwen2.5-VL-3B-Instruct'}\nGPU: ${res.gpu || 'RTX 4050'}\nLatency: ${res.latencyMs} ms`
+        );
+      } else {
+        Alert.alert(
+          res.error || 'Vision Server Offline',
+          'Could not reach Vision Server via Ubuntu gateway. Verify the Vision server is running on :9000.'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Vision Server Offline', e?.message || 'Connection failed.');
+    } finally {
+      setTestingVision(false);
+    }
+  };
+
+  const handleReanalyzeAll = async () => {
+    Alert.alert(
+      'Re-analyze All Screenshots',
+      'Queue all un-analyzed screenshots for local Vision AI processing on your RTX 4050 GPU? Concurrency is set to 1 (sequential).',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start Queue',
+          onPress: async () => {
+            const count = await visionInferenceQueue.enqueuePending();
+            Alert.alert('Queue Started', `Enqueued ${count} screenshot(s) for local Vision processing.`);
+          },
+        },
+      ]
+    );
+  };
+
+  const [analyzingTest, setAnalyzingTest] = useState(false);
+
+  const handleAnalyzeTestScreenshot = async () => {
+    const screenshots = useScreenshotStore.getState().screenshots;
+    if (screenshots.length === 0) {
+      Alert.alert('No Screenshot', 'No screenshots found. Please import or capture a screenshot first.');
+      return;
+    }
+    const testItem = screenshots[0];
+    setAnalyzingTest(true);
+    try {
+      const res = await visionAIService.analyzeScreenshot({
+        screenshotId: testItem.id,
+        filePath: testItem.localPath || testItem.filePath,
+        fileName: testItem.fileName,
+        forceRefresh: true,
+      });
+      if (res.isSuccess && res.data) {
+        Alert.alert(
+          'Test Analysis Succeeded',
+          `Model: Qwen2.5-VL-3B-Instruct\nCategory: ${res.data.category} (${res.data.confidence}%)\n\nSummary:\n${res.data.summary}`
+        );
+      } else {
+        Alert.alert('Analysis Failed', res.error || 'Unable to analyze test screenshot.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to analyze test screenshot.');
+    } finally {
+      setAnalyzingTest(false);
+    }
+  };
+
+  const handleClearVisionCache = () => {
+    Alert.alert(
+      'Clear Vision Cache',
+      'Are you sure you want to clear all cached Vision summaries and entities from SQLite?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Cache',
+          style: 'destructive',
+          onPress: async () => {
+            await visionAIService.clearVisionCache();
+            Alert.alert('Cache Cleared', 'Local Vision cache removed.');
+          },
+        },
+      ]
+    );
+  };
+
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const exitGuestMode = useAuthStore((s) => s.exitGuestMode);
 
-  const handleSaveUrl = () => {
-    useSettingsStore.getState().setBackendUrl(urlInput);
-    Alert.alert('Settings Saved', `Backend URL updated to ${urlInput}`);
+  const versionTapCountRef = React.useRef(0);
+  const versionTapTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleVersionTap = () => {
+    versionTapCountRef.current += 1;
+    if (versionTapTimerRef.current) {
+      clearTimeout(versionTapTimerRef.current);
+    }
+    if (versionTapCountRef.current >= 3) {
+      versionTapCountRef.current = 0;
+      navigation.navigate('BackendSettings');
+      return;
+    }
+    versionTapTimerRef.current = setTimeout(() => {
+      versionTapCountRef.current = 0;
+    }, 600);
+  };
+
+  const handleSaveUrl = async () => {
+    try {
+      await setApiBaseUrl(urlInput);
+      BackendConnectionManager.setBaseUrl(urlInput);
+      apiClient.setBaseUrl(urlInput);
+      Alert.alert('Settings Saved', `Backend URL updated to ${getApiBaseUrl()}`);
+    } catch (e: any) {
+      Alert.alert('Invalid URL', e?.message || 'Failed to save URL');
+    }
+  };
+
+  const handleExitGuestMode = () => {
+    Alert.alert(
+      'Exit Guest Mode',
+      'Are you sure you want to return to the login screen? Your local screenshots and folders will be preserved.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit Guest Mode',
+          style: 'destructive',
+          onPress: () => {
+            exitGuestMode();
+            navigation.replace('Login');
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = () => {
@@ -57,6 +210,10 @@ export const SettingsScreen: React.FC = () => {
         style: 'destructive',
         onPress: async () => {
           await logout();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Login' }],
+          });
         },
       },
     ]);
@@ -99,7 +256,7 @@ export const SettingsScreen: React.FC = () => {
   const handleClearCache = () => {
     Alert.alert(
       'Purge App Cache',
-      'This will clear OCR text caches, search history, and optimize the local database. Screenshots and folders are completely preserved.',
+      'This will clear Vision AI text caches, search history, and optimize the local database. Screenshots and folders are completely preserved.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -185,54 +342,181 @@ export const SettingsScreen: React.FC = () => {
         </Text>
       </View>
 
-      {/* Account Section */}
-      <ModernCard style={styles.card}>
-        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Account & Session
-        </Text>
-        <View style={styles.row}>
-          <View style={styles.rowLabelGroup}>
-            <Icon name="person-circle-outline" size={32} color={theme.colors.primary} />
-            <View style={{ marginLeft: 10 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary }}>
-                {currentUser?.username || 'Active User'}
+      {/* Account Section: Guest Mode vs Authenticated User */}
+      {isGuest ? (
+        <ModernCard style={styles.card}>
+          <View style={styles.appearanceHeaderRow}>
+            <View style={styles.rowLabelGroup}>
+              <Icon name="person-outline" size={22} color={theme.colors.accent} />
+              <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginBottom: 0, marginLeft: 8 }]}>
+                Guest Account
               </Text>
-              <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
-                {currentUser?.email || 'Logged in via JWT'}
+            </View>
+            <View style={[styles.activeThemeBadge, { backgroundColor: `${theme.colors.accent}18` }]}>
+              <Text style={[styles.activeThemeBadgeText, { color: theme.colors.accent }]}>
+                Local Mode
               </Text>
             </View>
           </View>
+
+          <Text style={[styles.themeSubtitle, { color: theme.colors.textSecondary, marginBottom: 16 }]}>
+            You are browsing as a guest. Screenshots and smart folders remain private on this device. Sign in to unlock AI chat and cloud backups.
+          </Text>
+
+          {/* Action Buttons: Sign In, Create Account, Exit Guest Mode */}
+          <View style={styles.guestBtnGroup}>
+            <TouchableOpacity
+              style={[styles.guestPrimaryBtn, { backgroundColor: theme.colors.primary }]}
+              onPress={() => navigation.navigate('Login')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with your account"
+            >
+              <Icon name="log-in-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.guestPrimaryBtnText}>Sign In</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.guestSecondaryBtn,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? '#1F2937' : '#F8FAFC',
+                },
+              ]}
+              onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Create a new ContextVault account"
+            >
+              <Icon name="person-add-outline" size={16} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
+              <Text style={[styles.guestSecondaryBtnText, { color: theme.colors.textPrimary }]}>
+                Create Account
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
-            style={[styles.logoutButton, { borderColor: theme.colors.error }]}
-            onPress={handleLogout}
+            style={[styles.exitGuestBtn, { borderColor: theme.colors.border }]}
+            onPress={handleExitGuestMode}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Exit Guest Mode and return to login"
           >
-            <Icon name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 4 }} />
-            <Text style={{ color: theme.colors.error, fontSize: 13, fontWeight: '700' }}>
-              Sign Out
+            <Icon name="arrow-back-outline" size={15} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={[styles.exitGuestBtnText, { color: theme.colors.textSecondary }]}>
+              Exit Guest Mode
             </Text>
           </TouchableOpacity>
-        </View>
-      </ModernCard>
+        </ModernCard>
+      ) : (
+        <ModernCard style={styles.card}>
+          <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
+            Account & Session
+          </Text>
+          <View style={styles.row}>
+            <View style={styles.rowLabelGroup}>
+              <Icon name="person-circle-outline" size={32} color={theme.colors.primary} />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary }}>
+                  {currentUser?.username || 'Active User'}
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>
+                  {currentUser?.email || 'Logged in via JWT'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.logoutButton, { borderColor: theme.colors.error }]}
+              onPress={handleLogout}
+            >
+              <Icon name="log-out-outline" size={16} color={theme.colors.error} style={{ marginRight: 4 }} />
+              <Text style={{ color: theme.colors.error, fontSize: 13, fontWeight: '700' }}>
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ModernCard>
+      )}
 
       {/* Theme Section */}
       <ModernCard style={styles.card}>
-        <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Appearance
-        </Text>
-        <View style={styles.row}>
+        <View style={styles.appearanceHeaderRow}>
           <View style={styles.rowLabelGroup}>
-            <Icon name="moon-outline" size={20} color={theme.colors.primary} />
-            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary }]}>
-              Dark Mode
+            <Icon name="color-palette-outline" size={20} color={theme.colors.primary} />
+            <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginBottom: 0, marginLeft: 8 }]}>
+              Appearance & Theme
             </Text>
           </View>
-          <Switch
-            value={themeMode === 'dark'}
-            onValueChange={(val) =>
-              useSettingsStore.getState().setThemeMode(val ? 'dark' : 'light')
-            }
-            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-          />
+          <View style={[styles.activeThemeBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
+            <Text style={[styles.activeThemeBadgeText, { color: theme.colors.primary }]}>
+              {themeMode === 'system'
+                ? `System (${theme.isDark ? 'Dark' : 'Light'})`
+                : themeMode === 'dark'
+                ? 'Dark'
+                : 'Light'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.themeSubtitle, { color: theme.colors.textSecondary }]}>
+          Choose how ContextVault appears on your device.
+        </Text>
+
+        <View style={styles.themeSelectorGroup}>
+          {(
+            [
+              { key: 'system', label: 'System', icon: 'phone-portrait-outline', desc: 'Match device' },
+              { key: 'light', label: 'Light', icon: 'sunny-outline', desc: 'Always light' },
+              { key: 'dark', label: 'Dark', icon: 'moon-outline', desc: 'Always dark' },
+            ] as const
+          ).map((item) => {
+            const isSelected = themeMode === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                activeOpacity={0.7}
+                onPress={() => useSettingsStore.getState().setThemeMode(item.key)}
+                style={[
+                  styles.themeOptionButton,
+                  {
+                    backgroundColor: isSelected
+                      ? `${theme.colors.primary}18`
+                      : theme.isDark
+                      ? '#131B2E'
+                      : '#F8FAFC',
+                    borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+                  },
+                ]}
+              >
+                <Icon
+                  name={item.icon}
+                  size={20}
+                  color={isSelected ? theme.colors.primary : theme.colors.textSecondary}
+                  style={{ marginBottom: 4 }}
+                />
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    {
+                      color: isSelected ? theme.colors.primary : theme.colors.textPrimary,
+                      fontWeight: isSelected ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.themeOptionDesc,
+                    { color: isSelected ? theme.colors.primary : theme.colors.textMuted },
+                  ]}
+                >
+                  {item.desc}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ModernCard>
 
@@ -290,6 +574,20 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
 
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => navigation.navigate('NotificationCenter')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="file-tray-full-outline" size={20} color={theme.colors.primary} />
+            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary }]}>
+              Notification Center Inbox
+            </Text>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+
         <View style={styles.row}>
           <View style={styles.rowLabelGroup}>
             <Icon name="sparkles-outline" size={20} color="#10B981" />
@@ -316,12 +614,12 @@ export const SettingsScreen: React.FC = () => {
           Backend API Connection
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          FastAPI backend running inside Docker (e.g., http://10.193.167.152:8000/api)
+          FastAPI backend running inside Docker (e.g., {getApiBaseUrl()}/api)
         </Text>
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}
-          placeholder="http://10.193.167.152:8000/api"
+          placeholder={`${getApiBaseUrl()}/api`}
           placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -422,14 +720,193 @@ export const SettingsScreen: React.FC = () => {
         )}
       </ModernCard>
 
+      {/* Local Vision AI Server (RTX 4050 Gateway) */}
+      <ModernCard style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon name="sparkles" size={18} color="#8B5CF6" />
+            <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginLeft: 8, marginBottom: 0 }]}>
+              Local Vision AI Server
+            </Text>
+          </View>
+          <View
+            style={{
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              borderRadius: 10,
+              backgroundColor: visionPing?.online ? '#10B98120' : '#64748B20',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: '700',
+                color: visionPing?.online ? '#10B981' : theme.colors.textMuted,
+              }}
+            >
+              {visionPing?.online ? 'ONLINE' : 'LAN GATEWAY'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
+          Qwen2.5-VL-3B-Instruct running on RTX 4050 Laptop GPU (6 GB VRAM) via Ubuntu proxy gateway.
+        </Text>
+
+        {/* Vision Server Diagnostics Info */}
+        <View
+          style={[
+            styles.diagnosticContainer,
+            {
+              backgroundColor: theme.isDark ? '#0F172A' : '#F1F5F9',
+              borderColor: visionPing?.online ? '#10B981' : theme.colors.border,
+              marginTop: 10,
+            },
+          ]}
+        >
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Gateway URL</Text>
+            <Text
+              style={[styles.diagValue, { color: theme.colors.textPrimary, fontSize: 11 }]}
+              numberOfLines={1}
+            >
+              {BackendConnectionManager.getApiUrl()}/vision
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Status</Text>
+            <Text
+              style={[
+                styles.diagValue,
+                { color: visionPing?.online ? '#10B981' : theme.colors.textSecondary },
+              ]}
+            >
+              {visionPing ? (visionPing.online ? 'Online (Healthy)' : visionPing.error || 'Offline') : 'Not Checked'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Model</Text>
+            <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+              {visionPing?.model || 'Qwen2.5-VL-3B-Instruct'}
+            </Text>
+          </View>
+          <View style={styles.diagRow}>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Hardware</Text>
+            <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+              {visionPing?.gpu || 'NVIDIA RTX 4050 (6 GB)'}
+            </Text>
+          </View>
+          {visionPing?.latencyMs !== undefined && (
+            <View style={styles.diagRow}>
+              <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Ping Latency</Text>
+              <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+                {visionPing.latencyMs} ms
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Analyze on Import Toggle */}
+        <View style={[styles.row, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 12, paddingTop: 12 }]}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+              Analyze on Import
+            </Text>
+            <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+              Automatically run local Vision AI when new screenshots are detected
+            </Text>
+          </View>
+          <Switch
+            value={analyzeOnImport}
+            onValueChange={setAnalyzeOnImport}
+            trackColor={{ false: theme.colors.border, true: '#8B5CF6' }}
+            thumbColor={analyzeOnImport ? '#FFFFFF' : '#F4F4F5'}
+          />
+        </View>
+
+        {/* Action Buttons */}
+        <View style={[styles.apiBtnRow, { marginTop: 14 }]}>
+          <TouchableOpacity
+            onPress={handleTestVisionServer}
+            disabled={testingVision}
+            style={[styles.saveBtn, { backgroundColor: '#8B5CF6' }]}
+          >
+            <Text style={styles.btnText}>
+              {testingVision ? 'Pinging...' : 'Ping Vision Server'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleReanalyzeAll}
+            style={[styles.testBtn, { borderColor: '#8B5CF6' }]}
+          >
+            <Text style={[styles.testBtnText, { color: '#8B5CF6' }]}>Re-analyze All</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleAnalyzeTestScreenshot}
+          disabled={analyzingTest}
+          style={[
+            {
+              backgroundColor: '#8B5CF618',
+              borderColor: '#8B5CF6',
+              marginTop: 10,
+              paddingVertical: 10,
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              borderRadius: 8,
+              borderWidth: 1,
+              opacity: analyzingTest ? 0.6 : 1,
+            },
+          ]}
+        >
+          {analyzingTest ? (
+            <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+          ) : (
+            <Icon name="flask-outline" size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
+          )}
+          <Text style={{ color: '#8B5CF6', fontWeight: '700', fontSize: 13 }}>
+            {analyzingTest ? 'Analyzing on RTX 4050...' : 'Analyze Test Screenshot'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleClearVisionCache}
+          style={{ marginTop: 10, alignItems: 'center', paddingVertical: 6 }}
+        >
+          <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Clear Vision Cache</Text>
+        </TouchableOpacity>
+      </ModernCard>
+
       {/* Storage & Data Management (Sprint RN-10) */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Storage & Caches
+          Storage & Intelligence
         </Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('Storage')}
+          onPress={() => navigation.navigate('FolderAnalytics')}
           style={styles.legalRow}
+          accessibilityRole="button"
+          accessibilityLabel="Open Folder Analytics Dashboard"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="stats-chart-outline" size={20} color={theme.colors.accent} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Folder Analytics Dashboard
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Storage distribution, AI confidence & entity tally
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Storage')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
           accessibilityRole="button"
           accessibilityLabel="Open Storage and Cache Manager"
         >
@@ -440,7 +917,27 @@ export const SettingsScreen: React.FC = () => {
                 Storage & Data Management
               </Text>
               <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
-                Database size, OCR cache & memory breakdown
+                Database size, Vision AI cache & memory breakdown
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('RecycleBin')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Recycle Bin"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="trash-bin-outline" size={20} color={theme.colors.error} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Recycle Bin
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                Restore or permanently delete screenshots
               </Text>
             </View>
           </View>
@@ -462,14 +959,58 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* Developer & Diagnostics (Sprint RN-10) */}
+      {/* Developer & Diagnostics */}
       <ModernCard style={styles.card}>
         <Text style={[styles.cardHeader, { color: theme.colors.textPrimary }]}>
-          Diagnostics & Demo QA
+          Developer Options & Diagnostics
         </Text>
+        {EnvironmentManager.isDeveloperModeAvailable() && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BackendConnection')}
+            style={styles.legalRow}
+            accessibilityRole="button"
+            accessibilityLabel="Open Developer Options - Backend Connection"
+          >
+            <View style={styles.rowLabelGroup}>
+              <Icon name="server-outline" size={20} color="#3B82F6" />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                  Backend Connection
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                  Configure backend IP, ping latency, version & environment
+                </Text>
+              </View>
+            </View>
+            <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {EnvironmentManager.isDeveloperModeAvailable() && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('VisionDebug')}
+            style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open Vision AI Debugger"
+          >
+            <View style={styles.rowLabelGroup}>
+              <Icon name="sparkles-outline" size={20} color="#8B5CF6" />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                  Vision AI Debugger (RTX 4050)
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                  Local vision gateway, scene analysis & offline heuristics
+                </Text>
+              </View>
+            </View>
+            <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           onPress={() => navigation.navigate('QADebugPanel')}
-          style={styles.legalRow}
+          style={[styles.legalRow, EnvironmentManager.isDeveloperModeAvailable() ? { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 } : undefined]}
           accessibilityRole="button"
           accessibilityLabel="Open QA Debug Panel"
         >
@@ -481,6 +1022,26 @@ export const SettingsScreen: React.FC = () => {
               </Text>
               <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
                 Live pipeline monitors, simulations & metrics
+              </Text>
+            </View>
+          </View>
+          <Icon name="chevron-forward" size={18} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('ScreenshotDiagnostics')}
+          style={[styles.legalRow, { borderTopWidth: 1, borderTopColor: '#E2E8F020', marginTop: 4 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Screenshot Diagnostics"
+        >
+          <View style={styles.rowLabelGroup}>
+            <Icon name="images-outline" size={20} color="#06B6D4" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.rowLabel, { color: theme.colors.textPrimary, marginLeft: 0 }]}>
+                Screenshot Diagnostics
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                MediaStore scan, thumbnail cache stats & Scoped Storage health
               </Text>
             </View>
           </View>
@@ -514,7 +1075,7 @@ export const SettingsScreen: React.FC = () => {
           Local Backup &amp; Restore
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Create full offline JSON backups of your SQLite database, folder hierarchies, extracted OCR cache, and AI chat logs.
+          Create full offline JSON backups of your SQLite database, folder hierarchies, extracted Vision AI cache, and AI chat logs.
         </Text>
 
         <View style={styles.apiBtnRow}>
@@ -564,11 +1125,11 @@ export const SettingsScreen: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            navigation.navigate('QADebugPanel');
-          }}
+          onPress={handleVersionTap}
           style={styles.versionRow}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="App Version (Triple tap for Backend Settings)"
         >
           <Text style={[styles.versionLabel, { color: theme.colors.textSecondary }]}>
             {AppInfo.appName} Version
@@ -591,8 +1152,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   subtitle: {
@@ -602,9 +1164,52 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardHeader: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 12,
+  },
+  appearanceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  activeThemeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  activeThemeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  themeSubtitle: {
+    fontSize: 12,
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  themeSelectorGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  themeOptionButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  themeOptionLabel: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  themeOptionDesc: {
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',
@@ -640,7 +1245,7 @@ const styles = StyleSheet.create({
   saveBtn: {
     flex: 1,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -648,18 +1253,18 @@ const styles = StyleSheet.create({
   testBtn: {
     flex: 1,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '600',
     fontSize: 13,
   },
   testBtnText: {
-    fontWeight: '700',
+    fontWeight: '600',
     fontSize: 13,
   },
   legalRow: {
@@ -718,6 +1323,50 @@ const styles = StyleSheet.create({
   },
   diagValue: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  guestBtnGroup: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  guestPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  guestSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestSecondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  exitGuestBtn: {
+    flexDirection: 'row',
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  exitGuestBtnText: {
+    fontSize: 13,
     fontWeight: '600',
   },
 });
