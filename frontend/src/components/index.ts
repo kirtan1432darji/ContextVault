@@ -19,3 +19,4 @@ export * from './FeatureLockCard';
 export * from './GuestUpgradeBottomSheet';
 export * from './BulkActionBar';
 export * from './ReclassifyModal';
+export * from './memory';

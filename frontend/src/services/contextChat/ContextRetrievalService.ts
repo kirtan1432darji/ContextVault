@@ -1,15 +1,33 @@
 /**
  * ContextRetrievalService.ts
- * Offline Context Retrieval Engine for ContextVault Context Chat.
- * Searches SQLite metadata (screenshots, OCR cache, Vision cache, tags, entities)
- * and ranks candidates up to a maximum of 20 screenshots using a 5-tier scoring system.
- * Never searches Android MediaStore directly.
+ * Hybrid Offline Context Retrieval Engine for ContextVault Context Chat AI (Sprint P3-B).
+ * Searches SQLite metadata across:
+ * 1. Screenshots (Vision cache, tags, entities, OCR text)
+ * 2. Memory Timeline Events (via memoryTimelineService / memoryTimelineRepository)
+ * 3. Daily & Weekly Digests (via dailyDigestService / digestAggregationService / digestRepository)
+ * 4. Folder Context (via folderContextRepository / categoryRepository)
+ * 5. Session Long-Term Conversation Summary (via chatSessionRepository)
+ * 
+ * Maximum Context Caps:
+ * - Top 10 Screenshots
+ * - Top 5 Timeline Events
+ * - Top 3 Digest Summaries
+ * - Top 2 Folder Contexts
+ * 
+ * Includes 30-second TTL performance caching for rapid multi-turn chat turns.
  */
 
 import { databaseService } from '../../database';
 import { ScreenshotModel } from '../../models';
 import { useScreenshotStore } from '../../store/screenshot.store';
 import { QueryIntentParser, ParsedQueryIntent } from './QueryIntentParser';
+import { MemoryTimelineEvent } from '../memory/types';
+import { memoryTimelineService } from '../memory/MemoryTimelineService';
+import { dailyDigestService } from '../memory/DailyDigestService';
+import { digestAggregationService } from '../memory/DigestAggregationService';
+import { folderContextRepository } from '../../database/repositories/folderContextRepository';
+import { categoryRepository } from '../../database/repositories/categoryRepository';
+import { chatSessionRepository } from '../../database/repositories/ChatSessionRepository';
 
 export interface RetrievedScreenshotContext {
   screenshot: ScreenshotModel;
@@ -25,8 +43,43 @@ export interface RetrievedScreenshotContext {
   matchReasons: string[];
 }
 
+export interface DigestSummaryItem {
+  type: 'daily' | 'weekly' | 'monthly';
+  key: string; // e.g. "2026-09-22" or "2026-W38"
+  title: string;
+  summary: string;
+  screenshotCount: number;
+  spendingTotal?: number;
+  topMerchants?: string[];
+  score: number;
+}
+
+export interface FolderContextSummary {
+  folderId: string;
+  folderName: string;
+  summary: string;
+  entities?: Record<string, any>;
+  score: number;
+}
+
+export interface RankedRetrievalContext {
+  screenshots: RetrievedScreenshotContext[]; // Top 10
+  timelineEvents: MemoryTimelineEvent[];     // Top 5
+  digestSummaries: DigestSummaryItem[];      // Top 3
+  folderContexts: FolderContextSummary[];    // Up to 2
+  sessionSummary?: string;
+  query: string;
+}
+
+interface CacheEntry {
+  timestamp: number;
+  data: RankedRetrievalContext;
+}
+
 export class ContextRetrievalService {
   private static instance: ContextRetrievalService | null = null;
+  private cache: Map<string, CacheEntry> = new Map();
+  private readonly CACHE_TTL_MS = 30000; // 30 seconds
 
   static getInstance(): ContextRetrievalService {
     if (!ContextRetrievalService.instance) {
@@ -36,56 +89,110 @@ export class ContextRetrievalService {
   }
 
   /**
-   * Retrieves and ranks up to 20 relevant screenshots from local SQLite metadata.
+   * Clears the in-memory retrieval cache.
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Retrieves and ranks up to 10 relevant screenshots from local SQLite metadata.
+   * Maintains backward compatibility with legacy ContextChatService callers.
    */
   async retrieveContext(
     query: string,
     folderId?: string,
     customIntent?: ParsedQueryIntent
   ): Promise<RetrievedScreenshotContext[]> {
-    const intent = customIntent || QueryIntentParser.parse(query);
+    const hybrid = await this.retrieveHybridContext(query, { folderId, customIntent });
+    return hybrid.screenshots;
+  }
 
+  /**
+   * Flagship Hybrid Context Retrieval:
+   * Aggregates screenshots, memory timeline, digests, and folder context into a ranked context object.
+   */
+  async retrieveHybridContext(
+    query: string,
+    options?: {
+      folderId?: string;
+      sessionId?: string;
+      customIntent?: ParsedQueryIntent;
+      forceRefresh?: boolean;
+    }
+  ): Promise<RankedRetrievalContext> {
+    const rawQuery = (query || '').trim();
+    const cacheKey = `${rawQuery.toLowerCase()}_${options?.folderId || 'all'}_${options?.sessionId || 'all'}`;
+
+    if (!options?.forceRefresh) {
+      const cached = this.cache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+        return cached.data;
+      }
+    }
+
+    const intent = options?.customIntent || QueryIntentParser.parse(rawQuery);
+
+    // 1. Concurrently fetch all retrieval sources
+    const [screenshots, timelineEvents, digestSummaries, folderContexts, sessionSummary] =
+      await Promise.all([
+        this.fetchAndRankScreenshots(intent, options?.folderId),
+        this.fetchAndRankTimelineEvents(rawQuery, intent),
+        this.fetchAndRankDigests(rawQuery, intent),
+        this.fetchFolderContexts(rawQuery, intent, options?.folderId),
+        this.fetchSessionSummary(options?.sessionId),
+      ]);
+
+    const result: RankedRetrievalContext = {
+      screenshots: screenshots.slice(0, 10),
+      timelineEvents: timelineEvents.slice(0, 5),
+      digestSummaries: digestSummaries.slice(0, 3),
+      folderContexts: folderContexts.slice(0, 2),
+      sessionSummary,
+      query: rawQuery,
+    };
+
+    // Store in cache
+    this.cache.set(cacheKey, {
+      timestamp: Date.now(),
+      data: result,
+    });
+
+    return result;
+  }
+
+  // ===========================================================================
+  // 1. Screenshot Retrieval & 5-Tier Scoring
+  // ===========================================================================
+
+  private async fetchAndRankScreenshots(
+    intent: ParsedQueryIntent,
+    folderId?: string
+  ): Promise<RetrievedScreenshotContext[]> {
     try {
-      // 1. Fetch Candidate Screenshots from SQLite
       let candidates = await this.fetchCandidatesFromDatabase(intent, folderId);
 
-      // If database returned 0 candidates, fallback to in-memory store
       if (candidates.length === 0) {
-        const memoryCandidates = this.retrieveFromMemory(intent, folderId);
-        if (memoryCandidates.length > 0) {
-          return memoryCandidates;
-        }
+        candidates = this.retrieveFromMemory(intent, folderId);
       }
 
-      // 2. Score and Rank Candidates
       const scored = candidates.map((item) => this.scoreCandidate(item, intent));
+      const filtered = folderId ? scored : scored.filter((s) => s.score > 0);
 
-      // 3. Filter out zero-score items (unless it's a general folder query)
-      const filtered = folderId
-        ? scored
-        : scored.filter((s) => s.score > 0);
-
-      // 4. Sort by score descending, recency as tie-breaker
       filtered.sort((a, b) => {
-        if (b.score !== a.score) {
-          return b.score - a.score;
-        }
+        if (b.score !== a.score) return b.score - a.score;
         const timeA = new Date(a.date).getTime() || 0;
         const timeB = new Date(b.date).getTime() || 0;
         return timeB - timeA;
       });
 
-      // 5. Cap at 20 screenshots maximum
-      return filtered.slice(0, 20);
+      return filtered.slice(0, 10);
     } catch (err) {
-      console.warn('[ContextRetrievalService] SQLite query failed, falling back to in-memory store:', err);
-      return this.retrieveFromMemory(intent, folderId);
+      console.warn('[ContextRetrievalService] Screenshot retrieval fallback to memory:', err);
+      return this.retrieveFromMemory(intent, folderId).slice(0, 10);
     }
   }
 
-  /**
-   * Queries SQLite joins across screenshots, ocr_cache, vision_cache, classification_cache.
-   */
   private async fetchCandidatesFromDatabase(
     intent: ParsedQueryIntent,
     folderId?: string
@@ -105,7 +212,6 @@ export class ContextRetrievalService {
 
     const whereClause = conditions.join(' AND ');
 
-    // Join with ocr_cache, vision_cache, classification_cache for maximum ground truth
     const sql = `
       SELECT 
         s.*,
@@ -142,7 +248,6 @@ export class ContextRetrievalService {
 
       const allTags = Array.from(new Set([...keywords, ...visionTags]));
 
-      // Extract Merchants
       const merchants: string[] = [];
       if (entities.merchant) merchants.push(String(entities.merchant));
       if (entities.merchants && Array.isArray(entities.merchants)) {
@@ -152,13 +257,11 @@ export class ContextRetrievalService {
         merchants.push(row.subcategory);
       }
 
-      // Extract Amounts
       const amounts: string[] = [];
       if (entities.amount) amounts.push(String(entities.amount));
       if (entities.amounts && Array.isArray(entities.amounts)) {
         amounts.push(...entities.amounts);
       }
-      // Regex extraction from OCR text
       const ocr = row.full_ocr_text || '';
       const amtMatch = ocr.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/gi);
       if (amtMatch) {
@@ -220,14 +323,6 @@ export class ContextRetrievalService {
     });
   }
 
-  /**
-   * 5-Tier Scoring Engine:
-   * 1. Exact merchant/tag match (+50 points)
-   * 2. OCR similarity (+30 points)
-   * 3. Vision summary similarity (+25 points)
-   * 4. Category similarity (+15 points)
-   * 5. Recency (+5 to +10 points)
-   */
   private scoreCandidate(
     item: RetrievedScreenshotContext,
     intent: ParsedQueryIntent
@@ -241,7 +336,7 @@ export class ContextRetrievalService {
     const subcatLower = item.subcategory.toLowerCase();
     const tagsLower = item.tags.map((t) => t.toLowerCase());
 
-    // 1. Exact Merchant / Tag Match (+50 points)
+    // 1. Exact Merchant Match (+50 points)
     if (intent.merchant) {
       const mTarget = intent.merchant.toLowerCase();
       const matchMerchant =
@@ -256,7 +351,7 @@ export class ContextRetrievalService {
       }
     }
 
-    // Document type match
+    // Document type match (+60 points)
     if (intent.documentType) {
       const dt = intent.documentType.toLowerCase();
       const matchDoc =
@@ -272,7 +367,7 @@ export class ContextRetrievalService {
       }
     }
 
-    // PNR match
+    // PNR match (+60 points)
     if (intent.pnr) {
       if (ocrLower.includes(intent.pnr) || tagsLower.some((t) => t.includes(intent.pnr!))) {
         score += 60;
@@ -280,7 +375,7 @@ export class ContextRetrievalService {
       }
     }
 
-    // Amount range match
+    // Amount range match (+60 points)
     if (intent.minAmount !== undefined || intent.maxAmount !== undefined) {
       const parsedAmts = item.amounts.map((a) => parseFloat(a)).filter((n) => !isNaN(n));
       const inRange =
@@ -295,12 +390,7 @@ export class ContextRetrievalService {
         score += 60;
         reasons.push('Amount in requested range');
       } else if (parsedAmts.length > 0) {
-        // Disqualify screenshot that strictly violates the requested amount criteria
-        return {
-          ...item,
-          score: 0,
-          matchReasons: [],
-        };
+        return { ...item, score: 0, matchReasons: [] };
       }
     }
 
@@ -312,8 +402,7 @@ export class ContextRetrievalService {
       }
     }
     if (ocrMatches > 0) {
-      const ocrPoints = Math.min(30, ocrMatches * 10);
-      score += ocrPoints;
+      score += Math.min(30, ocrMatches * 10);
       reasons.push(`OCR keyword matches (${ocrMatches})`);
     }
 
@@ -326,8 +415,7 @@ export class ContextRetrievalService {
         }
       }
       if (summaryMatches > 0) {
-        const sumPoints = Math.min(25, summaryMatches * 12);
-        score += sumPoints;
+        score += Math.min(25, summaryMatches * 12);
         reasons.push(`Vision summary matches (${summaryMatches})`);
       }
     }
@@ -354,16 +442,9 @@ export class ContextRetrievalService {
       }
     }
 
-    return {
-      ...item,
-      score,
-      matchReasons: reasons,
-    };
+    return { ...item, score, matchReasons: reasons };
   }
 
-  /**
-   * In-Memory Fallback when SQLite database is offline or in mock test environment.
-   */
   private retrieveFromMemory(
     intent: ParsedQueryIntent,
     folderId?: string
@@ -408,9 +489,179 @@ export class ContextRetrievalService {
 
     const scored = items.map((item) => this.scoreCandidate(item, intent));
     const filtered = folderId ? scored : scored.filter((s) => s.score > 0);
-
     filtered.sort((a, b) => b.score - a.score);
-    return filtered.slice(0, 20);
+    return filtered;
+  }
+
+  // ===========================================================================
+  // 2. Memory Timeline Event Retrieval (Top 5)
+  // ===========================================================================
+
+  private async fetchAndRankTimelineEvents(
+    query: string,
+    intent: ParsedQueryIntent
+  ): Promise<MemoryTimelineEvent[]> {
+    try {
+      const allEvents = await memoryTimelineService.getAllEvents();
+      if (!allEvents || allEvents.length === 0) return [];
+
+      const queryLower = query.toLowerCase();
+
+      const scored = allEvents.map((evt) => {
+        let score = 0;
+        const text = `${evt.title} ${evt.summary} ${evt.categoryName} ${evt.merchant || ''} ${evt.tags.join(' ')}`.toLowerCase();
+
+        // Exact merchant match
+        if (intent.merchant && (evt.merchant?.toLowerCase().includes(intent.merchant.toLowerCase()) || text.includes(intent.merchant.toLowerCase()))) {
+          score += 40;
+        }
+
+        // Keywords match
+        for (const kw of intent.keywords) {
+          if (text.includes(kw.toLowerCase())) score += 15;
+        }
+
+        // Period match
+        if (queryLower.includes('today') && evt.period === 'today') score += 30;
+        if (queryLower.includes('yesterday') && evt.period === 'yesterday') score += 30;
+        if (queryLower.includes('week') && (evt.period === 'this_week' || evt.period === 'today' || evt.period === 'yesterday')) score += 20;
+
+        return { evt, score };
+      });
+
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.evt.timestamp - a.evt.timestamp;
+      });
+
+      return scored.filter((s) => s.score > 0 || queryLower.includes('timeline')).map((s) => s.evt).slice(0, 5);
+    } catch {
+      return [];
+    }
+  }
+
+  // ===========================================================================
+  // 3. Daily & Weekly Digest Retrieval (Top 3)
+  // ===========================================================================
+
+  private async fetchAndRankDigests(
+    query: string,
+    intent: ParsedQueryIntent
+  ): Promise<DigestSummaryItem[]> {
+    const digests: DigestSummaryItem[] = [];
+    const queryLower = query.toLowerCase();
+
+    try {
+      // Check Today's Digest
+      const today = await dailyDigestService.getTodayDigest();
+      if (today && today.totalScreenshots > 0) {
+        let score = 10;
+        if (queryLower.includes('today') || queryLower.includes('summary')) score += 30;
+        if (intent.merchant && today.topMerchant?.toLowerCase().includes(intent.merchant.toLowerCase())) score += 20;
+        if (intent.domain === 'finance') score += 15;
+
+        digests.push({
+          type: 'daily',
+          key: today.date,
+          title: `Daily Digest (${today.dateFormatted})`,
+          summary: today.summary,
+          screenshotCount: today.totalScreenshots,
+          spendingTotal: today.spendingTotal,
+          topMerchants: today.topMerchant ? [today.topMerchant] : [],
+          score,
+        });
+      }
+
+      // Check This Week's Digest
+      const week = await digestAggregationService.getWeeklyDigest(0);
+      if (week && week.totalScreenshots > 0) {
+        let score = 5;
+        if (queryLower.includes('week') || queryLower.includes('weekly')) score += 35;
+        if (intent.domain === 'finance') score += 15;
+
+        digests.push({
+          type: 'weekly',
+          key: week.weekKey || 'current_week',
+          title: `Weekly Digest (${week.periodLabel})`,
+          summary: week.summary,
+          screenshotCount: week.totalScreenshots,
+          spendingTotal: week.spending?.totalAmount,
+          topMerchants: week.shopping?.topMerchants,
+          score,
+        });
+      }
+
+      // Sort by score
+      digests.sort((a, b) => b.score - a.score);
+      return digests.slice(0, 3);
+    } catch {
+      return [];
+    }
+  }
+
+  // ===========================================================================
+  // 4. Folder Context Retrieval (Top 2)
+  // ===========================================================================
+
+  private async fetchFolderContexts(
+    query: string,
+    intent: ParsedQueryIntent,
+    folderId?: string
+  ): Promise<FolderContextSummary[]> {
+    try {
+      const results: FolderContextSummary[] = [];
+
+      if (folderId && folderId !== 'root' && folderId !== 'all') {
+        const fc = await folderContextRepository.getFolderContext(folderId);
+        if (fc) {
+          results.push({
+            folderId: fc.FolderId,
+            folderName: folderId,
+            summary: fc.Summary,
+            entities: JSON.parse(fc.EntitiesJson || '{}'),
+            score: 50,
+          });
+        }
+      }
+
+      const allFolders = await folderContextRepository.getAllFolderContexts();
+      for (const f of allFolders) {
+        if (results.some((r) => r.folderId === f.FolderId)) continue;
+        const sumLower = f.Summary.toLowerCase();
+        let score = 0;
+        for (const kw of intent.keywords) {
+          if (sumLower.includes(kw.toLowerCase())) score += 10;
+        }
+        if (score > 0) {
+          results.push({
+            folderId: f.FolderId,
+            folderName: f.FolderId,
+            summary: f.Summary,
+            entities: JSON.parse(f.EntitiesJson || '{}'),
+            score,
+          });
+        }
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      return results.slice(0, 2);
+    } catch {
+      return [];
+    }
+  }
+
+  // ===========================================================================
+  // 5. Session Long-Term Summary Retrieval
+  // ===========================================================================
+
+  private async fetchSessionSummary(sessionId?: string): Promise<string | undefined> {
+    if (!sessionId) return undefined;
+    try {
+      const session = await chatSessionRepository.getSession(sessionId);
+      return session?.summary || undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
 

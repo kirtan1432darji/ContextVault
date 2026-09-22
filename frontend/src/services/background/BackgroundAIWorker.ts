@@ -1,14 +1,16 @@
 import { queueRepository } from '../../database/repositories/QueueRepository';
 import { screenshotRepository } from '../../database/repositories/screenshotRepository';
 import { pendingScreenshotRepository } from '../../database/repositories/pendingScreenshotRepository';
-import { ocrCacheRepository } from '../../database/repositories/ocrCacheRepository';
 import { visionRepository } from '../../database/repositories/VisionRepository';
 import { categoryRepository } from '../../database/repositories/categoryRepository';
 import { databaseService } from '../../database';
-import { ocrService } from '../ocrService';
 import { visionAIService } from '../visionAIService';
 import { smartFolderClassificationService } from '../SmartFolderClassificationService';
-import { memoryTimelineService } from '../memory/MemoryTimelineService';
+import {
+  memoryTimelineService,
+  dailyDigestService,
+  memoryInsightsService,
+} from '../memory';
 import { loggerService } from '../loggerService';
 import { useScreenshotStore } from '../../store/screenshot.store';
 import { useCategoryStore } from '../../store/category.store';
@@ -167,117 +169,47 @@ export class BackgroundAIWorker {
         throw new Error(`Screenshot path missing for ID ${item.screenshotId}`);
       }
 
-      // 3. Step: OCR Text Check (Cache-First)
+      // 3. Step: Vision AI Analysis (Qwen2.5-VL) - Cache-First
       this.emit({
         type: 'item_progress',
         item,
-        step: 'Checking OCR cache',
+        step: 'Running Local Vision AI inference (Qwen2.5-VL)',
         timestamp: new Date().toISOString(),
       });
 
       let ocrText: string | undefined = undefined;
 
-      try {
-        const ocrRows = await databaseService.executeQuery(
-          `SELECT extracted_text FROM ocr_cache WHERE screenshot_id = ?`,
-          [item.screenshotId]
-        );
-        if (ocrRows && ocrRows.length > 0 && ocrRows[0].extracted_text) {
-          ocrText = ocrRows[0].extracted_text;
-          loggerService.info('AIQueue', `Reused cached OCR for ${fileName}`);
-        }
-      } catch (ocrCheckErr) {
-        loggerService.warn('AIQueue', 'Error reading ocr_cache:', ocrCheckErr);
-      }
+      const visionResult = await visionAIService.analyzeScreenshot({
+        screenshotId: item.screenshotId,
+        filePath,
+        fileName,
+      });
 
-      // If not cached, perform ML Kit OCR extraction
-      if (!ocrText) {
-        this.emit({
-          type: 'item_progress',
-          item,
-          step: 'Extracting text via ML Kit OCR',
-          timestamp: new Date().toISOString(),
-        });
+      if (visionResult.isSuccess && visionResult.data) {
+        ocrText = visionResult.data.ocr_text;
+        loggerService.info('AIQueue', `Vision AI analysis successful for ${fileName}`);
 
-        const ocrStartTime = Date.now();
-        const ocrResult = await ocrService.extractText(item.screenshotId, filePath);
-
-        if (ocrResult.isSuccess && ocrResult.data) {
-          ocrText = ocrResult.data.rawText;
-          const ocrDuration = ocrResult.data.processingTimeMs || (Date.now() - ocrStartTime);
-
-          // Cache OCR result
-          await ocrCacheRepository.insertOCRCache({
-            id: ocrResult.data.id,
-            screenshotId: item.screenshotId,
-            extractedText: ocrText,
-            normalizedText: ocrResult.data.normalizedText,
-            processingTime: ocrDuration,
-            language: ocrResult.data.language,
-            ocrVersion: ocrResult.data.ocrVersion,
-            confidence: ocrResult.data.confidence,
-            blocksJson: JSON.stringify(ocrResult.data.blocks || []),
-            createdOn: ocrResult.data.processedAt,
-          });
-
-          // Update pending table if exists
-          if (pendingScreenshot) {
+        // Update pending table if exists
+        if (pendingScreenshot) {
+          try {
             await pendingScreenshotRepository.updateOCRResult(
               item.screenshotId,
               'Completed',
               ocrText,
-              ocrDuration
+              visionResult.data.processingTimeMs
             );
-          }
+          } catch {}
         }
+      } else {
+        const errMsg = visionResult.error || 'Vision AI analysis failed';
+        loggerService.error('AIQueue', `Vision AI failed for ${fileName}: ${errMsg}`);
+        if (visionResult.rawError === 'VISION_SERVER_OFFLINE' || errMsg.toLowerCase().includes('offline') || errMsg.toLowerCase().includes('unreachable') || errMsg.toLowerCase().includes('refused')) {
+          throw new Error(`Local Vision AI Server is offline: ${errMsg}`);
+        }
+        throw new Error(`Local Vision AI Server error: ${errMsg}`);
       }
 
-      // 4. Step: Vision AI Check (Cache-First)
-      this.emit({
-        type: 'item_progress',
-        item,
-        step: 'Checking Vision AI cache',
-        timestamp: new Date().toISOString(),
-      });
-
-      let visionCached = false;
-      try {
-        const cachedVision = await visionRepository.getVisionResult(item.screenshotId);
-        if (cachedVision) {
-          visionCached = true;
-          loggerService.info('AIQueue', `Reused cached Vision AI for ${fileName}`);
-        }
-      } catch (vErr) {
-        loggerService.warn('AIQueue', 'Error reading vision cache:', vErr);
-      }
-
-      // If not cached, query Local Vision AI Server (RTX 4050) if reachable
-      if (!visionCached) {
-        const ping = await visionAIService.pingVisionServer();
-        if (ping.online) {
-          this.emit({
-            type: 'item_progress',
-            item,
-            step: 'Running Local Vision AI inference (RTX 4050)',
-            timestamp: new Date().toISOString(),
-          });
-
-          const visionResult = await visionAIService.analyzeScreenshot({
-            screenshotId: item.screenshotId,
-            filePath,
-            fileName,
-            ocrText,
-          });
-
-          if (!visionResult.isSuccess) {
-            loggerService.warn('AIQueue', `Vision AI inference returned non-success: ${visionResult.error}`);
-          }
-        } else {
-          throw new Error(`Local Vision AI Server is offline: ${ping.error || ping.status || 'Connection failed'}`);
-        }
-      }
-
-      // 5. Step: Smart Folder 5-Tier Classification & Auto-Organize
+      // 4. Step: Smart Folder 5-Tier Classification & Auto-Organize
       this.emit({
         type: 'item_progress',
         item,
@@ -297,11 +229,13 @@ export class BackgroundAIWorker {
         deviceFolder: screenshot?.categoryName || pendingScreenshot?.deviceFolder,
       });
 
-      // Update Memory Timeline
+      // Update Memory Timeline, Daily Digest & Memory Insights
       try {
         await memoryTimelineService.addScreenshotToTimeline(updatedScreenshot);
-      } catch (timelineErr) {
-        loggerService.warn('AIQueue', 'Error updating memory timeline:', timelineErr);
+        await dailyDigestService.updateDailyDigest(updatedScreenshot.createdAt);
+        await memoryInsightsService.refreshMemoryInsights();
+      } catch (memErr) {
+        loggerService.warn('AIQueue', 'Error updating memory timeline/digests/insights:', memErr);
       }
 
       // 6. Step: Complete Queue Item in SQLite

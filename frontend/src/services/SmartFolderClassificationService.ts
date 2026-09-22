@@ -16,6 +16,11 @@ import {
   ClassificationRuleResult,
 } from './smartFolders/SmartFolderRules';
 import { SmartFolderTagExtractor } from './smartFolders/SmartFolderTagExtractor';
+import {
+  memoryTimelineService,
+  dailyDigestService,
+  memoryInsightsService,
+} from './memory';
 
 export type SmartFolderCategory =
   | 'Finance'
@@ -311,6 +316,15 @@ export class SmartFolderClassificationService {
     useScreenshotStore.getState().addOrUpdateScreenshot(screenshotModel);
     const allCategories = await categoryRepository.getAllCategories();
     useCategoryStore.getState().setCategories(allCategories);
+
+    // Update Memory Timeline, Daily Digest & Memory Insights
+    try {
+      await memoryTimelineService.addScreenshotToTimeline(screenshotModel);
+      await dailyDigestService.updateDailyDigest(screenshotModel.createdAt);
+      await memoryInsightsService.refreshMemoryInsights();
+    } catch (memErr) {
+      console.warn('[SmartFolderClassificationService] Error updating timeline/digests/insights:', memErr);
+    }
 
     return screenshotModel;
   }

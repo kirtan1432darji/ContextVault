@@ -7,12 +7,8 @@
 import { RetrievedScreenshotContext } from './ContextRetrievalService';
 import { ChatHistoryRecord } from '../../database/repositories/ChatHistoryRepository';
 
-export interface PromptBuildOptions {
-  maxContextScreenshots?: number;
-  maxOcrLengthPerItem?: number;
-  includeHistory?: boolean;
-  maxHistoryTurns?: number;
-}
+import { PromptBuildOptions } from './ContextPromptBuilderService';
+
 
 export class ContextPromptBuilder {
   /**

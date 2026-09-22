@@ -34,7 +34,14 @@ import { useAuthStore } from '../store/auth.store';
 import { useNotificationStore } from '../store/notification.store';
 import { FeatureLockCard, GuestUpgradeBottomSheet } from '../components';
 import { aiProcessingQueue, QueueStats, QueueItem } from '../services/background';
-import { dailyDigestService, DailyDigest } from '../services/memory';
+import {
+  dailyDigestService,
+  DailyDigest,
+  memoryTimelineService,
+  digestAggregationService,
+  MemoryTimelineEvent,
+  PeriodDigest,
+} from '../services/memory';
 
 export const DashboardScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -115,11 +122,19 @@ export const DashboardScreen: React.FC = () => {
   }, []);
 
   const [todayDigest, setTodayDigest] = useState<DailyDigest | null>(null);
+  const [recentMemoryEvents, setRecentMemoryEvents] = useState<MemoryTimelineEvent[]>([]);
+  const [weeklyDigest, setWeeklyDigest] = useState<PeriodDigest | null>(null);
 
   const loadTodayDigest = useCallback(async () => {
     try {
-      const digest = await dailyDigestService.getTodayDigest();
+      const [digest, events, week] = await Promise.all([
+        dailyDigestService.getTodayDigest(),
+        memoryTimelineService.getAllEvents(),
+        digestAggregationService.getWeeklyDigest(0),
+      ]);
       setTodayDigest(digest);
+      setRecentMemoryEvents(events.slice(0, 4));
+      setWeeklyDigest(week);
     } catch (err) {
       console.warn('[DashboardScreen] Failed to load today digest:', err);
     }
@@ -610,6 +625,120 @@ export const DashboardScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {/* 2.5 AI Memory Timeline Preview Card (Sprint P3-A) */}
+      <ModernCard style={styles.memoryTimelinePreviewCard}>
+        <View style={styles.memoryHeaderRow}>
+          <View style={styles.memoryHeaderLeft}>
+            <View style={[styles.memoryIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Icon name="sparkles" size={16} color={theme.colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.rowCenter}>
+                <Text style={[styles.memorySectionTitle, { color: theme.colors.textPrimary }]}>
+                  AI Memory Timeline
+                </Text>
+                <View style={[styles.aiPill, { backgroundColor: '#3B82F620', marginLeft: 8 }]}>
+                  <Text style={[styles.aiPillText, { color: '#3B82F6' }]}>Digests & Insights</Text>
+                </View>
+              </View>
+              <Text style={[styles.memorySectionSub, { color: theme.colors.textSecondary }]}>
+                {todayDigest && todayDigest.totalScreenshots > 0
+                  ? `${todayDigest.totalScreenshots} screenshots captured today`
+                  : 'Automatic daily chronological digests'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.viewTimelineBtn, { backgroundColor: `${theme.colors.primary}15` }]}
+            onPress={() => navigation.navigate('MemoryTimeline')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewTimelineBtnText, { color: theme.colors.primary }]}>View All</Text>
+            <Icon name="chevron-forward" size={14} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Today's AI Summary Card */}
+        {todayDigest && todayDigest.summary ? (
+          <View style={[styles.memoryDigestBox, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}>
+            <Text style={[styles.memoryDigestSummary, { color: theme.colors.textPrimary }]} numberOfLines={2}>
+              {todayDigest.summary}
+            </Text>
+            {todayDigest.highlights && todayDigest.highlights.length > 0 && (
+              <View style={styles.memoryHighlightBulletRow}>
+                <View style={styles.memoryBulletDot} />
+                <Text style={[styles.memoryHighlightText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                  {todayDigest.highlights[0]}
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {/* This Week Activity Strip */}
+        <View style={styles.thisWeekStrip}>
+          <View style={styles.thisWeekLeft}>
+            <Icon name="calendar-outline" size={13} color="#3B82F6" style={{ marginRight: 5 }} />
+            <Text style={[styles.thisWeekLabel, { color: theme.colors.textSecondary }]}>
+              This Week: <Text style={{ color: theme.colors.textPrimary, fontWeight: '700' }}>{weeklyDigest?.totalScreenshots || 0} captures</Text>
+            </Text>
+          </View>
+          {(weeklyDigest?.spending?.totalAmount || 0) > 0 && (
+            <View style={styles.weekSpendingBadge}>
+              <Text style={styles.weekSpendingText}>
+                ₹{Math.round(weeklyDigest!.spending.totalAmount).toLocaleString('en-IN')}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Recent Memory Events Preview */}
+        {recentMemoryEvents.length > 0 && (
+          <View style={styles.recentMemoryList}>
+            {recentMemoryEvents.slice(0, 3).map((evt) => (
+              <TouchableOpacity
+                key={evt.id}
+                onPress={() => navigation.navigate('ScreenshotDetail', { id: evt.screenshotId })}
+                style={[styles.recentMemoryItem, { borderBottomColor: theme.colors.border }]}
+                activeOpacity={0.7}
+              >
+                <View style={styles.recentMemoryLeft}>
+                  <ScreenshotImageThumbnail
+                    filePath={evt.filePath}
+                    thumbnailUri={evt.thumbnailUri}
+                    contentUri={evt.contentUri}
+                    style={styles.recentMemoryThumb}
+                    borderRadius={8}
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text numberOfLines={1} style={[styles.recentMemoryTitle, { color: theme.colors.textPrimary }]}>
+                      {evt.summary || evt.title}
+                    </Text>
+                    <Text style={[styles.recentMemoryTime, { color: theme.colors.textSecondary }]}>
+                      {evt.periodGroup} • {evt.timeStr}
+                    </Text>
+                  </View>
+                </View>
+                {evt.amount !== undefined && evt.amount > 0 && (
+                  <Text style={styles.recentMemoryAmount}>₹{Math.round(evt.amount).toLocaleString('en-IN')}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* Primary CTA Button */}
+        <TouchableOpacity
+          style={[styles.fullTimelineCTA, { backgroundColor: theme.colors.primary }]}
+          onPress={() => navigation.navigate('MemoryTimeline')}
+          activeOpacity={0.85}
+        >
+          <Icon name="time-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.fullTimelineCTAText}>Explore Full Memory Timeline</Text>
+        </TouchableOpacity>
+      </ModernCard>
+
       {/* 3. Automatic Screenshot Detection Engine Hero Card (Sprint RN-03) */}
       <ModernCard style={styles.heroEngineCard}>
         {/* Top Header: Title, Status Indicator, and Diagnostics button */}
@@ -799,26 +928,26 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 4. Sprint RN-04: Google ML Kit OCR Processing Engine Card */}
+      {/* 4. Sprint P2-C: Local Vision AI Engine Card */}
       <ModernCard style={styles.ocrStatsCard}>
         <View style={styles.ocrTitleRow}>
           <View style={styles.ocrTitleLeft}>
             <View style={[styles.ocrBadgeIcon, { backgroundColor: `${theme.colors.primary}18` }]}>
-              <Icon name="scan-outline" size={18} color={theme.colors.primary} />
+              <Icon name="eye-outline" size={18} color={theme.colors.primary} />
             </View>
             <View>
               <Text style={[styles.ocrSectionTitle, { color: theme.colors.textPrimary }]}>
-                Google ML Kit OCR Engine
+                Local Vision AI Engine
               </Text>
               <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
-                On-device privacy-first text extraction
+                Qwen2.5-VL-3B-Instruct • Local Server
               </Text>
             </View>
           </View>
           <View style={[styles.avgTimePill, { backgroundColor: `${theme.colors.accent}15` }]}>
             <Icon name="flash" size={12} color={theme.colors.accent} style={{ marginRight: 3 }} />
             <Text style={[styles.avgTimeText, { color: theme.colors.accent }]}>
-              {avgProcessingTimeMs > 0 ? `${avgProcessingTimeMs}ms avg` : 'Fast ~180ms'}
+              {avgProcessingTimeMs > 0 ? `${avgProcessingTimeMs}ms avg` : 'Qwen2.5-VL'}
             </Text>
           </View>
         </View>
@@ -829,7 +958,7 @@ export const DashboardScreen: React.FC = () => {
               <AnimatedCounter value={ocrCompletedToday} />
             </Text>
             <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
-              OCR Completed
+              AI Extracted
             </Text>
           </View>
 
@@ -838,7 +967,7 @@ export const DashboardScreen: React.FC = () => {
               <AnimatedCounter value={ocrPending} />
             </Text>
             <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
-              OCR Pending
+              AI Pending
             </Text>
           </View>
 
@@ -852,7 +981,7 @@ export const DashboardScreen: React.FC = () => {
               <AnimatedCounter value={ocrFailed} />
             </Text>
             <Text style={[styles.ocrMetricTitle, { color: theme.colors.textSecondary }]}>
-              OCR Failed
+              AI Failed
             </Text>
           </View>
         </View>
@@ -870,7 +999,7 @@ export const DashboardScreen: React.FC = () => {
                 AI Processing Queue
               </Text>
               <Text style={[styles.ocrSectionSubtitle, { color: theme.colors.textSecondary }]}>
-                Sequential OCR + Local Vision AI (RTX 4050)
+                Local Vision AI Pipeline (RTX 4050)
               </Text>
             </View>
           </View>
@@ -1124,38 +1253,61 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 6. Sprint RN-07: Context AI Chat / Feature Lock */}
-      {isGuest ? (
-        <FeatureLockCard
-          title="Context AI Chat Locked"
-          featureName="Context AI Chat"
-          description="Sign in to chat with screenshots inside folders, ask natural language questions, and extract entities."
-          onSignIn={() => navigation.navigate('Login')}
-          onCreateAccount={() => navigation.navigate('Register')}
-        />
-      ) : recentChats.length > 0 ? (
-        <ModernCard style={styles.chatResumeCard}>
-          <View style={styles.chatResumeHeader}>
-            <View style={styles.rowCenter}>
-              <View style={[styles.chatAvatarIcon, { backgroundColor: `${theme.colors.primary}20` }]}>
-                <Icon name="sparkles" size={16} color={theme.colors.primary} />
-              </View>
-              <View style={{ marginLeft: 10 }}>
-                <Text style={[styles.chatResumeHeading, { color: theme.colors.textPrimary }]}>
-                  Continue AI Conversation
-                </Text>
-                <Text style={[styles.chatResumeSubheading, { color: theme.colors.textSecondary }]}>
-                  Living folder intelligence
-                </Text>
-              </View>
+      {/* 6. Sprint RN-07 / Sprint P3-B: Context AI Chat Engine (Unlocked for All / Guest Mode Offline) */}
+      <ModernCard style={styles.chatResumeCard}>
+        <View style={styles.chatResumeHeader}>
+          <View style={styles.rowCenter}>
+            <View style={[styles.chatAvatarIcon, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Icon name="sparkles" size={16} color={theme.colors.primary} />
             </View>
-            <View style={[styles.chatActivePill, { backgroundColor: `${theme.colors.success}15` }]}>
-              <View style={[styles.livePulseDot, { backgroundColor: theme.colors.success, marginRight: 5 }]} />
-              <Text style={[styles.chatActiveText, { color: theme.colors.success }]}>Active</Text>
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={[styles.chatResumeHeading, { color: theme.colors.textPrimary }]}>
+                Ask ContextVault AI
+              </Text>
+              <Text style={[styles.chatResumeSubheading, { color: theme.colors.textSecondary }]}>
+                Conversational memory assistant over your screenshots
+              </Text>
             </View>
           </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
+            style={[styles.chatActivePill, { backgroundColor: `${theme.colors.primary}15` }]}
+          >
+            <Icon name="chatbubble-ellipses-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.chatActiveText, { color: theme.colors.primary }]}>Open Chat</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Primary / Most Recent Chat Target */}
+        {/* Quick Executable Prompt Chips */}
+        <View style={styles.quickPromptContainer}>
+          {[
+            { label: "Today's summary", icon: 'sunny-outline', query: "Summarize today's screenshots" },
+            { label: 'Spending this week', icon: 'card-outline', query: 'How much did I spend this week?' },
+            { label: 'Travel memories', icon: 'airplane-outline', query: 'Show my flight and travel tickets' },
+            { label: 'Shopping receipts', icon: 'cart-outline', query: 'Find my Amazon and shopping orders' },
+          ].map((prompt, idx) => (
+            <TouchableOpacity
+              key={idx}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('ContextChat', { initialQuery: prompt.query })}
+              style={[
+                styles.quickPromptChip,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <Icon name={prompt.icon as any} size={13} color={theme.colors.primary} style={{ marginRight: 5 }} />
+              <Text style={[styles.quickPromptText, { color: theme.colors.textPrimary }]}>
+                {prompt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Recent Conversations Resume Box (if active chats exist) */}
+        {recentChats.length > 0 && (
           <TouchableOpacity
             onPress={() =>
               navigation.navigate('ContextAIChat', {
@@ -1168,6 +1320,7 @@ export const DashboardScreen: React.FC = () => {
               {
                 backgroundColor: theme.colors.surfaceVariant,
                 borderColor: theme.colors.border,
+                marginTop: 12,
               },
             ]}
           >
@@ -1220,77 +1373,8 @@ export const DashboardScreen: React.FC = () => {
               </View>
             </View>
           </TouchableOpacity>
-
-          {/* Secondary recent chats if more than 1 */}
-          {recentChats.length > 1 && (
-            <View style={styles.otherChatsRow}>
-              <Text style={[styles.otherChatsLabel, { color: theme.colors.textSecondary }]}>
-                Also active:
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1, marginLeft: 8 }}>
-                {recentChats.slice(1).map((chat) => (
-                  <TouchableOpacity
-                    key={chat.folderId}
-                    onPress={() =>
-                      navigation.navigate('ContextAIChat', {
-                        categoryId: chat.folderId,
-                        categoryName: chat.folderName,
-                      })
-                    }
-                    style={[
-                      styles.miniChatChip,
-                      {
-                        backgroundColor: theme.colors.surfaceVariant,
-                        borderColor: theme.colors.border,
-                      },
-                    ]}
-                  >
-                    <Icon
-                      name="chatbubble-outline"
-                      size={12}
-                      color={chat.colorHex || theme.colors.primary}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text numberOfLines={1} style={[styles.miniChatChipText, { color: theme.colors.textPrimary }]}>
-                      {chat.folderName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </ModernCard>
-      ) : (
-        /* Promo / Quick Start Card when no conversation exists yet */
-        <ModernCard style={styles.chatPromoCard}>
-          <View style={styles.chatPromoLeft}>
-            <View style={[styles.chatAvatarIcon, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="sparkles" size={18} color={theme.colors.primary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.chatPromoTitle, { color: theme.colors.textPrimary }]}>
-                Chat with Context AI
-              </Text>
-              <Text style={[styles.chatPromoDesc, { color: theme.colors.textSecondary }]}>
-                Ask questions, find receipts, or summarize info across your smart screenshot folders.
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              const target = topFolders[0] || categories[0];
-              navigation.navigate('ContextAIChat', {
-                categoryId: target?.id,
-                categoryName: target?.name || 'All Screenshots',
-              });
-            }}
-            style={[styles.chatStartBtn, { backgroundColor: theme.colors.primary }]}
-          >
-            <Icon name="chatbubbles" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.chatStartBtnText}>Start AI Chat</Text>
-          </TouchableOpacity>
-        </ModernCard>
-      )}
+        )}
+      </ModernCard>
 
       {/* 7. Sprint RN-06: Recently Updated Contexts */}
       {recentlyUpdatedContexts.length > 0 && (
@@ -2470,6 +2554,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     maxWidth: 120,
   },
+  quickPromptContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  quickPromptChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  quickPromptText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
   chatPromoCard: {
     padding: 16,
     marginBottom: 16,
@@ -2662,5 +2765,150 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
+  },
+  // Memory Timeline Preview Card Styles (Sprint P3-A)
+  memoryTimelinePreviewCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  memoryHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  memoryHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  memoryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  memorySectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  memorySectionSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  viewTimelineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  viewTimelineBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 2,
+  },
+  memoryDigestBox: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  memoryDigestSummary: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  memoryHighlightBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  memoryBulletDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3B82F6',
+    marginRight: 6,
+  },
+  memoryHighlightText: {
+    fontSize: 11,
+    flex: 1,
+  },
+  thisWeekStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    marginBottom: 10,
+  },
+  thisWeekLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  thisWeekLabel: {
+    fontSize: 12,
+  },
+  weekSpendingBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  weekSpendingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  recentMemoryList: {
+    marginBottom: 12,
+  },
+  recentMemoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  recentMemoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  recentMemoryThumb: {
+    width: 40,
+    height: 40,
+  },
+  recentMemoryTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  recentMemoryTime: {
+    fontSize: 10,
+  },
+  recentMemoryAmount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#10B981',
+    marginLeft: 8,
+  },
+  fullTimelineCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  fullTimelineCTAText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

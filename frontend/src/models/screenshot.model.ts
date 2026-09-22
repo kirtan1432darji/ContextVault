@@ -2,6 +2,7 @@ import { TagModel } from './tag.model';
 import { ExtractedEntitiesDto } from './classification.model';
 
 export type OCRStatus = 'none' | 'pending' | 'processing' | 'completed' | 'failed';
+export type AnalysisStatus = 'none' | 'Pending' | 'Processing' | 'Completed' | 'Failed' | 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ScreenshotModel {
   id: string;
@@ -32,6 +33,8 @@ export interface ScreenshotModel {
   isSynced: boolean;
   ocrStatus: OCRStatus;
   ocrText?: string;
+  analysisStatus?: AnalysisStatus;
+  analysisProcessingTime?: number;
   tags: TagModel[];
   lastScannedAt?: string;
   isMock?: boolean;

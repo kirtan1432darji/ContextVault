@@ -2,7 +2,7 @@ import { DEFAULT_CATEGORIES } from '../models/category.model';
 import { VISION_CACHE_TABLE_SQL, VISION_CACHE_INDEXES_SQL } from './visionCacheMigration';
 
 export const DATABASE_NAME = 'ai_screenshot_organizer.db';
-export const DATABASE_VERSION = 7;
+export const DATABASE_VERSION = 9;
 
 export const SCHEMA_SQL = [
   // 1. Categories (Sprint RN-05 Dynamic Smart Folder Hierarchy)
@@ -72,6 +72,8 @@ export const SCHEMA_SQL = [
     is_synced INTEGER NOT NULL DEFAULT 0,
     ocr_status TEXT NOT NULL DEFAULT 'none',
     ocr_text TEXT,
+    analysis_status TEXT NOT NULL DEFAULT 'Pending',
+    analysis_processing_time INTEGER NOT NULL DEFAULT 0,
     last_scanned_at TEXT,
     is_mock INTEGER NOT NULL DEFAULT 0,
     is_deleted INTEGER NOT NULL DEFAULT 0,
@@ -206,6 +208,7 @@ export const SCHEMA_SQL = [
     confidence REAL NOT NULL DEFAULT 0.0,
     summary TEXT,
     source TEXT NOT NULL DEFAULT 'backend',
+    vision_version TEXT,
     cached_at TEXT NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_classification_cache_screenshot ON classification_cache(screenshot_id);`,
@@ -266,4 +269,77 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_analysis_queue_state ON analysis_queue(state);`,
   `CREATE INDEX IF NOT EXISTS idx_analysis_queue_priority ON analysis_queue(priority_order DESC, queued_at ASC);`,
   `CREATE INDEX IF NOT EXISTS idx_analysis_queue_screenshot ON analysis_queue(screenshot_id);`,
+
+  // 18. Memory Timeline (Sprint P3-A)
+  `CREATE TABLE IF NOT EXISTS memory_timeline (
+    id TEXT PRIMARY KEY,
+    event_date TEXT NOT NULL,
+    event_period TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    screenshot_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_memory_timeline_date ON memory_timeline(event_date);`,
+  `CREATE INDEX IF NOT EXISTS idx_memory_timeline_period ON memory_timeline(event_period);`,
+  `CREATE INDEX IF NOT EXISTS idx_memory_timeline_type ON memory_timeline(event_type);`,
+
+  // 19. Daily Digest (Sprint P3-A)
+  `CREATE TABLE IF NOT EXISTS daily_digest (
+    digest_date TEXT PRIMARY KEY,
+    screenshot_count INTEGER NOT NULL DEFAULT 0,
+    spending_total REAL NOT NULL DEFAULT 0.0,
+    merchant_summary_json TEXT NOT NULL DEFAULT '[]',
+    category_summary_json TEXT NOT NULL DEFAULT '{}',
+    ai_summary TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_daily_digest_date ON daily_digest(digest_date);`,
+
+  // 20. Weekly Digest (Sprint P3-A)
+  `CREATE TABLE IF NOT EXISTS weekly_digest (
+    week_key TEXT PRIMARY KEY,
+    screenshot_count INTEGER NOT NULL DEFAULT 0,
+    spending_total REAL NOT NULL DEFAULT 0.0,
+    ai_summary TEXT NOT NULL DEFAULT '',
+    top_categories_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_weekly_digest_key ON weekly_digest(week_key);`,
+
+  // 21. Monthly Digest (Sprint P3-A)
+  `CREATE TABLE IF NOT EXISTS monthly_digest (
+    month_key TEXT PRIMARY KEY,
+    screenshot_count INTEGER NOT NULL DEFAULT 0,
+    spending_total REAL NOT NULL DEFAULT 0.0,
+    ai_summary TEXT NOT NULL DEFAULT '',
+    insights_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_monthly_digest_key ON monthly_digest(month_key);`,
+
+  // 22. Chat Sessions (Sprint P3-B)
+  `CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_message_preview TEXT,
+    summary TEXT
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at);`,
+
+  // 23. Chat Messages (Sprint P3-B)
+  `CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    citations_json TEXT DEFAULT '[]',
+    screenshot_ids_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);`,
 ];

@@ -11,3 +11,7 @@ export * from './searchRepository';
 export * from './VisionRepository';
 export * from './ChatHistoryRepository';
 export * from './QueueRepository';
+export * from './MemoryTimelineRepository';
+export * from './DigestRepository';
+export * from './ChatSessionRepository';
+export * from './ChatMessageRepository';
