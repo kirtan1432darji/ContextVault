@@ -726,7 +726,7 @@ export const SettingsScreen: React.FC = () => {
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Icon name="sparkles" size={18} color="#8B5CF6" />
             <Text style={[styles.cardHeader, { color: theme.colors.textPrimary, marginLeft: 8, marginBottom: 0 }]}>
-              Local Vision AI Server
+              Local Vision AI Engine
             </Text>
           </View>
           <View
@@ -744,13 +744,13 @@ export const SettingsScreen: React.FC = () => {
                 color: visionPing?.online ? '#10B981' : theme.colors.textMuted,
               }}
             >
-              {visionPing?.online ? 'ONLINE' : 'LAN GATEWAY'}
+              {visionPing?.online ? 'CONNECTED' : 'LOCAL ENGINE'}
             </Text>
           </View>
         </View>
 
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Qwen2.5-VL-3B-Instruct running on RTX 4050 Laptop GPU (6 GB VRAM) via Ubuntu proxy gateway.
+          Qwen2.5-VL-3B-Instruct running on RTX 4050 Laptop GPU via local proxy gateway.
         </Text>
 
         {/* Vision Server Diagnostics Info */}
@@ -765,35 +765,32 @@ export const SettingsScreen: React.FC = () => {
           ]}
         >
           <View style={styles.diagRow}>
-            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Gateway URL</Text>
-            <Text
-              style={[styles.diagValue, { color: theme.colors.textPrimary, fontSize: 11 }]}
-              numberOfLines={1}
-            >
-              {BackendConnectionManager.getApiUrl()}/vision
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Model</Text>
+            <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
+              {modelInfo?.model || visionPing?.model || 'Qwen2.5-VL-3B-Instruct'}
             </Text>
           </View>
           <View style={styles.diagRow}>
-            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Status</Text>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Backend</Text>
             <Text
               style={[
                 styles.diagValue,
                 { color: visionPing?.online ? '#10B981' : theme.colors.textSecondary },
               ]}
             >
-              {visionPing ? (visionPing.online ? 'Online (Healthy)' : visionPing.error || 'Offline') : 'Not Checked'}
+              {visionPing?.online ? 'Connected' : 'Disconnected'}
             </Text>
           </View>
           <View style={styles.diagRow}>
-            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Model</Text>
+            <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Version</Text>
             <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
-              {visionPing?.model || 'Qwen2.5-VL-3B-Instruct'}
+              {modelInfo?.version || '1.0.0'}
             </Text>
           </View>
           <View style={styles.diagRow}>
             <Text style={[styles.diagLabel, { color: theme.colors.textSecondary }]}>Hardware</Text>
             <Text style={[styles.diagValue, { color: theme.colors.textPrimary }]}>
-              {visionPing?.gpu || 'NVIDIA RTX 4050 (6 GB)'}
+              {visionPing?.gpu || modelInfo?.gpu || 'NVIDIA RTX 4050 (6 GB)'}
             </Text>
           </View>
           {visionPing?.latencyMs !== undefined && (

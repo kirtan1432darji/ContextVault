@@ -53,12 +53,16 @@ export interface VisionServerHealth {
 }
 
 export interface VisionModelInfo {
-  modelName: string;
+  modelName?: string;
+  model?: string;
+  version?: string;
+  gpu?: string;
   huggingFaceId?: string;
   precision?: string;
   device?: string;
   vramUsage?: string;
   maxResolution?: number;
+  [key: string]: any;
 }
 
 export interface VisionApiKeyEntry {

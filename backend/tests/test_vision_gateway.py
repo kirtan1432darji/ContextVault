@@ -95,17 +95,13 @@ async def test_check_health_online(svc: VisionGatewayService) -> None:
     health_json = {"status": "healthy", "model": "Qwen2.5-VL-3B-Instruct"}
     transport = _mock_transport(200, health_json)
 
-    with patch("httpx.AsyncClient", lambda **kw: httpx.AsyncClient(transport=transport, **{k: v for k, v in kw.items() if k != "transport"})):
-        # Patch AsyncClient to use our mock transport
-        original_init = httpx.AsyncClient.__init__
+    class _PatchedClient(httpx.AsyncClient):
+        def __init__(self, **kwargs: Any) -> None:
+            kwargs.pop("transport", None)
+            super().__init__(transport=transport, **kwargs)
 
-        class _PatchedClient(httpx.AsyncClient):
-            def __init__(self, **kwargs: Any) -> None:
-                kwargs.pop("transport", None)
-                super().__init__(transport=transport, **kwargs)
-
-        with patch("app.services.vision_gateway_service.httpx.AsyncClient", _PatchedClient):
-            result = await svc.check_health()
+    with patch("app.services.vision_gateway_service.httpx.AsyncClient", _PatchedClient):
+        result = await svc.check_health()
 
     assert result["status"] == "healthy"
     assert result["online"] is True
