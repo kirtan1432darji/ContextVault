@@ -249,7 +249,7 @@ export const SettingsScreen: React.FC = () => {
   const handleClearCache = () => {
     Alert.alert(
       'Purge App Cache',
-      'This will clear OCR text caches, search history, and optimize the local database. Screenshots and folders are completely preserved.',
+      'This will clear Vision AI text caches, search history, and optimize the local database. Screenshots and folders are completely preserved.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -910,7 +910,7 @@ export const SettingsScreen: React.FC = () => {
                 Storage & Data Management
               </Text>
               <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
-                Database size, OCR cache & memory breakdown
+                Database size, Vision AI cache & memory breakdown
               </Text>
             </View>
           </View>
@@ -1068,7 +1068,7 @@ export const SettingsScreen: React.FC = () => {
           Local Backup &amp; Restore
         </Text>
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Create full offline JSON backups of your SQLite database, folder hierarchies, extracted OCR cache, and AI chat logs.
+          Create full offline JSON backups of your SQLite database, folder hierarchies, extracted Vision AI cache, and AI chat logs.
         </Text>
 
         <View style={styles.apiBtnRow}>

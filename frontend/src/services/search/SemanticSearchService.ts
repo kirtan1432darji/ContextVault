@@ -479,7 +479,7 @@ export class SemanticSearchService {
       const params: any[] = [];
 
       if (qLower) {
-        // Collect matching IDs from classification_cache
+        // Collect matching IDs from classification_cache, memory_timeline, and daily_digest
         let cacheIds: string[] = [];
         try {
           const cacheRows = await databaseService.executeQuery(
@@ -488,6 +488,54 @@ export class SemanticSearchService {
             [wildcard, wildcard, wildcard]
           );
           cacheIds = cacheRows.map((r: any) => r.screenshot_id).filter(Boolean);
+        } catch {}
+
+        try {
+          const timelineRows = await databaseService.executeQuery(
+            `SELECT screenshot_ids_json FROM memory_timeline 
+             WHERE LOWER(summary) LIKE ? OR LOWER(event_type) LIKE ?`,
+            [wildcard, wildcard]
+          );
+          for (const row of timelineRows) {
+            if (row.screenshot_ids_json) {
+              try {
+                const ids = JSON.parse(row.screenshot_ids_json);
+                if (Array.isArray(ids)) {
+                  ids.forEach((id) => {
+                    if (id && !cacheIds.includes(id)) cacheIds.push(id);
+                  });
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+
+        try {
+          const digestRows = await databaseService.executeQuery(
+            `SELECT digest_date FROM daily_digest 
+             WHERE LOWER(ai_summary) LIKE ? OR LOWER(merchant_summary_json) LIKE ? OR LOWER(category_summary_json) LIKE ?`,
+            [wildcard, wildcard, wildcard]
+          );
+          for (const row of digestRows) {
+            if (row.digest_date) {
+              const dtTimelineRows = await databaseService.executeQuery(
+                `SELECT screenshot_ids_json FROM memory_timeline WHERE event_date = ?`,
+                [row.digest_date]
+              );
+              for (const tr of dtTimelineRows) {
+                if (tr.screenshot_ids_json) {
+                  try {
+                    const ids = JSON.parse(tr.screenshot_ids_json);
+                    if (Array.isArray(ids)) {
+                      ids.forEach((id) => {
+                        if (id && !cacheIds.includes(id)) cacheIds.push(id);
+                      });
+                    }
+                  } catch {}
+                }
+              }
+            }
+          }
         } catch {}
 
         const textMatches = [

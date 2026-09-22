@@ -38,7 +38,14 @@ interface ScannerState {
   lastScreenshot: DetectedScreenshotMetadata | null;
   permissionStatus: StoragePermissionStatus;
 
-  // Sprint RN-04 OCR Pipeline State
+  // Sprint P2-C Vision AI State
+  analysisCompletedToday: number;
+  analysisPending: number;
+  analysisFailed: number;
+  avgAnalysisTimeMs: number;
+  lastAnalysisResult: any | null;
+
+  // Legacy OCR Pipeline State for backward-compatibility
   ocrCompletedToday: number;
   ocrPending: number;
   ocrFailed: number;
@@ -65,11 +72,18 @@ interface ScannerState {
   retryFailed: () => Promise<void>;
   retryFailedOCR: () => Promise<void>;
   retrySingleOCR: (id: string) => Promise<void>;
+  retryFailedAnalysis: () => Promise<void>;
   simulateScreenshot: (name?: string) => Promise<void>;
 
   // Internal state setters
   setIsListening: (isListening: boolean) => void;
   setCounts: (counts: { scannedToday: number; pendingProcessing: number }) => void;
+  setAnalysisMetrics: (metrics: {
+    analysisCompletedToday: number;
+    analysisPending: number;
+    analysisFailed: number;
+    avgAnalysisTimeMs: number;
+  }) => void;
   setOCRMetrics: (metrics: {
     ocrCompletedToday: number;
     ocrPending: number;
@@ -77,6 +91,7 @@ interface ScannerState {
     avgProcessingTimeMs: number;
   }) => void;
   setCurrentProcessingItem: (item: any | null) => void;
+  setLastAnalysisResult: (result: any | null) => void;
   setLastOCRResult: (result: LastOCRResultSummary | null) => void;
   setLastScreenshot: (screenshot: DetectedScreenshotMetadata | null) => void;
   updateItemStatus: (id: string, status: 'Pending' | 'Processing' | 'Completed' | 'Failed') => void;
@@ -97,7 +112,14 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   lastScreenshot: null,
   permissionStatus: 'unavailable',
 
-  // RN-04 OCR State
+  // Vision AI & Analysis State
+  analysisCompletedToday: 0,
+  analysisPending: 0,
+  analysisFailed: 0,
+  avgAnalysisTimeMs: 0,
+  lastAnalysisResult: null,
+
+  // RN-04 Legacy OCR State (aliased to Vision analysis)
   ocrCompletedToday: 0,
   ocrPending: 0,
   ocrFailed: 0,
@@ -115,8 +137,7 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
 
   startScanner: async () => {
     const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
-    const started = await screenshotListenerService.start();
-    return started;
+    return await screenshotListenerService.start();
   },
 
   stopScanner: async () => {
@@ -125,17 +146,19 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   },
 
   processScreenshot: async (event: any) => {
-    const { screenshotListenerService } = await import('../services/ScreenshotListenerService');
-    await screenshotListenerService.handleDetectedScreenshot(event);
+    const { screenshotScannerService } = await import('../services/screenshotScannerService');
+    await screenshotScannerService.processScreenshotAsset(event);
   },
 
   checkPermissions: async () => {
+    const { permissionService } = await import('../services/permissionService');
     const status = await permissionService.checkStoragePermission();
     set({ permissionStatus: status });
     return status;
   },
 
   requestPermissions: async () => {
+    const { permissionService } = await import('../services/permissionService');
     const granted = await permissionService.requestStoragePermission();
     const status = await permissionService.checkStoragePermission();
     set({ permissionStatus: status });
@@ -148,18 +171,23 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   },
 
   retryFailed: async () => {
-    const { ocrQueueService } = await import('../services/OCRQueueService');
-    await ocrQueueService.retryAllFailed();
+    const { aiProcessingQueue } = await import('../services/background');
+    await aiProcessingQueue.retryFailed();
   },
 
   retryFailedOCR: async () => {
-    const { ocrQueueService } = await import('../services/OCRQueueService');
-    await ocrQueueService.retryAllFailed();
+    const { aiProcessingQueue } = await import('../services/background');
+    await aiProcessingQueue.retryFailed();
+  },
+
+  retryFailedAnalysis: async () => {
+    const { aiProcessingQueue } = await import('../services/background');
+    await aiProcessingQueue.retryFailed();
   },
 
   retrySingleOCR: async (id: string) => {
-    const { ocrQueueService } = await import('../services/OCRQueueService');
-    await ocrQueueService.retrySingle(id);
+    const { aiProcessingQueue } = await import('../services/background');
+    await aiProcessingQueue.retryItem(id);
   },
 
   simulateScreenshot: async (name?: string) => {
@@ -170,11 +198,29 @@ export const useScannerStore = create<ScannerState>((set, get) => ({
   setIsListening: (isListening: boolean) => set({ isListening }),
 
   setCounts: ({ scannedToday, pendingProcessing }) =>
-    set({ scannedToday, pendingProcessing }),
+    set({ scannedToday, pendingProcessing, analysisPending: pendingProcessing, ocrPending: pendingProcessing }),
 
-  setOCRMetrics: (metrics) => set({ ...metrics }),
+  setAnalysisMetrics: (metrics) =>
+    set({
+      ...metrics,
+      ocrCompletedToday: metrics.analysisCompletedToday,
+      ocrPending: metrics.analysisPending,
+      ocrFailed: metrics.analysisFailed,
+      avgProcessingTimeMs: metrics.avgAnalysisTimeMs,
+    }),
+
+  setOCRMetrics: (metrics) =>
+    set({
+      ...metrics,
+      analysisCompletedToday: metrics.ocrCompletedToday,
+      analysisPending: metrics.ocrPending,
+      analysisFailed: metrics.ocrFailed,
+      avgAnalysisTimeMs: metrics.avgProcessingTimeMs,
+    }),
 
   setCurrentProcessingItem: (currentProcessingItem) => set({ currentProcessingItem }),
+
+  setLastAnalysisResult: (lastAnalysisResult) => set({ lastAnalysisResult }),
 
   setLastOCRResult: (lastOCRResult) => set({ lastOCRResult }),
 

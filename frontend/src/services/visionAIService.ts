@@ -5,22 +5,41 @@ import { visionImagePreprocessor } from '../vision/VisionImagePreprocessor';
 import { visionRepository } from '../database/repositories/VisionRepository';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { categoryRepository } from '../database/repositories/categoryRepository';
-import { smartFolderService } from './SmartFolderService';
 import { smartFolderClassificationService } from './SmartFolderClassificationService';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
+import { databaseService } from '../database';
 import {
   VisionStructuredOutput,
   VisionServerHealth,
   VisionModelInfo,
 } from '../vision/types';
 
+export interface ScreenshotAnalysisResult extends VisionStructuredOutput {
+  title: string;
+  summary: string;
+  confidence: number;
+  screen_type: string;
+  category: string;
+  folder_hierarchy: string[];
+  merchant?: string;
+  amount?: number;
+  currency?: string;
+  payment_method?: string;
+  date?: string;
+  entities: Record<string, any>;
+  tags: string[];
+  ocr_text: string;
+  bullet_points: string[];
+  cached?: boolean;
+  processingTimeMs?: number;
+}
+
 export interface AnalyzeScreenshotParams {
   screenshotId: string;
   filePath: string;
   fileHash?: string;
   fileName?: string;
-  ocrText?: string;
   forceRefresh?: boolean;
   imageDimensions?: { width?: number; height?: number };
 }
@@ -32,6 +51,135 @@ export interface PingResult {
   model?: string;
   gpu?: string;
   error?: string;
+}
+
+/**
+ * Extracts and normalizes production-ready metadata from a raw Vision AI gateway response.
+ * Completely eliminates any frontend OCR parsing or fallback dependencies.
+ */
+export function extractMetadataFromVisionResponse(raw: any): ScreenshotAnalysisResult {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      title: 'Screenshot',
+      summary: 'Screenshot analyzed by Vision AI',
+      confidence: 0.95,
+      screen_type: 'general',
+      category: 'Other',
+      folder_hierarchy: ['Other'],
+      entities: {},
+      tags: ['screenshot'],
+      ocr_text: '',
+      bullet_points: [],
+    };
+  }
+
+  const extracted = raw.extracted_data || raw.scene || raw;
+  const title = String(raw.title || extracted.title || raw.application || 'Screenshot');
+  const summary = String(raw.summary || extracted.summary || title || 'Screenshot analyzed by Vision AI');
+
+  // Confidence (0.0 to 1.0 or percentage)
+  let confidence = Number(raw.confidence ?? extracted.confidence ?? 0.95);
+  if (confidence > 1.0) {
+    confidence = Math.round(confidence) <= 100 ? confidence / 100 : 0.95;
+  }
+
+  const screen_type = String(
+    raw.screen_type || raw.screenType || extracted.screen_type || extracted.screenType || 'general'
+  ).toLowerCase();
+
+  const rawCat = raw.category || extracted.category || 'Other';
+  const category =
+    rawCat.charAt(0).toUpperCase() + rawCat.slice(1);
+
+  // Entities
+  const entities: Record<string, any> = {};
+  const rawEntities = raw.entities || extracted.entities;
+  if (rawEntities && typeof rawEntities === 'object') {
+    Object.assign(entities, rawEntities);
+  }
+
+  // Merchant
+  const merchant = raw.merchant || extracted.merchant || entities.merchant || raw.application || extracted.application || undefined;
+  if (merchant) {
+    entities.merchant = merchant;
+  }
+
+  // Amount
+  let amount: number | undefined = undefined;
+  if (raw.amount !== undefined && raw.amount !== null) {
+    amount = Number(raw.amount);
+  } else if (extracted.amount !== undefined && extracted.amount !== null) {
+    amount = Number(extracted.amount);
+  } else if (entities.amount !== undefined && entities.amount !== null) {
+    amount = Number(entities.amount);
+  }
+
+  // Currency
+  const currency = String(raw.currency || extracted.currency || entities.currency || 'INR');
+
+  // Payment method
+  const payment_method = raw.payment_method || extracted.payment_method || entities.payment_method || entities.paymentMethod || undefined;
+
+  // Date
+  const date = raw.date || extracted.date || entities.date || entities.transactionDate || new Date().toISOString();
+
+  // Folder hierarchy
+  let folder_hierarchy: string[] = [];
+  if (Array.isArray(raw.folder_hierarchy) && raw.folder_hierarchy.length > 0) {
+    folder_hierarchy = raw.folder_hierarchy;
+  } else if (Array.isArray(extracted.folder_hierarchy) && extracted.folder_hierarchy.length > 0) {
+    folder_hierarchy = extracted.folder_hierarchy;
+  } else {
+    folder_hierarchy = merchant && merchant.toLowerCase() !== category.toLowerCase()
+      ? [category, merchant]
+      : [category];
+  }
+
+  // Tags
+  let tags: string[] = [];
+  if (Array.isArray(raw.tags)) {
+    tags = raw.tags.map((t: any) => String(t).toLowerCase().trim()).filter(Boolean);
+  } else if (Array.isArray(extracted.tags)) {
+    tags = extracted.tags.map((t: any) => String(t).toLowerCase().trim()).filter(Boolean);
+  }
+  if (!tags.includes(category.toLowerCase())) {
+    tags.push(category.toLowerCase());
+  }
+
+  // Bullet points
+  const bullet_points: string[] = Array.isArray(raw.bullet_points)
+    ? raw.bullet_points.map((p: any) => String(p).trim()).filter(Boolean)
+    : Array.isArray(extracted.points)
+    ? extracted.points.map((p: any) => String(p).trim()).filter(Boolean)
+    : [];
+
+  // OCR Text extracted exclusively from Vision AI
+  let ocr_text = String(raw.ocr_text || extracted.ocr_text || raw.rawText || '').trim();
+  if (!ocr_text) {
+    const parts = [title, summary];
+    if (merchant) parts.push(`Merchant: ${merchant}`);
+    if (amount !== undefined) parts.push(`Amount: ${currency} ${amount}`);
+    parts.push(...bullet_points);
+    ocr_text = parts.filter(Boolean).join(' • ');
+  }
+
+  return {
+    title,
+    summary,
+    confidence,
+    screen_type,
+    category,
+    folder_hierarchy,
+    merchant,
+    amount,
+    currency,
+    payment_method,
+    date,
+    entities,
+    tags,
+    ocr_text,
+    bullet_points,
+  };
 }
 
 export class VisionAIService {
@@ -46,10 +194,10 @@ export class VisionAIService {
     try {
       const res = await axios.get<VisionServerHealth>(url, { timeout: 5000 });
       const latencyMs = Date.now() - startTime;
-      const isHealthy = res.data && res.data.status === 'healthy';
+      const isHealthy = res.data && (res.data.status === 'healthy' || (res.data as any).online || res.data.modelLoaded);
 
       return {
-        online: isHealthy,
+        online: Boolean(isHealthy),
         latencyMs,
         status: res.data.status || 'unknown',
         model: res.data.model,
@@ -84,21 +232,15 @@ export class VisionAIService {
   }
 
   /**
-   * Analyzes a single screenshot using the Local Vision AI Server on RTX 4050.
-   *
-   * Complete Pipeline:
-   * 1. SHA-256 cache check (never re-analyze duplicate images).
-   * 2. Quick 5s health check (aborts early with friendly message if offline).
-   * 3. Image preprocessing (longest edge 1024px, JPEG quality 85%, EXIF stripped).
-   * 4. Streaming upload to Ubuntu gateway: POST /api/vision/analyze
-   * 5. Parse structured JSON (category, confidence, summary, tags, entities).
-   * 6. Save metadata to SQLite (vision_cache & classification_cache).
-   * 7. Automatic Smart Folder update (category, cover, confidence, count, stores).
+   * Primary screenshot understanding engine.
+   * Uploads image to Vision AI, normalizes metadata, persists to SQLite,
+   * updates Smart Folder assignment, and returns ScreenshotAnalysisResult.
+   * Completely independent of Google ML Kit.
    */
   async analyzeScreenshot(
     params: AnalyzeScreenshotParams
-  ): Promise<Result<VisionStructuredOutput & { cached: boolean; processingTimeMs: number }>> {
-    const { screenshotId, filePath, fileHash, fileName, ocrText, forceRefresh } = params;
+  ): Promise<Result<ScreenshotAnalysisResult>> {
+    const { screenshotId, filePath, fileHash, fileName, forceRefresh } = params;
     const startTime = Date.now();
 
     if (!screenshotId || !filePath) {
@@ -106,13 +248,12 @@ export class VisionAIService {
     }
 
     try {
-      // 1. SHA-256 & SQLite Cache Check
+      // 1. Check SQLite vision_cache first (if not forceRefresh)
       if (!forceRefresh) {
-        // Check by SHA-256 hash first
         if (fileHash) {
           const cachedByHash = await visionRepository.getByFileHash(fileHash);
           if (cachedByHash) {
-            const structured = this.mapCacheRecordToStructured(cachedByHash);
+            const structured = this.mapCacheRecordToAnalysisResult(cachedByHash);
             return Result.success({
               ...structured,
               cached: true,
@@ -121,10 +262,9 @@ export class VisionAIService {
           }
         }
 
-        // Check by screenshotId
         const cachedById = await visionRepository.getVisionResult(screenshotId);
         if (cachedById) {
-          const structured = this.mapCacheRecordToStructured(cachedById);
+          const structured = this.mapCacheRecordToAnalysisResult(cachedById);
           return Result.success({
             ...structured,
             cached: true,
@@ -133,7 +273,7 @@ export class VisionAIService {
         }
       }
 
-      // 2. Health check before upload (5-second timeout)
+      // 2. Health check before upload
       const health = await this.pingVisionServer();
       if (!health.online) {
         console.warn(`[VisionAIService] Vision server is offline: ${health.error}`);
@@ -172,99 +312,69 @@ export class VisionAIService {
         return Result.failure('Invalid Vision Response: Empty data returned', 'INVALID_RESPONSE');
       }
 
-      // 5. Parse and normalize structured JSON (handles standard and extracted_data formats)
-      const extractedData = raw.extracted_data || {};
-      const points: string[] = Array.isArray(extractedData.points) ? extractedData.points : [];
-      const title: string = extractedData.title || raw.title || '';
+      // 5. Normalize metadata using helper
+      const analysisResult = extractMetadataFromVisionResponse(raw);
+      const processingTimeMs = Date.now() - startTime;
+      analysisResult.cached = false;
+      analysisResult.processingTimeMs = processingTimeMs;
 
-      const entities: Record<string, any> =
-        typeof raw.entities === 'object' && raw.entities !== null ? { ...raw.entities } : {};
-
-      if (title) {
-        entities.title = title;
-      }
-      if (points.length > 0) {
-        entities.points = points;
-        for (const pt of points) {
-          if (typeof pt === 'string') {
-            const parts = pt.split(':');
-            if (parts.length >= 2) {
-              const key = parts[0].trim().toLowerCase();
-              const val = parts.slice(1).join(':').trim();
-              entities[key] = val;
-            }
-          }
-        }
-      }
-
-      // Infer category if not directly provided
-      let inferredCategory = raw.category;
-      if (!inferredCategory) {
-        const textToClassify = `${title} ${points.join(' ')}`.toLowerCase();
-        if (
-          textToClassify.includes('pay') ||
-          textToClassify.includes('upi') ||
-          textToClassify.includes('bank') ||
-          textToClassify.includes('₹') ||
-          textToClassify.includes('inr')
-        ) {
-          inferredCategory = 'Finance';
-        } else if (
-          textToClassify.includes('swiggy') ||
-          textToClassify.includes('zomato') ||
-          textToClassify.includes('food')
-        ) {
-          inferredCategory = 'Food Delivery';
-        } else if (
-          textToClassify.includes('amazon') ||
-          textToClassify.includes('flipkart') ||
-          textToClassify.includes('order')
-        ) {
-          inferredCategory = 'Shopping';
-        } else {
-          inferredCategory = 'Other';
-        }
-      }
-
-      const summary =
-        raw.summary ||
-        (points.length > 0
-          ? `${title ? `${title}: ` : ''}${points.join(' • ')}`
-          : title || 'Screenshot analyzed by Local Vision AI.');
-
-      const tags =
-        Array.isArray(raw.tags) && raw.tags.length > 0
-          ? raw.tags
-          : [
-              inferredCategory.toLowerCase(),
-              ...Object.keys(entities).filter((k) => k !== 'points' && k !== 'title'),
-            ];
-
-      const structured: VisionStructuredOutput = {
-        category: inferredCategory,
-        confidence: Number(raw.confidence) || 100,
-        summary,
-        tags,
-        entities,
-      };
-
-      // 6. Save to SQLite
+      // 6. Save to SQLite vision_cache
       await visionRepository.saveStructuredResult({
         screenshotId,
         fileHash,
-        structured,
+        structured: {
+          category: analysisResult.category,
+          confidence: Math.round(analysisResult.confidence * 100),
+          summary: analysisResult.summary,
+          tags: analysisResult.tags,
+          entities: analysisResult.entities,
+        },
         modelVersion: 'local:Qwen2.5-VL-3B-Instruct',
       });
 
-      // 7. Automatic Smart Folder Integration
-      await this.updateSmartFolderForScreenshot(screenshotId, structured, preprocessed.uri);
+      // 7. Save to SQLite classification_cache
+      try {
+        await databaseService.executeCommand(
+          `INSERT OR REPLACE INTO classification_cache 
+          (id, screenshot_id, category, subcategory, tags_json, entities_json, confidence, summary, source, vision_version, cached_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `cache_${screenshotId}`,
+            screenshotId,
+            analysisResult.category,
+            analysisResult.folder_hierarchy[1] || 'General',
+            JSON.stringify(analysisResult.tags),
+            JSON.stringify(analysisResult.entities),
+            analysisResult.confidence,
+            analysisResult.summary,
+            'vision_ai',
+            'local:Qwen2.5-VL-3B-Instruct',
+            new Date().toISOString(),
+          ]
+        );
+      } catch (cacheErr) {
+        console.warn('[VisionAIService] Error saving to classification_cache:', cacheErr);
+      }
 
-      const processingTimeMs = Date.now() - startTime;
-      return Result.success({
-        ...structured,
-        cached: false,
-        processingTimeMs,
-      });
+      // 8. Update screenshots table with Vision OCR text and analysis status
+      try {
+        await databaseService.executeCommand(
+          `UPDATE screenshots SET 
+            ocr_text = ?, 
+            analysis_status = 'Completed', 
+            analysis_processing_time = ?,
+            ocr_status = 'completed'
+           WHERE id = ?`,
+          [analysisResult.ocr_text, processingTimeMs, screenshotId]
+        );
+      } catch (dbErr) {
+        console.warn('[VisionAIService] Error updating screenshots table:', dbErr);
+      }
+
+      // 9. Automatic Smart Folder Integration
+      await this.updateSmartFolderForScreenshot(screenshotId, analysisResult, preprocessed.uri);
+
+      return Result.success(analysisResult);
     } catch (err: any) {
       console.error(`[VisionAIService] Analysis failed for ${screenshotId}:`, err);
       const friendlyMessage = this.mapVisionError(err);
@@ -277,11 +387,11 @@ export class VisionAIService {
    */
   async analyzeBatch(
     items: AnalyzeScreenshotParams[],
-    onProgress?: (current: number, total: number, result: VisionStructuredOutput | null) => void
-  ): Promise<{ successful: number; failed: number; results: (VisionStructuredOutput | null)[] }> {
+    onProgress?: (current: number, total: number, result: ScreenshotAnalysisResult | null) => void
+  ): Promise<{ successful: number; failed: number; results: (ScreenshotAnalysisResult | null)[] }> {
     let successful = 0;
     let failed = 0;
-    const results: (VisionStructuredOutput | null)[] = [];
+    const results: (ScreenshotAnalysisResult | null)[] = [];
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -301,82 +411,10 @@ export class VisionAIService {
     return { successful, failed, results };
   }
 
-  /**
-   * Retrieves or computes a 40-80 word summary of a screenshot.
-   */
-  async summarizeScreenshot(screenshotId: string, filePath?: string): Promise<string> {
-    const cached = await visionRepository.getVisionResult(screenshotId);
-    if (cached && cached.summary) {
-      return cached.summary;
-    }
-
-    if (filePath) {
-      const res = await this.analyzeScreenshot({ screenshotId, filePath });
-      if (res.isSuccess && res.data) {
-        return res.data.summary;
-      }
-    }
-
-    return 'No summary available.';
+  async getCacheStats(): Promise<{ cachedCount: number; lastCachedAt?: string }> {
+    return visionRepository.getCacheStats();
   }
 
-  /**
-   * Retrieves or computes category classification for a screenshot.
-   */
-  async classifyScreenshot(
-    screenshotId: string,
-    filePath?: string
-  ): Promise<{ category: string; confidence: number }> {
-    const cached = await visionRepository.getVisionResult(screenshotId);
-    if (cached) {
-      return {
-        category: cached.screen_type,
-        confidence: Math.round(cached.confidence * (cached.confidence <= 1 ? 100 : 1)),
-      };
-    }
-
-    if (filePath) {
-      const res = await this.analyzeScreenshot({ screenshotId, filePath });
-      if (res.isSuccess && res.data) {
-        return {
-          category: res.data.category,
-          confidence: res.data.confidence,
-        };
-      }
-    }
-
-    return { category: 'Other', confidence: 50 };
-  }
-
-  /**
-   * Retrieves or extracts structured entities from a screenshot.
-   */
-  async extractEntities(
-    screenshotId: string,
-    filePath?: string
-  ): Promise<Record<string, any>> {
-    const cached = await visionRepository.getVisionResult(screenshotId);
-    if (cached) {
-      try {
-        return JSON.parse(cached.detected_entities);
-      } catch {
-        return {};
-      }
-    }
-
-    if (filePath) {
-      const res = await this.analyzeScreenshot({ screenshotId, filePath });
-      if (res.isSuccess && res.data) {
-        return res.data.entities;
-      }
-    }
-
-    return {};
-  }
-
-  /**
-   * Clears the local SQLite vision cache.
-   */
   async clearVisionCache(): Promise<void> {
     await visionRepository.clearCache();
   }
@@ -386,7 +424,7 @@ export class VisionAIService {
    */
   private async updateSmartFolderForScreenshot(
     screenshotId: string,
-    structured: VisionStructuredOutput,
+    analysis: ScreenshotAnalysisResult,
     thumbnailPath?: string
   ): Promise<void> {
     try {
@@ -399,7 +437,7 @@ export class VisionAIService {
           localPath: existing.localPath,
           contentUri: existing.contentUri,
           thumbnailUri: thumbnailPath || existing.thumbnailUri,
-          ocrText: existing.ocrText,
+          ocrText: analysis.ocr_text,
           fileSize: existing.fileSize,
           forceRefresh: true,
         });
@@ -409,8 +447,8 @@ export class VisionAIService {
     }
   }
 
-  private mapCacheRecordToStructured(cached: any): VisionStructuredOutput {
-    let entities = {};
+  private mapCacheRecordToAnalysisResult(cached: any): ScreenshotAnalysisResult {
+    let entities: Record<string, any> = {};
     let tags: string[] = [];
 
     try {
@@ -421,14 +459,27 @@ export class VisionAIService {
       tags = JSON.parse(cached.detected_objects || '[]');
     } catch {}
 
+    const catName = cached.screen_type
+      ? cached.screen_type.charAt(0).toUpperCase() + cached.screen_type.slice(1)
+      : 'Other';
+
     return {
-      category: cached.screen_type
-        ? cached.screen_type.charAt(0).toUpperCase() + cached.screen_type.slice(1)
-        : 'Other',
-      confidence: Math.round(cached.confidence * (cached.confidence <= 1 ? 100 : 1)),
+      title: entities.title || catName,
       summary: cached.summary || '',
-      tags,
+      confidence: cached.confidence <= 1 ? cached.confidence : cached.confidence / 100,
+      screen_type: cached.screen_type || 'general',
+      category: catName,
+      folder_hierarchy: [catName],
+      merchant: entities.merchant || cached.application_name,
+      amount: entities.amount ? Number(entities.amount) : undefined,
+      currency: entities.currency || 'INR',
+      payment_method: entities.payment_method || entities.paymentMethod,
+      date: entities.date || cached.created_at,
       entities,
+      tags,
+      ocr_text: cached.summary || '',
+      bullet_points: [],
+      cached: true,
     };
   }
 
@@ -436,7 +487,6 @@ export class VisionAIService {
     if (!err) return 'Unable to analyze screenshot';
     const code = (err.code || '').toUpperCase();
     const msg = (err.message || '').toLowerCase();
-    const status = err.response?.status;
     const backendDetail = err.response?.data?.detail || err.response?.data?.message;
 
     if (backendDetail && typeof backendDetail === 'string') {
@@ -449,47 +499,12 @@ export class VisionAIService {
     if (code === 'ECONNREFUSED' || msg.includes('econnrefused')) {
       return 'Vision Server Offline';
     }
-    if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || msg.includes('timeout')) {
+
+    if (code === 'ECONNABORTED' || msg.includes('timeout')) {
       return 'Vision Server Timeout';
     }
-    if (status === 503) {
-      return 'Vision Server Offline';
-    }
-    if (status === 504) {
-      return 'Vision Server Timeout';
-    }
-    if (status === 502 || msg.includes('json') || msg.includes('parse')) {
-      return 'Invalid AI Response';
-    }
-    if (status === 500) {
-      return 'Vision Analysis Failed';
-    }
 
-    return 'Unable to analyze screenshot';
-  }
-
-  private getCategoryIcon(cat: string): string {
-    const c = cat.toLowerCase();
-    if (c.includes('finance') || c.includes('payment')) return 'card-outline';
-    if (c.includes('shop')) return 'cart-outline';
-    if (c.includes('food')) return 'fast-food-outline';
-    if (c.includes('travel')) return 'airplane-outline';
-    if (c.includes('chat')) return 'chatbubble-ellipses-outline';
-    if (c.includes('work') || c.includes('code')) return 'briefcase-outline';
-    if (c.includes('health')) return 'heart-outline';
-    return 'folder-outline';
-  }
-
-  private getCategoryColor(cat: string): string {
-    const c = cat.toLowerCase();
-    if (c.includes('finance') || c.includes('payment')) return '10B981';
-    if (c.includes('shop')) return 'F59E0B';
-    if (c.includes('food')) return 'EF4444';
-    if (c.includes('travel')) return '06B6D4';
-    if (c.includes('chat')) return 'EC4899';
-    if (c.includes('work') || c.includes('code')) return '6366F1';
-    if (c.includes('health')) return '14B8A6';
-    return '64748B';
+    return err.message || 'Vision Analysis Failed';
   }
 }
 

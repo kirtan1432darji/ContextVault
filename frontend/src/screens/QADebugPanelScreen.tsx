@@ -18,7 +18,7 @@ import { useAppTheme } from '../theme';
 import { ModernCard } from '../components/ModernCard';
 import { useScannerStore } from '../store/scanner.store';
 import { screenshotListenerService } from '../services/ScreenshotListenerService';
-import { ocrQueueService } from '../services/OCRQueueService';
+import { aiProcessingQueue } from '../services/background/AIProcessingQueue';
 import { contextSyncService } from '../services/ContextSyncService';
 import { loggerService, LogEntry, LogLevel, LogModule } from '../services/loggerService';
 import { apiClient } from '../api/apiClient';
@@ -43,7 +43,7 @@ export const QADebugPanelScreen: React.FC = () => {
   const [dbStats, setDbStats] = useState({
     screenshots: 0,
     categories: 0,
-    ocrRecords: 0,
+    visionRecords: 0,
     chatMessages: 0,
     syncQueuePending: 0,
   });
@@ -64,10 +64,10 @@ export const QADebugPanelScreen: React.FC = () => {
   const refreshMetrics = useCallback(async () => {
     try {
       // 1. Fetch DB row counts
-      const [scRows, catRows, ocrRows, chatRows, syncRows, perf, isDemo, crash] = await Promise.all([
+      const [scRows, catRows, visionRows, chatRows, syncRows, perf, isDemo, crash] = await Promise.all([
         databaseService.executeQuery('SELECT COUNT(*) as c FROM screenshots;'),
         databaseService.executeQuery('SELECT COUNT(*) as c FROM categories;'),
-        databaseService.executeQuery('SELECT COUNT(*) as c FROM ocr_cache;'),
+        databaseService.executeQuery('SELECT COUNT(*) as c FROM vision_cache;'),
         databaseService.executeQuery('SELECT COUNT(*) as c FROM chat_history;'),
         databaseService.executeQuery("SELECT COUNT(*) as c FROM sync_queue WHERE status = 'pending';"),
         performanceAuditService.getPerformanceReport(),
@@ -78,7 +78,7 @@ export const QADebugPanelScreen: React.FC = () => {
       setDbStats({
         screenshots: scRows[0]?.c || 0,
         categories: catRows[0]?.c || 0,
-        ocrRecords: ocrRows[0]?.c || 0,
+        visionRecords: visionRows[0]?.c || 0,
         chatMessages: chatRows[0]?.c || 0,
         syncQueuePending: syncRows[0]?.c || 0,
       });
@@ -129,21 +129,21 @@ export const QADebugPanelScreen: React.FC = () => {
     }
   };
 
-  const handleResumeOCR = async () => {
+  const handleResumeAI = async () => {
     try {
-      const count = await ocrQueueService.resumePendingOnStartup();
+      const count = await aiProcessingQueue.enqueueAllPending();
       await refreshMetrics();
-      Alert.alert('OCR Queue Resumed', `Enqueued ${count} pending/interrupted items for OCR processing.`);
+      Alert.alert('AI Queue Resumed', `Enqueued ${count} screenshots for Vision AI processing.`);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to resume OCR queue.');
+      Alert.alert('Error', err?.message || 'Failed to resume AI queue.');
     }
   };
 
   const handleRetryFailed = async () => {
     try {
-      await ocrQueueService.retryAllFailed();
+      const count = await aiProcessingQueue.retryFailed();
       await refreshMetrics();
-      Alert.alert('Retrying', 'All failed OCR items have been re-enqueued with exponential backoff.');
+      Alert.alert('Retrying', `Re-enqueued ${count} failed items for Vision AI processing.`);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to retry failed items.');
     }
@@ -274,7 +274,7 @@ export const QADebugPanelScreen: React.FC = () => {
               </Text>
             </View>
 
-            {/* OCR Queue */}
+            {/* Vision AI Queue */}
             <View style={styles.statusTile}>
               <View style={styles.tileHeader}>
                 <View
@@ -284,7 +284,7 @@ export const QADebugPanelScreen: React.FC = () => {
                   ]}
                 />
                 <Text style={[styles.tileTitle, { color: theme.colors.textPrimary }]}>
-                  OCR Queue
+                  Vision AI Queue
                 </Text>
               </View>
               <Text style={[styles.tileStatus, { color: currentItem ? '#3B82F6' : '#64748B' }]}>
@@ -395,11 +395,11 @@ export const QADebugPanelScreen: React.FC = () => {
             </View>
 
             <View style={styles.statusTile}>
-              <Text style={[styles.tileTitle, { color: theme.colors.textSecondary }]}>Avg OCR Latency</Text>
+              <Text style={[styles.tileTitle, { color: theme.colors.textSecondary }]}>Avg Vision AI Latency</Text>
               <Text style={[styles.tileStatus, { color: '#06B6D4' }]}>
-                {perfReport?.avgOCRProcessingTimeMs || 280} ms
+                {perfReport?.avgOCRProcessingTimeMs || 850} ms
               </Text>
-              <Text style={[styles.tileMeta, { color: theme.colors.textSecondary }]}>ML Kit on-device</Text>
+              <Text style={[styles.tileMeta, { color: theme.colors.textSecondary }]}>Qwen2.5-VL Server</Text>
             </View>
 
             <View style={styles.statusTile}>
@@ -542,9 +542,9 @@ export const QADebugPanelScreen: React.FC = () => {
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
-                {dbStats.ocrRecords}
+                {dbStats.visionRecords}
               </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>OCR Records</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Vision Records</Text>
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
@@ -602,22 +602,22 @@ export const QADebugPanelScreen: React.FC = () => {
 
             <TouchableOpacity
               style={[styles.simBtn, { backgroundColor: '#06B6D4' }]}
-              onPress={handleResumeOCR}
+              onPress={handleResumeAI}
               accessibilityRole="button"
-              accessibilityLabel="Resume Pending OCR Queue"
+              accessibilityLabel="Resume Pending AI Queue"
             >
               <Icon name="play-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.btnText}>Resume Pending OCR</Text>
+              <Text style={styles.btnText}>Resume Pending AI</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.simBtn, { backgroundColor: '#F59E0B' }]}
               onPress={handleRetryFailed}
               accessibilityRole="button"
-              accessibilityLabel="Retry Failed OCR Items"
+              accessibilityLabel="Retry Failed AI Items"
             >
               <Icon name="refresh-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.btnText}>Retry Failed OCR</Text>
+              <Text style={styles.btnText}>Retry Failed AI</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

@@ -82,7 +82,6 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         filePath: targetPath,
         fileHash: (screenshot as any).fileHash,
         fileName: screenshot.fileName,
-        ocrText: screenshot.ocrText || ocrRecord?.extractedText,
         forceRefresh: true,
       });
 

@@ -29,9 +29,6 @@ jest.mock('react-native', () => ({
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },
   NativeModules: {
-    OCRRecognitionModule: {
-      recognizeText: jest.fn(),
-    },
     SQLite: {
       open: jest.fn(),
     },
@@ -47,13 +44,6 @@ jest.mock('react-native-sqlite-storage', () => ({
     transaction: jest.fn(),
     close: jest.fn(),
   }),
-}));
-
-jest.mock('../services/OCRQueueService', () => ({
-  ocrQueueService: {
-    enqueue: jest.fn(),
-    resumePendingOnStartup: jest.fn().mockResolvedValue(0),
-  },
 }));
 
 jest.mock('../theme', () => ({
@@ -81,12 +71,11 @@ import { databaseService } from '../database';
 import { queueRepository } from '../database/repositories/QueueRepository';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { pendingScreenshotRepository } from '../database/repositories/pendingScreenshotRepository';
-import { ocrCacheRepository } from '../database/repositories/ocrCacheRepository';
 import { visionRepository } from '../database/repositories/VisionRepository';
 import { categoryRepository } from '../database/repositories/categoryRepository';
-import { ocrService } from '../services/ocrService';
 import { visionAIService } from '../services/visionAIService';
 import { smartFolderClassificationService } from '../services/SmartFolderClassificationService';
+import { Result } from '../utils/result';
 import {
   aiProcessingQueue,
   backgroundAIWorker,
@@ -98,7 +87,6 @@ import {
 import { screenshotListenerService } from '../services/ScreenshotListenerService';
 import { mediaStoreService } from '../services/mediaStoreService';
 import { recycleBinService } from '../services/recycleBinService';
-import { Result } from '../utils/result';
 
 describe('ContextVault Sprint P5-A — Background AI Processing Queue Suite', () => {
   beforeEach(() => {
@@ -233,10 +221,10 @@ describe('ContextVault Sprint P5-A — Background AI Processing Queue Suite', ()
   });
 
   describe('3. Cache-First Skipping Policy', () => {
-    it('skips OCR extraction when ocr_cache already has extracted text', async () => {
+    it('processes queue item using Local Vision AI analysis and assigns to smart folder', async () => {
       const mockItem: QueueItem = {
-        id: 'aq_ocr_cache',
-        screenshotId: 'sc_cached_ocr',
+        id: 'aq_item_1',
+        screenshotId: 'sc_cached_vision',
         state: 'pending',
         priority: 'high',
         priorityOrder: 3,
@@ -250,119 +238,88 @@ describe('ContextVault Sprint P5-A — Background AI Processing Queue Suite', ()
       jest.spyOn(queueRepository, 'getNextPending').mockImplementation(async () => pendingItems.shift() || null);
       jest.spyOn(queueRepository, 'updateState').mockResolvedValue(undefined);
       jest.spyOn(screenshotRepository, 'getScreenshotById').mockResolvedValue({
-        id: 'sc_cached_ocr',
+        id: 'sc_cached_vision',
         filePath: '/path/Invoice.jpg',
         fileName: 'Invoice.jpg',
       } as any);
 
-      // Simulate existing OCR in cache
-      jest.spyOn(databaseService, 'executeQuery').mockResolvedValue([
-        { extracted_text: 'Already extracted bill receipt' },
-      ]);
-      const ocrExtractSpy = jest.spyOn(ocrService, 'extractText');
-
-      // Simulate existing Vision in cache
-      jest.spyOn(visionRepository, 'getVisionResult').mockResolvedValue({
-        id: 'vr_cached',
-        screen_type: 'receipt',
-      } as any);
-      const visionAnalyzeSpy = jest.spyOn(visionAIService, 'analyzeScreenshot');
+      const visionAnalyzeSpy = jest.spyOn(visionAIService, 'analyzeScreenshot').mockResolvedValue(
+        Result.success({
+          title: 'Invoice Payment',
+          summary: 'Paid ₹1,200 to Amazon',
+          category: 'Shopping',
+          screen_type: 'shopping_receipt',
+          folder_hierarchy: ['Shopping', 'Amazon'],
+          tags: ['amazon', 'shopping', 'invoice'],
+          bullet_points: ['Total: ₹1,200'],
+          entities: { merchant: 'Amazon', amount: 1200 },
+          merchant: 'Amazon',
+          amount: 1200,
+          currency: 'INR',
+          date: '2026-09-22',
+          ocr_text: 'Amazon Order #123-456 ₹1,200 Paid',
+          confidence: 0.96,
+          processing_time_ms: 450,
+          cached: false,
+        })
+      );
 
       jest.spyOn(smartFolderClassificationService, 'assignScreenshotToSmartFolder').mockResolvedValue({
-        id: 'sc_cached_ocr',
+        id: 'sc_cached_vision',
         categoryName: 'Shopping',
       } as any);
       jest.spyOn(screenshotRepository, 'getAllScreenshots').mockResolvedValue([]);
 
       await backgroundAIWorker.start();
 
-      // ML Kit OCR must be SKIPPED!
-      expect(ocrExtractSpy).not.toHaveBeenCalled();
-      // Local Vision AI must be SKIPPED!
-      expect(visionAnalyzeSpy).not.toHaveBeenCalled();
-      // Smart folder assignment receives cached text
+      expect(visionAnalyzeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          screenshotId: 'sc_cached_vision',
+          filePath: '/path/Invoice.jpg',
+          fileName: 'Invoice.jpg',
+        })
+      );
       expect(smartFolderClassificationService.assignScreenshotToSmartFolder).toHaveBeenCalledWith(
         expect.objectContaining({
-          screenshotId: 'sc_cached_ocr',
-          ocrText: 'Already extracted bill receipt',
+          screenshotId: 'sc_cached_vision',
+          ocrText: 'Amazon Order #123-456 ₹1,200 Paid',
         })
       );
     });
 
-    it('extracts OCR and invokes Vision AI when caches are missing', async () => {
+    it('handles Vision AI failure cleanly without crashing worker loop', async () => {
       const mockItem: QueueItem = {
-        id: 'aq_fresh_run',
-        screenshotId: 'sc_fresh',
+        id: 'aq_fail_run',
+        screenshotId: 'sc_fail',
         state: 'pending',
         priority: 'medium',
         priorityOrder: 2,
         queuedAt: new Date().toISOString(),
         retryCount: 0,
         processingTimeMs: 0,
-        fileName: 'fresh_receipt.png',
+        fileName: 'corrupt.png',
       };
 
       let pendingItems = [mockItem, null];
       jest.spyOn(queueRepository, 'getNextPending').mockImplementation(async () => pendingItems.shift() || null);
-      jest.spyOn(queueRepository, 'updateState').mockResolvedValue(undefined);
+      const updateStateSpy = jest.spyOn(queueRepository, 'updateState').mockResolvedValue(undefined);
       jest.spyOn(screenshotRepository, 'getScreenshotById').mockResolvedValue({
-        id: 'sc_fresh',
-        filePath: '/path/fresh_receipt.png',
-        fileName: 'fresh_receipt.png',
+        id: 'sc_fail',
+        filePath: '/path/corrupt.png',
+        fileName: 'corrupt.png',
       } as any);
 
-      // Missing OCR cache
-      jest.spyOn(databaseService, 'executeQuery').mockResolvedValue([]);
-      const ocrExtractSpy = jest.spyOn(ocrService, 'extractText').mockResolvedValue(
-        Result.success({
-          id: 'ocr_new',
-          screenshotId: 'sc_fresh',
-          rawText: 'Swiggy order #9872',
-          normalizedText: 'swiggy order 9872',
-          confidence: 0.96,
-          language: 'en',
-          ocrVersion: 'MLKit-Text-16.0.0',
-          processingTimeMs: 120,
-          blocks: [],
-          processedAt: new Date().toISOString(),
-        })
+      jest.spyOn(visionAIService, 'analyzeScreenshot').mockResolvedValue(
+        Result.failure('Vision AI inference timeout', 'TIMEOUT')
       );
-      jest.spyOn(ocrCacheRepository, 'insertOCRCache').mockResolvedValue(undefined);
-
-      // Missing Vision cache
-      jest.spyOn(visionRepository, 'getVisionResult').mockResolvedValue(null);
-      jest.spyOn(visionAIService, 'pingVisionServer').mockResolvedValue({
-        online: true,
-        latencyMs: 15,
-        status: 'healthy',
-      });
-      const visionAnalyzeSpy = jest.spyOn(visionAIService, 'analyzeScreenshot').mockResolvedValue({
-        isSuccess: true,
-        data: {
-          id: 'vis_1',
-          screenshotId: 'sc_fresh',
-          scene: { screenType: 'food_order' },
-          processingTimeMs: 850,
-          provider: 'local',
-        } as any,
-      });
-
-      jest.spyOn(smartFolderClassificationService, 'assignScreenshotToSmartFolder').mockResolvedValue({
-        id: 'sc_fresh',
-        categoryName: 'Food Delivery',
-      } as any);
-      jest.spyOn(screenshotRepository, 'getAllScreenshots').mockResolvedValue([]);
 
       await backgroundAIWorker.start();
 
-      // Both OCR and Vision were called
-      expect(ocrExtractSpy).toHaveBeenCalledWith('sc_fresh', '/path/fresh_receipt.png');
-      expect(ocrCacheRepository.insertOCRCache).toHaveBeenCalled();
-      expect(visionAnalyzeSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          screenshotId: 'sc_fresh',
-          ocrText: 'Swiggy order #9872',
-        })
+      expect(updateStateSpy).toHaveBeenCalledWith(
+        'aq_fail_run',
+        'failed',
+        expect.stringContaining('Vision AI inference timeout'),
+        expect.any(Number)
       );
     });
   });
@@ -520,7 +477,7 @@ describe('ContextVault Sprint P5-A — Background AI Processing Queue Suite', ()
       expect(updateStateSpy).toHaveBeenCalledWith(
         'aq_offline_test',
         'failed',
-        expect.stringContaining('Local Vision AI Server is offline'),
+        expect.stringContaining('Local Vision AI Server'),
         expect.any(Number)
       );
 

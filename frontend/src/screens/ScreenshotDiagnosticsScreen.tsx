@@ -62,7 +62,7 @@ export const ScreenshotDiagnosticsScreen: React.FC<Props> = ({ navigation }) => 
 
   const [chatHistoryCount, setChatHistoryCount] = useState<number>(0);
   const [avgChatResponseTime, setAvgChatResponseTime] = useState<number>(0);
-  const [ocrCacheCount, setOcrCacheCount] = useState<number>(0);
+  const [classificationCacheCount, setClassificationCacheCount] = useState<number>(0);
   const [visionCacheCount, setVisionCacheCount] = useState<number>(0);
   const [searchAnalytics, setSearchAnalytics] = useState<{
     totalSearches: number;
@@ -107,13 +107,13 @@ export const ScreenshotDiagnosticsScreen: React.FC<Props> = ({ navigation }) => 
 
   const loadDiagnostics = useCallback(async () => {
     try {
-      const [count, stats, vStats, chatCount, avgTime, ocrRes, vcRes, analytics, savedSearches, qStats, mStats] = await Promise.all([
+      const [count, stats, vStats, chatCount, avgTime, classRes, vcRes, analytics, savedSearches, qStats, mStats] = await Promise.all([
         screenshotRepository.countScreenshots(),
         thumbnailService.getCacheStats(),
         visionRepository.getStats().catch(() => ({ totalCount: 0, todayCount: 0 })),
         chatHistoryRepository.getHistoryCount().catch(() => 0),
         chatHistoryRepository.getAverageResponseTime().catch(() => 0),
-        databaseService.executeQuery('SELECT COUNT(*) as cnt FROM ocr_cache').catch(() => [{ cnt: 0 }]),
+        databaseService.executeQuery('SELECT COUNT(*) as cnt FROM classification_cache').catch(() => [{ cnt: 0 }]),
         databaseService.executeQuery('SELECT COUNT(*) as cnt FROM vision_cache').catch(() => [{ cnt: 0 }]),
         searchAnalyticsService.getAnalytics().catch(() => ({
           totalSearches: 0,
@@ -148,7 +148,7 @@ export const ScreenshotDiagnosticsScreen: React.FC<Props> = ({ navigation }) => 
       setVisionStats(vStats);
       setChatHistoryCount(chatCount);
       setAvgChatResponseTime(avgTime);
-      setOcrCacheCount(ocrRes[0]?.cnt || 0);
+      setClassificationCacheCount(classRes[0]?.cnt || 0);
       setVisionCacheCount(vcRes[0]?.cnt || 0);
       setAiQueueStats(qStats);
       setIsAiQueuePaused(aiProcessingQueue.isPaused());
@@ -221,7 +221,7 @@ export const ScreenshotDiagnosticsScreen: React.FC<Props> = ({ navigation }) => 
     setActionInProgress('rebuild_context');
     try {
       await loadDiagnostics();
-      Alert.alert('Context Index Ready', 'Re-indexed SQLite OCR and Vision metadata cache for Context Chat.');
+      Alert.alert('Context Index Ready', 'Re-indexed SQLite Vision AI metadata cache for Context Chat.');
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to rebuild index');
     } finally {
@@ -779,10 +779,10 @@ export const ScreenshotDiagnosticsScreen: React.FC<Props> = ({ navigation }) => 
 
               <View style={styles.infoRow}>
                 <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>
-                  OCR Cache Count
+                  Classification Cache Count
                 </Text>
                 <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>
-                  {ocrCacheCount}
+                  {classificationCacheCount}
                 </Text>
               </View>
 

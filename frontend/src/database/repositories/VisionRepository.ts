@@ -239,6 +239,18 @@ export class VisionRepository {
   }
 
   /**
+   * Retrieves cache stats with last cached timestamp.
+   */
+  async getCacheStats(): Promise<{ cachedCount: number; lastCachedAt?: string }> {
+    const stats = await this.getStats();
+    const recent = await this.getAllVisionResults(1);
+    return {
+      cachedCount: stats.totalCount,
+      lastCachedAt: recent[0]?.processed_at,
+    };
+  }
+
+  /**
    * Helper for Context Chat: find cached analyses mentioning a keyword in summary or entities.
    */
   async findByKeyword(keyword: string): Promise<VisionCacheRecord[]> {

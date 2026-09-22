@@ -211,6 +211,9 @@ export class ScreenshotRepository {
     const folderId = screenshot.folderId || screenshot.categoryId;
     const mimeType = screenshot.mimeType || (screenshot.fileName?.endsWith('.jpg') || screenshot.fileName?.endsWith('.jpeg') ? 'image/jpeg' : 'image/png');
 
+    const analysisStatus = screenshot.analysisStatus || (screenshot.ocrStatus === 'completed' ? 'Completed' : screenshot.ocrStatus === 'processing' ? 'Processing' : screenshot.ocrStatus === 'failed' ? 'Failed' : 'Pending');
+    const analysisProcessingTime = screenshot.analysisProcessingTime || 0;
+
     const sql = `
       INSERT OR REPLACE INTO screenshots (
         id, device_asset_id, file_path, local_path, content_uri,
@@ -219,9 +222,10 @@ export class ScreenshotRepository {
         folder_id, category_name, subcategory, confidence,
         source_app, detected_app, keywords_json, is_auto_categorized,
         is_favorite, is_reviewed, is_synced, ocr_status,
-        ocr_text, last_scanned_at, is_mock, classification_source,
+        ocr_text, analysis_status, analysis_processing_time,
+        last_scanned_at, is_mock, classification_source,
         folder_path, is_deleted, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await databaseService.executeCommand(sql, [
@@ -252,6 +256,8 @@ export class ScreenshotRepository {
       screenshot.isSynced ? 1 : 0,
       screenshot.ocrStatus,
       screenshot.ocrText || null,
+      analysisStatus,
+      analysisProcessingTime,
       screenshot.lastScannedAt || null,
       screenshot.isMock ? 1 : 0,
       screenshot.classificationSource || 'local',
@@ -429,6 +435,8 @@ export class ScreenshotRepository {
       deletedAt: row.deleted_at || undefined,
       ocrStatus: row.ocr_status,
       ocrText: row.ocr_text,
+      analysisStatus: row.analysis_status || (row.ocr_status === 'completed' ? 'Completed' : row.ocr_status === 'processing' ? 'Processing' : row.ocr_status === 'failed' ? 'Failed' : 'Pending'),
+      analysisProcessingTime: row.analysis_processing_time || 0,
       lastScannedAt: row.last_scanned_at,
       classificationSource: row.classification_source || (row.is_synced ? 'backend' : 'local'),
       tags: keywords.slice(0, 5).map((kw) => ({

@@ -5,7 +5,6 @@ import { DetectedScreenshotEvent, PendingScreenshot } from '../models';
 import { pendingScreenshotRepository } from '../database/repositories/pendingScreenshotRepository';
 import { mediaObserverService } from './backgroundDetection/mediaObserver';
 import { permissionService } from './permissionService';
-import { ocrQueueService } from './OCRQueueService';
 import { useScannerStore } from '../store/scanner.store';
 import { FileUtils } from '../utils/fileUtils';
 import { loggerService } from './loggerService';
@@ -26,14 +25,14 @@ export class ScreenshotListenerService {
 
   /**
    * Initializes the listener service on app launch.
-   * Restores scanner state if previously enabled, resumes pending OCR queue,
+   * Restores scanner state if previously enabled, resumes pending AI queue,
    * and registers AppState listeners.
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    loggerService.info('Scanner', 'Initializing automatic detection engine & OCR queue...');
+    loggerService.info('Scanner', 'Initializing automatic detection engine & Vision AI queue...');
 
     // 1. Subscribe to AppState changes
     this.appStateSubscription = AppState.addEventListener(
@@ -47,9 +46,6 @@ export class ScreenshotListenerService {
     // 3. Ensure database schema is ready and load existing queue stats
     await databaseService.getDatabase();
     await this.refreshStoreCounts();
-
-    // 4. Resume any interrupted or pending OCR jobs from SQLite database
-    await ocrQueueService.resumePendingOnStartup();
 
     // 4b. Initialize Vision AI inference queue (Sprint V01)
     try {
@@ -280,26 +276,7 @@ export class ScreenshotListenerService {
 
       await this.refreshStoreCounts();
 
-      // 6. Dispatch to background OCRQueueService for sequential text recognition
-      ocrQueueService.enqueue({
-        id: pendingId,
-        deviceAssetId,
-        filePath,
-        localPath,
-        contentUri,
-        thumbnailUri,
-        fileName,
-        fileSize,
-        fileHash,
-        capturedAt,
-        width,
-        height,
-        deviceFolder,
-        mimeType,
-        retryCount: 0,
-      });
-
-      // 7. Dispatch to persistent Background AI Processing Queue (Sprint P5-A) with High priority
+      // 6. Dispatch to persistent Background AI Processing Queue (Sprint P5-A / Sprint P2-C) with High priority
       try {
         await aiProcessingQueue.enqueue(pendingId, 'high');
       } catch (aiErr) {
@@ -340,16 +317,22 @@ export class ScreenshotListenerService {
   }
 
   /**
-   * Refreshes store counts and OCR metrics.
+   * Refreshes store counts and AI processing metrics.
    */
   async refreshStoreCounts(): Promise<void> {
     try {
       const counts = await pendingScreenshotRepository.getCounts();
+      const stats = await aiProcessingQueue.getStats();
       useScannerStore.getState().setCounts({
         scannedToday: counts.today,
-        pendingProcessing: counts.pending + counts.processing,
+        pendingProcessing: stats.pending + stats.processing,
       });
-      await ocrQueueService.updateStoreCounts();
+      useScannerStore.getState().setAnalysisMetrics({
+        analysisCompletedToday: stats.completed,
+        analysisPending: stats.pending,
+        analysisFailed: stats.failed,
+        avgAnalysisTimeMs: stats.averageProcessingTimeMs,
+      });
     } catch (err) {
       loggerService.warn('Scanner', 'Could not refresh scanner store counts', err);
     }
