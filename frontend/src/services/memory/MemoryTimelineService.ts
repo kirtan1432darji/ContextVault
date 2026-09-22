@@ -1,4 +1,5 @@
 import { databaseService } from '../../database/database';
+import { memoryTimelineRepository } from '../../database/repositories/MemoryTimelineRepository';
 import { useScreenshotStore } from '../../store/screenshot.store';
 import { loggerService } from '../loggerService';
 import {
@@ -53,6 +54,73 @@ export class MemoryTimelineService {
   private lastRebuiltAt: string | null = null;
 
   /**
+   * Adaptive Merge Window rules (in milliseconds):
+   * - Payment / Banking → 5 minutes (300,000 ms)
+   * - WhatsApp / Chats → 10 minutes (600,000 ms)
+   * - Shopping checkout flow → 8 minutes (480,000 ms)
+   * - Travel booking flow → 15 minutes (900,000 ms)
+   * - Different categories → never merge (0 ms)
+   * - Other / Default → 5 minutes (300,000 ms)
+   */
+  public getMergeWindowMs(category: string): number {
+    const cat = (category || '').toLowerCase();
+    if (
+      cat.includes('finance') ||
+      cat.includes('bank') ||
+      cat.includes('bill') ||
+      cat.includes('payment') ||
+      cat.includes('upi')
+    ) {
+      return 5 * 60 * 1000;
+    }
+    if (
+      cat.includes('chat') ||
+      cat.includes('whatsapp') ||
+      cat.includes('message') ||
+      cat.includes('social') ||
+      cat.includes('comm')
+    ) {
+      return 10 * 60 * 1000;
+    }
+    if (
+      cat.includes('shop') ||
+      cat.includes('order') ||
+      cat.includes('food') ||
+      cat.includes('dining') ||
+      cat.includes('ecom')
+    ) {
+      return 8 * 60 * 1000;
+    }
+    if (
+      cat.includes('travel') ||
+      cat.includes('transit') ||
+      cat.includes('ticket') ||
+      cat.includes('flight') ||
+      cat.includes('hotel')
+    ) {
+      return 15 * 60 * 1000;
+    }
+    return 5 * 60 * 1000;
+  }
+
+  public getEventType(category: string): string {
+    const cat = (category || '').toLowerCase();
+    if (cat.includes('finance') || cat.includes('bank') || cat.includes('payment') || cat.includes('upi')) {
+      return 'payment';
+    }
+    if (cat.includes('chat') || cat.includes('whatsapp') || cat.includes('social') || cat.includes('message')) {
+      return 'chat';
+    }
+    if (cat.includes('shop') || cat.includes('order') || cat.includes('food') || cat.includes('dining')) {
+      return 'shopping';
+    }
+    if (cat.includes('travel') || cat.includes('transit') || cat.includes('flight')) {
+      return 'travel';
+    }
+    return 'general';
+  }
+
+  /**
    * Generates or retrieves the complete chronological timeline grouping.
    */
   async getTimeline(options?: {
@@ -78,6 +146,31 @@ export class MemoryTimelineService {
   }
 
   /**
+   * Retrieves timeline events for a specific period: 'today' | 'yesterday' | 'this_week' | 'earlier_this_month' | 'older'.
+   */
+  async getTimelineSection(period: TimelinePeriod): Promise<MemoryTimelineEvent[]> {
+    const grouping = await this.getTimeline();
+    switch (period) {
+      case 'today':
+        return grouping.today;
+      case 'yesterday':
+        return grouping.yesterday;
+      case 'this_week':
+      case 'last_7_days':
+        return grouping.thisWeek || grouping.last7Days;
+      case 'earlier_this_month':
+      case 'last_30_days':
+        return grouping.earlierThisMonth || grouping.last30Days;
+      case 'older':
+      case 'monthly':
+      case 'yearly':
+        return grouping.older || [];
+      default:
+        return grouping.allEvents;
+    }
+  }
+
+  /**
    * Retrieves all chronological timeline events sorted from newest to oldest.
    */
   async getAllEvents(forceRefresh = false): Promise<MemoryTimelineEvent[]> {
@@ -85,10 +178,10 @@ export class MemoryTimelineService {
       return this.cachedEvents;
     }
 
-    let events: MemoryTimelineEvent[] = [];
+    let rawEvents: MemoryTimelineEvent[] = [];
 
     try {
-      // 1. Fetch from SQLite joining screenshots with classification_cache and vision_cache
+      // 1. Fetch raw screenshots joining classification_cache and vision_cache
       const sql = `
         SELECT 
           s.id,
@@ -121,25 +214,83 @@ export class MemoryTimelineService {
       const rows = await databaseService.executeQuery(sql);
 
       if (rows && rows.length > 0) {
-        events = rows.map((r) => this.mapRowToTimelineEvent(r));
+        rawEvents = rows.map((r) => this.mapRowToTimelineEvent(r));
       }
     } catch (err) {
       loggerService.warn('Memory', 'SQLite query failed, falling back to in-memory store', err);
     }
 
     // 2. In-memory fallback if SQLite returned empty
-    if (events.length === 0) {
+    if (rawEvents.length === 0) {
       const storeScreenshots = useScreenshotStore.getState().screenshots.filter((s) => !s.isDeleted);
-      events = storeScreenshots.map((s) => this.mapScreenshotModelToEvent(s));
+      rawEvents = storeScreenshots.map((s) => this.mapScreenshotModelToEvent(s));
     }
 
     // Sort descending by timestamp
-    events.sort((a, b) => b.timestamp - a.timestamp);
+    rawEvents.sort((a, b) => b.timestamp - a.timestamp);
 
-    this.cachedEvents = events;
+    // 3. Apply Adaptive Merge Rules across raw events
+    const mergedEvents = this.mergeProximateEvents(rawEvents);
+
+    this.cachedEvents = mergedEvents;
     this.lastRebuiltAt = new Date().toISOString();
 
-    return events;
+    return mergedEvents;
+  }
+
+  /**
+   * Merges proximate screenshots based on category-specific adaptive windows:
+   * Payment (5m), Chats (10m), Shopping (8m), Travel (15m). Different categories never merge.
+   */
+  private mergeProximateEvents(events: MemoryTimelineEvent[]): MemoryTimelineEvent[] {
+    if (events.length <= 1) return events;
+
+    const merged: MemoryTimelineEvent[] = [];
+    const seenScreenshotIds = new Set<string>();
+
+    for (const evt of events) {
+      // Deduplicate screenshot IDs
+      if (seenScreenshotIds.has(evt.screenshotId)) {
+        continue;
+      }
+      seenScreenshotIds.add(evt.screenshotId);
+
+      // Check if this event can merge into the previous event
+      if (merged.length > 0) {
+        const last = merged[merged.length - 1];
+        const isSameCategory = last.category === evt.category;
+        const mergeWindow = this.getMergeWindowMs(last.category);
+        const timeDiff = Math.abs(last.timestamp - evt.timestamp);
+
+        if (isSameCategory && timeDiff <= mergeWindow) {
+          // Merge evt into last
+          if (!last.screenshotIds.includes(evt.screenshotId)) {
+            last.screenshotIds.push(evt.screenshotId);
+          }
+          last.screenshotCount = last.screenshotIds.length;
+          // Combine tags
+          for (const t of evt.tags) {
+            if (!last.tags.includes(t)) last.tags.push(t);
+          }
+          // Aggregate amounts if both have amounts in finance
+          if (evt.amount && last.amount) {
+            last.amount = Math.round((last.amount + evt.amount) * 100) / 100;
+          } else if (evt.amount && !last.amount) {
+            last.amount = evt.amount;
+          }
+          continue;
+        }
+      }
+
+      // Clone and push as a new event
+      merged.push({
+        ...evt,
+        screenshotIds: [...evt.screenshotIds],
+        tags: [...evt.tags],
+      });
+    }
+
+    return merged;
   }
 
   /**
@@ -162,7 +313,8 @@ export class MemoryTimelineService {
   }
 
   /**
-   * Adds or updates a single screenshot in the in-memory timeline and invalidates caches.
+   * Adds or updates a single screenshot in the timeline, applying adaptive merge windows,
+   * persisting to SQLite memory_timeline table, and invalidating caches.
    */
   async addScreenshotToTimeline(screenshot: any): Promise<void> {
     if (!screenshot || !screenshot.id) return;
@@ -172,35 +324,155 @@ export class MemoryTimelineService {
       await this.getAllEvents();
     }
 
+    const mergeWindow = this.getMergeWindowMs(event.category);
+    let merged = false;
+
     if (this.cachedEvents) {
-      const existingIndex = this.cachedEvents.findIndex(
-        (e) => e.screenshotId === event.screenshotId || e.id === event.id
-      );
-      if (existingIndex >= 0) {
-        this.cachedEvents[existingIndex] = event;
-      } else {
-        this.cachedEvents.unshift(event);
+      // Check if proximate event on the same date matches category
+      for (const existing of this.cachedEvents) {
+        if (
+          existing.category === event.category &&
+          existing.date === event.date &&
+          Math.abs(existing.timestamp - event.timestamp) <= mergeWindow
+        ) {
+          if (!existing.screenshotIds.includes(event.screenshotId)) {
+            existing.screenshotIds.push(event.screenshotId);
+          }
+          existing.screenshotCount = existing.screenshotIds.length;
+          for (const t of event.tags) {
+            if (!existing.tags.includes(t)) existing.tags.push(t);
+          }
+          if (event.amount && existing.amount) {
+            existing.amount = Math.round((existing.amount + event.amount) * 100) / 100;
+          } else if (event.amount && !existing.amount) {
+            existing.amount = event.amount;
+          }
+
+          // Persist merged record into SQLite
+          try {
+            await memoryTimelineRepository.upsertEvent({
+              id: existing.id,
+              eventDate: existing.date,
+              eventPeriod: existing.period as any,
+              eventType: this.getEventType(existing.category),
+              summary: existing.summary,
+              screenshotIds: existing.screenshotIds,
+              createdAt: new Date(existing.timestamp).toISOString(),
+            });
+          } catch {}
+
+          merged = true;
+          break;
+        }
       }
+
+      if (!merged) {
+        const existingIdx = this.cachedEvents.findIndex(
+          (e) => e.screenshotId === event.screenshotId || e.id === event.id
+        );
+        if (existingIdx >= 0) {
+          this.cachedEvents[existingIdx] = event;
+        } else {
+          this.cachedEvents.unshift(event);
+        }
+
+        // Persist new record into SQLite
+        try {
+          await memoryTimelineRepository.upsertEvent({
+            id: event.id,
+            eventDate: event.date,
+            eventPeriod: event.period as any,
+            eventType: this.getEventType(event.category),
+            summary: event.summary,
+            screenshotIds: event.screenshotIds,
+            createdAt: new Date(event.timestamp).toISOString(),
+          });
+        } catch {}
+      }
+
       this.cachedEvents.sort((a, b) => b.timestamp - a.timestamp);
       this.cachedGrouping = this.groupEvents(this.cachedEvents);
     }
-
-    try {
-      const { dailyDigestService } = require('./DailyDigestService');
-      if (dailyDigestService && typeof dailyDigestService.getTodayDigest === 'function') {
-        await dailyDigestService.getTodayDigest(true);
-      }
-    } catch {}
   }
 
   /**
-   * Rebuilds the entire memory timeline from fresh SQLite data.
+   * Rebuilds the entire memory timeline from fresh SQLite metadata.
    */
   async rebuildTimeline(): Promise<TimelineGrouping> {
     this.cachedGrouping = null;
     this.cachedEvents = null;
     loggerService.info('Memory', 'Rebuilding AI Memory Timeline from SQLite metadata...');
+
+    const events = await this.getAllEvents(true);
+
+    // Repopulate memory_timeline table
+    try {
+      await memoryTimelineRepository.clearAll();
+      for (const evt of events) {
+        await memoryTimelineRepository.upsertEvent({
+          id: evt.id,
+          eventDate: evt.date,
+          eventPeriod: evt.period as any,
+          eventType: this.getEventType(evt.category),
+          summary: evt.summary,
+          screenshotIds: evt.screenshotIds,
+          createdAt: new Date(evt.timestamp).toISOString(),
+        });
+      }
+    } catch (err) {
+      loggerService.warn('Memory', 'Error caching timeline to SQLite', err);
+    }
+
+    return this.groupEvents(events);
+  }
+
+  /**
+   * Refreshes in-memory timeline from SQLite.
+   */
+  async refreshTimeline(): Promise<TimelineGrouping> {
     return this.getTimeline({ forceRefresh: true });
+  }
+
+  /**
+   * Clears in-memory caches and SQLite timeline table.
+   */
+  async clearAll(): Promise<void> {
+    this.cachedEvents = null;
+    this.cachedGrouping = null;
+    try {
+      await memoryTimelineRepository.clearAll();
+    } catch {}
+  }
+
+  /**
+   * Deletes a timeline event by ID.
+   */
+  async deleteTimelineEvent(id: string): Promise<void> {
+    try {
+      await memoryTimelineRepository.deleteEvent(id);
+    } catch {}
+    if (this.cachedEvents) {
+      this.cachedEvents = this.cachedEvents.filter((e) => e.id !== id);
+      this.cachedGrouping = this.groupEvents(this.cachedEvents);
+    }
+  }
+
+  /**
+   * Removes a screenshot from all timeline events.
+   */
+  async removeScreenshot(screenshotId: string): Promise<void> {
+    try {
+      await memoryTimelineRepository.deleteByScreenshotId(screenshotId);
+    } catch {}
+    if (this.cachedEvents) {
+      this.cachedEvents = this.cachedEvents.filter((e) => {
+        if (e.screenshotId === screenshotId) return false;
+        e.screenshotIds = e.screenshotIds.filter((id) => id !== screenshotId);
+        e.screenshotCount = e.screenshotIds.length;
+        return e.screenshotIds.length > 0;
+      });
+      this.cachedGrouping = this.groupEvents(this.cachedEvents);
+    }
   }
 
   /**
@@ -223,7 +495,6 @@ export class MemoryTimelineService {
       cachedSummariesCount = events.filter((e) => e.summary && !e.summary.startsWith('Screenshot')).length;
     }
 
-    // Calculate unique months and weeks
     const grouping = this.groupEvents(events);
     const monthsCount = Object.keys(grouping.monthly).length;
     const weeksCount = grouping.last7Days.length > 0 ? 1 : 0;
@@ -241,7 +512,7 @@ export class MemoryTimelineService {
 
   // --- Grouping & Mapping Helpers ---
 
-  private groupEvents(events: MemoryTimelineEvent[]): TimelineGrouping {
+  public groupEvents(events: MemoryTimelineEvent[]): TimelineGrouping {
     const now = new Date();
     const todayStr = this.formatDateOnly(now);
 
@@ -251,8 +522,15 @@ export class MemoryTimelineService {
     const sevenDaysAgoTime = now.getTime() - 7 * 24 * 60 * 60 * 1000;
     const thirtyDaysAgoTime = now.getTime() - 30 * 24 * 60 * 60 * 1000;
 
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
     const today: MemoryTimelineEvent[] = [];
     const yesterdayList: MemoryTimelineEvent[] = [];
+    const thisWeekList: MemoryTimelineEvent[] = [];
+    const earlierThisMonthList: MemoryTimelineEvent[] = [];
+    const olderList: MemoryTimelineEvent[] = [];
+
     const last7Days: MemoryTimelineEvent[] = [];
     const last30Days: MemoryTimelineEvent[] = [];
     const monthly: Record<string, MemoryTimelineEvent[]> = {};
@@ -263,15 +541,15 @@ export class MemoryTimelineService {
       const monthKey = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
       const yearKey = `${d.getFullYear()}`;
 
-      // Monthly bucket
+      // Monthly & yearly buckets
       if (!monthly[monthKey]) monthly[monthKey] = [];
       monthly[monthKey].push(event);
 
-      // Yearly bucket
       if (!yearly[yearKey]) yearly[yearKey] = [];
       yearly[yearKey].push(event);
 
-      // Relative buckets
+      // Relative buckets for Sprint P3-A Timeline Groups:
+      // Today, Yesterday, This Week, Earlier This Month, Older
       if (event.date === todayStr) {
         event.period = 'today';
         event.periodGroup = 'Today';
@@ -281,22 +559,34 @@ export class MemoryTimelineService {
         event.periodGroup = 'Yesterday';
         yesterdayList.push(event);
       } else if (event.timestamp >= sevenDaysAgoTime) {
-        event.period = 'last_7_days';
+        event.period = 'this_week';
         event.periodGroup = 'This Week';
-        last7Days.push(event);
-      } else if (event.timestamp >= thirtyDaysAgoTime) {
-        event.period = 'last_30_days';
-        event.periodGroup = 'Last 30 Days';
-        last30Days.push(event);
+        thisWeekList.push(event);
+      } else if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
+        event.period = 'earlier_this_month';
+        event.periodGroup = 'Earlier This Month';
+        earlierThisMonthList.push(event);
       } else {
-        event.period = 'monthly';
-        event.periodGroup = monthKey;
+        event.period = 'older';
+        event.periodGroup = 'Older';
+        olderList.push(event);
+      }
+
+      // Backward compatibility buckets (past week excluding today & yesterday)
+      if (event.timestamp >= sevenDaysAgoTime && event.date !== todayStr && event.date !== yesterdayStr) {
+        last7Days.push(event);
+      }
+      if (event.timestamp >= thirtyDaysAgoTime) {
+        last30Days.push(event);
       }
     }
 
     return {
       today,
       yesterday: yesterdayList,
+      thisWeek: thisWeekList,
+      earlierThisMonth: earlierThisMonthList,
+      older: olderList,
       last7Days,
       last30Days,
       monthly,
@@ -450,7 +740,6 @@ export class MemoryTimelineService {
       if (!isNaN(num) && num > 0) return num;
     }
 
-    // Check tags
     for (const tag of tags) {
       if (typeof tag === 'string' && (tag.startsWith('₹') || tag.startsWith('amt_'))) {
         const num = parseFloat(tag.replace(/[^0-9.]/g, ''));
@@ -458,7 +747,6 @@ export class MemoryTimelineService {
       }
     }
 
-    // Regex check OCR
     if (ocrText) {
       const match = ocrText.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i);
       if (match) {

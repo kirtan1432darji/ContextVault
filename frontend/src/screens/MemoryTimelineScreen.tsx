@@ -4,36 +4,43 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
-  SectionList,
+  ScrollView,
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
-import { ModernCard } from '../components/ModernCard';
-import { ScreenshotImageThumbnail } from '../components/ScreenshotImageThumbnail';
 import {
   memoryTimelineService,
   dailyDigestService,
-  digestSummaryService,
-  financeInsightService,
+  digestAggregationService,
+  memoryInsightsService,
   MemoryTimelineEvent,
+  TimelineGrouping,
   DailyDigest,
   PeriodDigest,
-  FinanceInsights,
+  InsightDomainCard,
 } from '../services/memory';
+import {
+  TimelineCard,
+  DigestCard,
+  InsightCard,
+  TimelineSection,
+} from '../components/memory';
 
-type TimelineFilter = 'all' | 'today' | 'this_week' | 'this_month' | 'spending' | 'travel';
-
-interface TimelineSection {
-  title: string;
-  data: MemoryTimelineEvent[];
-}
+type TimelineFilter =
+  | 'all'
+  | 'today'
+  | 'yesterday'
+  | 'this_week'
+  | 'earlier_this_month'
+  | 'older'
+  | 'spending'
+  | 'travel';
 
 export const MemoryTimelineScreen: React.FC = () => {
   const theme = useAppTheme();
@@ -41,13 +48,16 @@ export const MemoryTimelineScreen: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<TimelineFilter>('all');
 
+  const [grouping, setGrouping] = useState<TimelineGrouping | null>(null);
   const [allEvents, setAllEvents] = useState<MemoryTimelineEvent[]>([]);
   const [todayDigest, setTodayDigest] = useState<DailyDigest | null>(null);
   const [weeklyDigest, setWeeklyDigest] = useState<PeriodDigest | null>(null);
-  const [monthlyDigest, setMonthlyDigest] = useState<PeriodDigest | null>(null);
-  const [financeInsights, setFinanceInsights] = useState<FinanceInsights | null>(null);
+  const [insights, setInsights] = useState<InsightDomainCard[]>([]);
+  const [streak, setStreak] = useState<number>(0);
+  const [showInsights, setShowInsights] = useState(false);
 
   const loadData = useCallback(async (forceRefresh = false) => {
     try {
@@ -57,19 +67,20 @@ export const MemoryTimelineScreen: React.FC = () => {
         setLoading(true);
       }
 
-      const [events, today, week, month, finance] = await Promise.all([
-        memoryTimelineService.getAllEvents(forceRefresh),
+      const [timelineGroup, digest, week, insightCards, streakDays] = await Promise.all([
+        memoryTimelineService.getTimeline({ forceRefresh }),
         dailyDigestService.getTodayDigest(forceRefresh),
-        digestSummaryService.getWeeklyDigest(0),
-        digestSummaryService.getMonthlyDigest(0),
-        financeInsightService.getSpendingInsights(),
+        digestAggregationService.getWeeklyDigest(0),
+        memoryInsightsService.getAllInsights(forceRefresh),
+        digestAggregationService.calculateScreenshotStreak(),
       ]);
 
-      setAllEvents(events);
-      setTodayDigest(today);
+      setGrouping(timelineGroup);
+      setAllEvents(timelineGroup.allEvents || []);
+      setTodayDigest(digest);
       setWeeklyDigest(week);
-      setMonthlyDigest(month);
-      setFinanceInsights(finance);
+      setInsights(insightCards);
+      setStreak(streakDays);
     } catch (err) {
       console.warn('[MemoryTimelineScreen] Error loading memory data:', err);
     } finally {
@@ -82,21 +93,39 @@ export const MemoryTimelineScreen: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  const handleRebuild = async () => {
+    try {
+      setRebuilding(true);
+      const newGrouping = await memoryTimelineService.rebuildTimeline();
+      setGrouping(newGrouping);
+      setAllEvents(newGrouping.allEvents || []);
+      const [digest, week, insightCards] = await Promise.all([
+        dailyDigestService.getTodayDigest(true),
+        digestAggregationService.getWeeklyDigest(0),
+        memoryInsightsService.getAllInsights(true),
+      ]);
+      setTodayDigest(digest);
+      setWeeklyDigest(week);
+      setInsights(insightCards);
+    } catch (err) {
+      console.warn('[MemoryTimelineScreen] Error rebuilding timeline:', err);
+    } finally {
+      setRebuilding(false);
+    }
+  };
+
+  const handleCardPress = (event: MemoryTimelineEvent) => {
+    navigation.navigate('ScreenshotDetail', { id: event.screenshotId });
+  };
+
   // Filter events according to selected chip
   const filteredEvents = useMemo(() => {
-    if (selectedFilter === 'today') {
-      const todayStr = new Date().toISOString().split('T')[0];
-      return allEvents.filter((e) => e.date === todayStr);
-    }
-    if (selectedFilter === 'this_week') {
-      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      return allEvents.filter((e) => e.timestamp >= weekAgo);
-    }
-    if (selectedFilter === 'this_month') {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      return allEvents.filter((e) => e.timestamp >= monthStart);
-    }
+    if (selectedFilter === 'all') return allEvents;
+    if (selectedFilter === 'today') return grouping?.today || [];
+    if (selectedFilter === 'yesterday') return grouping?.yesterday || [];
+    if (selectedFilter === 'this_week') return grouping?.thisWeek || [];
+    if (selectedFilter === 'earlier_this_month') return grouping?.earlierThisMonth || [];
+    if (selectedFilter === 'older') return grouping?.older || [];
     if (selectedFilter === 'spending') {
       return allEvents.filter((e) => e.amount && e.amount > 0);
     }
@@ -110,343 +139,183 @@ export const MemoryTimelineScreen: React.FC = () => {
       );
     }
     return allEvents;
-  }, [allEvents, selectedFilter]);
+  }, [allEvents, grouping, selectedFilter]);
 
-  // Group filtered events into sticky sections by date or period label
-  const sections: TimelineSection[] = useMemo(() => {
-    const map = new Map<string, MemoryTimelineEvent[]>();
-
-    for (const evt of filteredEvents) {
-      const key = evt.periodGroup || evt.date;
-      if (!map.has(key)) {
-        map.set(key, []);
-      }
-      map.get(key)!.push(evt);
-    }
-
-    const result: TimelineSection[] = [];
-    for (const [title, data] of map.entries()) {
-      result.push({ title, data });
-    }
-    return result;
-  }, [filteredEvents]);
-
-  const handleRebuild = async () => {
-    setLoading(true);
-    await memoryTimelineService.rebuildTimeline();
-    await loadData(true);
-  };
-
-  const renderDigestBanner = () => {
-    if (selectedFilter === 'this_month' && monthlyDigest && monthlyDigest.totalScreenshots > 0) {
-      return (
-        <ModernCard style={styles.digestCard}>
-          <View style={styles.digestHeader}>
-            <View style={[styles.digestIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="calendar-outline" size={18} color={theme.colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.digestTitle, { color: theme.colors.textPrimary }]}>
-                {monthlyDigest.periodLabel} Highlights
-              </Text>
-              <Text style={[styles.digestSubtitle, { color: theme.colors.textSecondary }]}>
-                {monthlyDigest.totalScreenshots} screenshots captured
-              </Text>
-            </View>
-          </View>
-          <Text style={[styles.digestSummaryText, { color: theme.colors.textPrimary }]}>
-            {monthlyDigest.summary}
-          </Text>
-          {monthlyDigest.highlights.length > 0 && (
-            <View style={styles.digestChipsRow}>
-              {monthlyDigest.highlights.map((hl, idx) => (
-                <View key={idx} style={[styles.digestHighlightPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Icon name="sparkles" size={11} color={theme.colors.accent} style={{ marginRight: 4 }} />
-                  <Text style={[styles.digestHighlightText, { color: theme.colors.textPrimary }]}>{hl}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </ModernCard>
-      );
-    }
-
-    if (selectedFilter === 'this_week' && weeklyDigest && weeklyDigest.totalScreenshots > 0) {
-      return (
-        <ModernCard style={styles.digestCard}>
-          <View style={styles.digestHeader}>
-            <View style={[styles.digestIconWrap, { backgroundColor: `${theme.colors.accent}20` }]}>
-              <Icon name="flame-outline" size={18} color={theme.colors.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.digestTitle, { color: theme.colors.textPrimary }]}>
-                Weekly AI Recap
-              </Text>
-              <Text style={[styles.digestSubtitle, { color: theme.colors.textSecondary }]}>
-                {weeklyDigest.totalScreenshots} screenshots this week
-              </Text>
-            </View>
-          </View>
-          <Text style={[styles.digestSummaryText, { color: theme.colors.textPrimary }]}>
-            {weeklyDigest.summary}
-          </Text>
-          {weeklyDigest.highlights.length > 0 && (
-            <View style={styles.digestChipsRow}>
-              {weeklyDigest.highlights.map((hl, idx) => (
-                <View key={idx} style={[styles.digestHighlightPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Icon name="sparkles" size={11} color={theme.colors.accent} style={{ marginRight: 4 }} />
-                  <Text style={[styles.digestHighlightText, { color: theme.colors.textPrimary }]}>{hl}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </ModernCard>
-      );
-    }
-
-    if (selectedFilter === 'spending' && financeInsights) {
-      return (
-        <ModernCard style={styles.digestCard}>
-          <View style={styles.digestHeader}>
-            <View style={[styles.digestIconWrap, { backgroundColor: `${theme.colors.success}20` }]}>
-              <Icon name="wallet-outline" size={18} color={theme.colors.success} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.digestTitle, { color: theme.colors.textPrimary }]}>
-                Spending Intelligence
-              </Text>
-              <Text style={[styles.digestSubtitle, { color: theme.colors.textSecondary }]}>
-                Tracked UPI Payments from SQLite
-              </Text>
-            </View>
-            <View style={[styles.amountHeroBadge, { backgroundColor: `${theme.colors.success}15` }]}>
-              <Text style={[styles.amountHeroText, { color: theme.colors.success }]}>
-                ₹{financeInsights.totalUpiSpending.toLocaleString('en-IN')}
-              </Text>
-            </View>
-          </View>
-          {financeInsights.topMerchants.length > 0 && (
-            <View style={styles.digestChipsRow}>
-              {financeInsights.topMerchants.slice(0, 3).map((m, idx) => (
-                <View key={idx} style={[styles.digestHighlightPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Text style={[styles.digestHighlightText, { color: theme.colors.textPrimary }]}>
-                    {m.merchant}: ₹{m.amount.toLocaleString('en-IN')}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </ModernCard>
-      );
-    }
-
-    // Default Today Digest Card
-    if (todayDigest) {
-      return (
-        <ModernCard style={styles.digestCard}>
-          <View style={styles.digestHeader}>
-            <View style={[styles.digestIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="sparkles" size={18} color={theme.colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.digestTitle, { color: theme.colors.textPrimary }]}>
-                Today in ContextVault
-              </Text>
-              <Text style={[styles.digestSubtitle, { color: theme.colors.textSecondary }]}>
-                {todayDigest.dateFormatted}
-              </Text>
-            </View>
-            <View style={[styles.countPill, { backgroundColor: `${theme.colors.primary}15` }]}>
-              <Text style={[styles.countPillText, { color: theme.colors.primary }]}>
-                {todayDigest.totalScreenshots} screenshots
-              </Text>
-            </View>
-          </View>
-          <Text style={[styles.digestSummaryText, { color: theme.colors.textPrimary }]}>
-            {todayDigest.summary}
-          </Text>
-          {todayDigest.highlights.length > 0 && (
-            <View style={styles.digestChipsRow}>
-              {todayDigest.highlights.map((hl, idx) => (
-                <View key={idx} style={[styles.digestHighlightPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Icon name="checkmark-circle-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
-                  <Text style={[styles.digestHighlightText, { color: theme.colors.textPrimary }]}>{hl}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </ModernCard>
-      );
-    }
-
-    return null;
-  };
-
-  const renderTimelineItem = ({ item }: { item: MemoryTimelineEvent }) => {
-    return (
-      <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('ScreenshotDetail', { id: item.screenshotId })}
-        style={styles.eventRow}
-      >
-        {/* Timeline Line & Node */}
-        <View style={styles.timelineCol}>
-          <View style={[styles.timelineNode, { backgroundColor: theme.colors.primary }]} />
-          <View style={[styles.timelineLine, { backgroundColor: theme.colors.border }]} />
-        </View>
-
-        {/* Event Card */}
-        <ModernCard style={styles.eventCard}>
-          <View style={styles.eventCardHeader}>
-            <View style={styles.eventMetaLeft}>
-              <Text style={[styles.eventCategoryTag, { color: theme.colors.primary }]}>
-                {item.categoryName.toUpperCase()}
-              </Text>
-              <Text style={[styles.eventTimeText, { color: theme.colors.textSecondary }]}>
-                • {item.timeStr || item.date}
-              </Text>
-            </View>
-            {item.amount ? (
-              <View style={[styles.amountBadge, { backgroundColor: `${theme.colors.success}18` }]}>
-                <Text style={[styles.amountBadgeText, { color: theme.colors.success }]}>
-                  ₹{item.amount.toLocaleString('en-IN')}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          <Text numberOfLines={1} style={[styles.eventTitle, { color: theme.colors.textPrimary }]}>
-            {item.title}
-          </Text>
-
-          <Text numberOfLines={2} style={[styles.eventSummary, { color: theme.colors.textSecondary }]}>
-            {item.summary}
-          </Text>
-
-          <View style={styles.eventFooter}>
-            <View style={styles.pillsRow}>
-              {item.merchant ? (
-                <View style={[styles.merchantPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Icon name="business-outline" size={11} color={theme.colors.textSecondary} style={{ marginRight: 3 }} />
-                  <Text style={[styles.merchantPillText, { color: theme.colors.textPrimary }]}>
-                    {item.merchant}
-                  </Text>
-                </View>
-              ) : null}
-
-              {item.tags.slice(0, 2).map((t, idx) => (
-                <View key={idx} style={[styles.tagPill, { backgroundColor: theme.colors.surfaceVariant }]}>
-                  <Text style={[styles.tagPillText, { color: theme.colors.textSecondary }]}>
-                    #{t}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Thumbnail */}
-            <View style={styles.thumbWrapper}>
-              <ScreenshotImageThumbnail
-                screenshot={{
-                  id: item.screenshotId,
-                  filePath: item.filePath,
-                  thumbnailUri: item.thumbnailUri,
-                  contentUri: item.contentUri,
-                }}
-                filePath={item.filePath}
-                thumbnailUri={item.thumbnailUri}
-                contentUri={item.contentUri}
-                style={styles.thumbnail}
-                borderRadius={8}
-              />
-            </View>
-          </View>
-        </ModernCard>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderSectionHeader = ({ section }: { section: TimelineSection }) => (
-    <View style={[styles.stickySectionHeader, { backgroundColor: theme.colors.background }]}>
-      <Text style={[styles.stickySectionTitle, { color: theme.colors.textPrimary }]}>
-        {section.title}
-      </Text>
-      <Text style={[styles.stickySectionCount, { color: theme.colors.textSecondary }]}>
-        {section.data.length} {section.data.length === 1 ? 'event' : 'events'}
-      </Text>
-    </View>
-  );
+  const filterChips: { id: TimelineFilter; label: string; icon?: string }[] = [
+    { id: 'all', label: 'All', icon: 'grid-outline' },
+    { id: 'today', label: 'Today', icon: 'today-outline' },
+    { id: 'yesterday', label: 'Yesterday', icon: 'time-outline' },
+    { id: 'this_week', label: 'This Week', icon: 'calendar-outline' },
+    { id: 'earlier_this_month', label: 'This Month', icon: 'layers-outline' },
+    { id: 'older', label: 'Older', icon: 'archive-outline' },
+    { id: 'spending', label: 'Spending', icon: 'wallet-outline' },
+    { id: 'travel', label: 'Travel', icon: 'airplane-outline' },
+  ];
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Icon name="arrow-back" size={24} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
+    <View style={[styles.screen, { backgroundColor: theme.isDark ? '#0B0F19' : '#F8FAFC' }]}>
+      <StatusBar
+        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.isDark ? '#0B0F19' : '#F8FAFC'}
+      />
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
-            AI Memory Timeline
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-            Privacy-First Life History
-          </Text>
+      {/* Screen App Bar */}
+      <View style={[styles.appBar, { borderBottomColor: theme.isDark ? '#1F2937' : '#E5E7EB' }]}>
+        <View style={styles.appBarLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Icon name="arrow-back" size={22} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+          <View>
+            <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>AI Memory Timeline</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Chronological Screenshot Assistant</Text>
+          </View>
         </View>
 
-        <View style={styles.headerActions}>
+        <View style={styles.appBarRight}>
           <TouchableOpacity
-            onPress={() => navigation.navigate('GlobalAISearch', { autoFocus: false })}
-            style={styles.iconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Search memory timeline"
+            onPress={() => setShowInsights(!showInsights)}
+            style={[styles.headerIconBtn, showInsights && { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}
           >
-            <Icon name="search-outline" size={20} color={theme.colors.textPrimary} />
+            <Icon name="analytics-outline" size={20} color={showInsights ? '#3B82F6' : theme.colors.textPrimary} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={handleRebuild}
-            style={styles.iconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Rebuild timeline"
-          >
-            <Icon name="sync-outline" size={20} color={theme.colors.primary} />
+          <TouchableOpacity onPress={handleRebuild} disabled={rebuilding} style={styles.headerIconBtn}>
+            {rebuilding ? (
+              <ActivityIndicator size="small" color="#3B82F6" />
+            ) : (
+              <Icon name="refresh-outline" size={20} color={theme.colors.textPrimary} />
+            )}
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Filter Chips Bar */}
-      <View style={[styles.filterBar, { borderBottomColor: theme.colors.border }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          {[
-            { id: 'all', label: 'All Memories' },
-            { id: 'today', label: 'Today' },
-            { id: 'this_week', label: 'This Week' },
-            { id: 'this_month', label: 'This Month' },
-            { id: 'spending', label: 'Spending' },
-            { id: 'travel', label: 'Travel' },
-          ].map((chip) => {
-            const active = selectedFilter === chip.id;
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData(true)}
+            tintColor="#3B82F6"
+            colors={['#3B82F6']}
+          />
+        }
+      >
+        {/* 1. Hero Memory Card */}
+        <View
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: theme.isDark ? '#111827' : '#FFFFFF',
+              borderColor: theme.isDark ? '#1F2937' : '#E5E7EB',
+            },
+          ]}
+        >
+          <View style={styles.heroTop}>
+            <View style={styles.heroLeft}>
+              <View style={styles.sparkleWrap}>
+                <Icon name="sparkles" size={18} color="#3B82F6" />
+              </View>
+              <View>
+                <Text style={[styles.heroHeading, { color: theme.colors.textPrimary }]}>AI Screenshot Memories</Text>
+                <Text style={[styles.heroSub, { color: theme.colors.textSecondary }]}>
+                  {allEvents.length} memories tracked across {grouping ? Object.keys(grouping.monthly).length : 1} months
+                </Text>
+              </View>
+            </View>
+
+            {streak > 0 && (
+              <View style={styles.streakBadge}>
+                <Icon name="flame" size={14} color="#F97316" style={{ marginRight: 4 }} />
+                <Text style={styles.streakText}>{streak}d Streak</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Quick Metrics Bar */}
+          <View style={styles.heroMetrics}>
+            <View style={styles.heroMetricItem}>
+              <Text style={styles.heroMetricVal}>{grouping?.today.length || 0}</Text>
+              <Text style={[styles.heroMetricLabel, { color: theme.colors.textSecondary }]}>Today</Text>
+            </View>
+            <View style={styles.heroDivider} />
+            <View style={styles.heroMetricItem}>
+              <Text style={styles.heroMetricVal}>{grouping?.thisWeek.length || 0}</Text>
+              <Text style={[styles.heroMetricLabel, { color: theme.colors.textSecondary }]}>This Week</Text>
+            </View>
+            <View style={styles.heroDivider} />
+            <View style={styles.heroMetricItem}>
+              <Text style={[styles.heroMetricVal, { color: '#10B981' }]}>
+                ₹{Math.round(todayDigest?.spendingTotal || 0).toLocaleString('en-IN')}
+              </Text>
+              <Text style={[styles.heroMetricLabel, { color: theme.colors.textSecondary }]}>Spent Today</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* 2. Today's AI Daily Digest Banner */}
+        {todayDigest && todayDigest.totalScreenshots > 0 && (
+          <DigestCard
+            digest={todayDigest}
+            type="daily"
+            onPress={() => setSelectedFilter('today')}
+          />
+        )}
+
+        {/* 3. Domain Insights Horizontal Strip (Toggleable or Visible) */}
+        {(showInsights || insights.length > 0) && (
+          <View style={styles.insightsSection}>
+            <View style={styles.sectionHeader}>
+              <Icon name="bulb-outline" size={16} color="#3B82F6" style={{ marginRight: 6 }} />
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Memory Insights</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.insightsScroll}>
+              {insights.map((insight, idx) => (
+                <InsightCard key={idx} insight={insight} />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* 4. Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScroll}
+        >
+          {filterChips.map((chip) => {
+            const isSelected = selectedFilter === chip.id;
             return (
               <TouchableOpacity
                 key={chip.id}
-                onPress={() => setSelectedFilter(chip.id as TimelineFilter)}
+                onPress={() => setSelectedFilter(chip.id)}
                 style={[
                   styles.filterChip,
                   {
-                    backgroundColor: active ? theme.colors.primary : theme.colors.surface,
-                    borderColor: active ? theme.colors.primary : theme.colors.border,
+                    backgroundColor: isSelected
+                      ? '#3B82F6'
+                      : theme.isDark
+                      ? '#1E293B'
+                      : '#F1F5F9',
+                    borderColor: isSelected
+                      ? '#3B82F6'
+                      : theme.isDark
+                      ? '#334155'
+                      : '#CBD5E1',
                   },
                 ]}
               >
+                {chip.icon && (
+                  <Icon
+                    name={chip.icon}
+                    size={13}
+                    color={isSelected ? '#FFFFFF' : theme.colors.textSecondary}
+                    style={{ marginRight: 5 }}
+                  />
+                )}
                 <Text
                   style={[
                     styles.filterChipText,
-                    { color: active ? '#FFFFFF' : theme.colors.textPrimary, fontWeight: active ? '700' : '500' },
+                    { color: isSelected ? '#FFFFFF' : theme.colors.textPrimary },
                   ]}
                 >
                   {chip.label}
@@ -455,318 +324,270 @@ export const MemoryTimelineScreen: React.FC = () => {
             );
           })}
         </ScrollView>
-      </View>
 
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
-            Synthesizing Memory Timeline...
-          </Text>
-        </View>
-      ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTimelineItem}
-          renderSectionHeader={renderSectionHeader}
-          ListHeaderComponent={renderDigestBanner}
-          ListEmptyComponent={
-            <View style={styles.emptyStateContainer}>
-              <Icon name="time-outline" size={48} color={theme.colors.textSecondary} style={{ marginBottom: 12 }} />
-              <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
-                No Timeline Events Found
-              </Text>
-              <Text style={[styles.emptyDesc, { color: theme.colors.textSecondary }]}>
-                Screenshots analyzed by Local Vision AI and OCR will appear here in chronological order.
-              </Text>
-            </View>
-          }
-          stickySectionHeadersEnabled
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => loadData(true)}
-              colors={[theme.colors.primary]}
-              tintColor={theme.colors.primary}
-            />
-          }
-        />
-      )}
+        {/* 5. Chronological Timeline Sections */}
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading AI Memory Timeline...</Text>
+          </View>
+        ) : filteredEvents.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Icon name="archive-outline" size={48} color={theme.colors.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>No memories found</Text>
+            <Text style={[styles.emptySub, { color: theme.colors.textSecondary }]}>
+              {selectedFilter === 'all'
+                ? 'Screenshots captured will automatically be organized chronologically into daily digests and memory timeline events.'
+                : 'No screenshots found matching this filter.'}
+            </Text>
+          </View>
+        ) : selectedFilter !== 'all' ? (
+          // Single flat list when filtered
+          <View style={{ paddingTop: 8 }}>
+            {filteredEvents.map((evt) => (
+              <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+            ))}
+          </View>
+        ) : (
+          // Multi-period sections for 'all'
+          <View style={{ paddingTop: 4 }}>
+            {/* Today */}
+            {grouping && grouping.today.length > 0 && (
+              <TimelineSection title="Today" period="today" count={grouping.today.length}>
+                {grouping.today.map((evt) => (
+                  <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+                ))}
+              </TimelineSection>
+            )}
+
+            {/* Yesterday */}
+            {grouping && grouping.yesterday.length > 0 && (
+              <TimelineSection title="Yesterday" period="yesterday" count={grouping.yesterday.length}>
+                {grouping.yesterday.map((evt) => (
+                  <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+                ))}
+              </TimelineSection>
+            )}
+
+            {/* This Week */}
+            {grouping && grouping.thisWeek && grouping.thisWeek.length > 0 && (
+              <TimelineSection title="This Week" period="this_week" count={grouping.thisWeek.length}>
+                {weeklyDigest && weeklyDigest.totalScreenshots > 0 && (
+                  <DigestCard digest={weeklyDigest} type="weekly" />
+                )}
+                {grouping.thisWeek.map((evt) => (
+                  <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+                ))}
+              </TimelineSection>
+            )}
+
+            {/* Earlier This Month */}
+            {grouping && grouping.earlierThisMonth && grouping.earlierThisMonth.length > 0 && (
+              <TimelineSection
+                title="Earlier This Month"
+                period="earlier_this_month"
+                count={grouping.earlierThisMonth.length}
+              >
+                {grouping.earlierThisMonth.map((evt) => (
+                  <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+                ))}
+              </TimelineSection>
+            )}
+
+            {/* Older Memories */}
+            {grouping && grouping.older && grouping.older.length > 0 && (
+              <TimelineSection title="Older Memories" period="older" count={grouping.older.length}>
+                {grouping.older.map((evt) => (
+                  <TimelineCard key={evt.id} event={evt} onPress={handleCardPress} />
+                ))}
+              </TimelineSection>
+            )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
   },
-  header: {
+  appBar: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  backBtn: {
-    padding: 6,
-    marginRight: 8,
+  appBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  headerTitleWrap: {
-    flex: 1,
+  backBtn: {
+    marginRight: 12,
+    padding: 4,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   headerSubtitle: {
-    fontSize: 12,
-    marginTop: 1,
+    fontSize: 11,
+    fontWeight: '500',
   },
-  headerActions: {
+  appBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconBtn: {
-    padding: 6,
-    marginLeft: 6,
-  },
-  filterBar: {
-    borderBottomWidth: 1,
-  },
-  filterScroll: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 18,
-    borderWidth: 1,
-    marginRight: 6,
-  },
-  filterChipText: {
-    fontSize: 13,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-  },
-  listContent: {
-    paddingBottom: 32,
-  },
-  digestCard: {
-    margin: 16,
-    marginBottom: 8,
-    padding: 16,
-    borderRadius: 16,
-  },
-  digestHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  digestIconWrap: {
+  headerIconBtn: {
     width: 36,
     height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  heroCard: {
+    margin: 16,
+    padding: 16,
     borderRadius: 18,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  heroLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sparkleWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
-  digestTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+  heroHeading: {
+    fontSize: 16,
+    fontWeight: '800',
   },
-  digestSubtitle: {
+  heroSub: {
     fontSize: 11,
-    marginTop: 1,
+    fontWeight: '500',
   },
-  countPill: {
-    paddingHorizontal: 10,
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(249, 115, 22, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.3)',
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  countPillText: {
+  streakText: {
     fontSize: 11,
     fontWeight: '700',
+    color: '#F97316',
   },
-  amountHeroBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+  heroMetrics: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 12,
+    paddingVertical: 10,
   },
-  amountHeroText: {
-    fontSize: 15,
+  heroMetricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  heroMetricVal: {
+    fontSize: 16,
     fontWeight: '800',
+    color: '#3B82F6',
   },
-  digestSummaryText: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 10,
-  },
-  digestChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  digestHighlightPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  digestHighlightText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  stickySectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  stickySectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  stickySectionCount: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  eventRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 10,
-  },
-  timelineCol: {
-    width: 24,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  timelineNode: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 16,
-    zIndex: 2,
-  },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    marginTop: -4,
-  },
-  eventCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 14,
-  },
-  eventCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  eventMetaLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  eventCategoryTag: {
+  heroMetricLabel: {
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  eventTimeText: {
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  amountBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  amountBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  eventTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  eventSummary: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 8,
-  },
-  eventFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    fontWeight: '600',
     marginTop: 2,
   },
-  pillsRow: {
+  heroDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  insightsSection: {
+    marginBottom: 12,
+  },
+  sectionHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  insightsScroll: {
+    paddingHorizontal: 16,
+  },
+  filtersScroll: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
     marginRight: 8,
   },
-  merchantPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  merchantPillText: {
-    fontSize: 11,
+  filterChipText: {
+    fontSize: 12,
     fontWeight: '600',
   },
-  tagPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  tagPillText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  thumbWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  thumbnail: {
-    width: 44,
-    height: 44,
-  },
-  emptyStateContainer: {
+  loadingWrap: {
+    paddingVertical: 60,
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    marginTop: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+  },
+  emptyWrap: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    paddingHorizontal: 32,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
+    marginTop: 12,
     marginBottom: 6,
   },
-  emptyDesc: {
-    fontSize: 13,
+  emptySub: {
+    fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
   },

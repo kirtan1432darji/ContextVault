@@ -5,3 +5,5 @@ export * from './DigestSummaryService';
 export * from './FinanceInsightService';
 export * from './MerchantTimelineService';
 export * from './HighlightService';
+export * from './DigestAggregationService';
+export * from './MemoryInsightsService';

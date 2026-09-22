@@ -1,6 +1,9 @@
 export type TimelinePeriod =
   | 'today'
   | 'yesterday'
+  | 'this_week'
+  | 'earlier_this_month'
+  | 'older'
   | 'last_7_days'
   | 'last_30_days'
   | 'monthly'
@@ -25,7 +28,7 @@ export interface MemoryTimelineEvent {
   filePath: string;
   contentUri?: string;
   period: TimelinePeriod;
-  periodGroup: string; // Human label: 'Today', 'Yesterday', 'This Week', 'September 2026', '2026'
+  periodGroup: string; // Human label: 'Today', 'Yesterday', 'This Week', 'Earlier This Month', 'Older'
   tags: string[];
   sourceApp?: string;
   detectedApp?: string;
@@ -34,6 +37,9 @@ export interface MemoryTimelineEvent {
 export interface TimelineGrouping {
   today: MemoryTimelineEvent[];
   yesterday: MemoryTimelineEvent[];
+  thisWeek: MemoryTimelineEvent[];
+  earlierThisMonth: MemoryTimelineEvent[];
+  older: MemoryTimelineEvent[];
   last7Days: MemoryTimelineEvent[];
   last30Days: MemoryTimelineEvent[];
   monthly: Record<string, MemoryTimelineEvent[]>;
@@ -58,6 +64,10 @@ export interface DailyDigest {
   dateFormatted: string; // e.g. "Friday, Sep 18, 2026"
   totalScreenshots: number;
   summary: string;
+  spendingTotal: number;
+  topMerchant?: string;
+  topCategory?: string;
+  mostActiveApp?: string;
   payments: { count: number; totalAmount: number; merchants: string[]; items: MemoryTimelineEvent[] };
   orders: { count: number; merchants: string[]; items: MemoryTimelineEvent[] };
   travel: { count: number; bookings: string[]; items: MemoryTimelineEvent[] };
@@ -71,9 +81,12 @@ export interface DailyDigest {
 export interface PeriodDigest {
   periodType: 'weekly' | 'monthly';
   periodLabel: string; // e.g. "This Week" or "September 2026"
+  weekKey?: string;
+  monthKey?: string;
   dateFrom: string;
   dateTo: string;
   totalScreenshots: number;
+  totalSpending?: number;
   summary: string;
   spending: {
     totalAmount: number;
@@ -157,4 +170,52 @@ export interface MemoryDiagnosticsStats {
   monthlySummariesCount: number;
   cachedSummariesCount: number;
   lastRebuiltAt: string | null;
+}
+
+export type InsightDomain =
+  | 'spending'
+  | 'shopping'
+  | 'productivity'
+  | 'travel'
+  | 'health'
+  | 'communication';
+
+export interface InsightDomainCard {
+  domain: InsightDomain;
+  title: string;
+  subtitle: string;
+  primaryMetric: string;
+  secondaryMetric?: string;
+  icon: string;
+  color: string;
+  items: { label: string; value: string; extra?: string }[];
+  highlights: string[];
+  updatedAt: string;
+}
+
+export interface YearlyHighlights {
+  year: number;
+  totalScreenshots: number;
+  spendingTotal: number;
+  totalSpending?: number;
+  biggestPurchase?: {
+    amount: number;
+    merchant?: string;
+    screenshotId?: string;
+    date?: string;
+  };
+  topCategory?: string;
+  shoppingCount: number;
+  travelCount: number;
+  documentsCount: number;
+  healthCount: number;
+  mostVisitedMerchant: string;
+  mostUsedApp: string;
+  timelineStreak: number;
+  mostMemorableDay: {
+    date: string;
+    count: number;
+    summary: string;
+  };
+  highlights: string[];
 }
