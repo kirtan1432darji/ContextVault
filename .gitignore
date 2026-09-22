@@ -15,6 +15,7 @@ android/build/
 frontend/android/build/
 android/app/build/
 frontend/android/app/build/
+frontend/android/app/src/main/assets/index.android.bundle
 android/.idea/
 *.apk
 *.aab
