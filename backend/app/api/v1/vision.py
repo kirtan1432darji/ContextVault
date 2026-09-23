@@ -124,3 +124,29 @@ async def analyze_batch(
     finally:
         for img in images:
             await img.close()
+
+
+@router.post(
+    "/chat",
+    summary="Chat proxy for Local Vision AI Server",
+)
+async def vision_chat(
+    payload: dict,
+):
+    """
+    Proxies natural language queries and grounded screenshot memory context
+    to the Local Vision AI Server on RTX 4050.
+    """
+    prompt = payload.get("prompt")
+    content = payload.get("content")
+    messages = payload.get("messages")
+    max_tokens = payload.get("max_tokens", 512)
+    temperature = payload.get("temperature", 0.7)
+
+    return await vision_gateway_service.chat(
+        prompt=prompt,
+        content=content,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )

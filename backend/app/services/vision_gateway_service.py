@@ -32,6 +32,41 @@ class VisionGatewayService:
         self.base_url = (base_url or settings.VISION_SERVER_URL).rstrip("/")
         self.timeout = timeout or settings.VISION_TIMEOUT
         self.health_timeout = health_timeout or settings.VISION_HEALTH_TIMEOUT
+        raw_candidates = [
+            self.base_url,
+            "http://192.168.100.2:8001",
+            "http://10.187.86.96:8001",
+            "http://host.docker.internal:8001",
+            "http://localhost:8001",
+        ]
+        seen = set()
+        self.candidate_urls = [
+            u.rstrip("/") for u in raw_candidates if u and not (u.rstrip("/") in seen or seen.add(u.rstrip("/")))
+        ]
+
+    async def get_active_base_url(self) -> str:
+        """Verifies current base_url or auto-discovers active local vision server from candidate URLs."""
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            try:
+                res = await client.get(f"{self.base_url}/api/vision/ping")
+                if res.status_code == 200:
+                    return self.base_url
+            except Exception:
+                pass
+
+            for candidate in self.candidate_urls:
+                if candidate == self.base_url:
+                    continue
+                try:
+                    res = await client.get(f"{candidate}/api/vision/ping")
+                    if res.status_code == 200:
+                        logger.info(f"[VisionGateway] Auto-discovered active Vision AI server at {candidate}")
+                        self.base_url = candidate
+                        return self.base_url
+                except Exception:
+                    continue
+
+        return self.base_url
 
     # --------------------------------------------------------------------------
     # Regex & Metadata Helpers (Phase 2)
@@ -336,7 +371,8 @@ class VisionGatewayService:
 
     async def check_health(self) -> Dict[str, Any]:
         """Proxy health check to local Vision Server with timeout."""
-        target_url = f"{self.base_url}/api/vision/health"
+        base = await self.get_active_base_url()
+        target_url = f"{base}/api/vision/health"
         logger.info(f"[VisionGateway] Checking health: {target_url}")
 
         try:
@@ -352,6 +388,7 @@ class VisionGatewayService:
                         "model": data.get("model", settings.VISION_MODEL),
                         "version": "1.0.0",
                         "gpu": data.get("gpu", "NVIDIA GeForce RTX 4050"),
+                        "vram_allocated_mb": data.get("vram_allocated_mb"),
                     }
         except Exception as err:
             logger.warning(f"[VisionGateway] Health check connection failed: {err}")
@@ -361,13 +398,14 @@ class VisionGatewayService:
             "online": False,
             "modelLoaded": False,
             "error": "Vision Server Offline",
-            "detail": f"Could not connect to Vision server at {self.base_url}",
+            "detail": f"Could not connect to Vision server at {base}",
         }
 
     async def ping_server(self) -> Dict[str, Any]:
         """Pings the Vision AI Server to measure roundtrip latency."""
+        base = await self.get_active_base_url()
         start_time = time.perf_counter()
-        target_url = f"{self.base_url}/api/vision/health"
+        target_url = f"{base}/api/vision/health"
         try:
             async with httpx.AsyncClient(timeout=self.health_timeout) as client:
                 res = await client.get(target_url)
@@ -386,7 +424,8 @@ class VisionGatewayService:
 
     async def get_model_info(self) -> Dict[str, Any]:
         """Proxy model info request to local Vision Server."""
-        target_url = f"{self.base_url}/api/vision/model-info"
+        base = await self.get_active_base_url()
+        target_url = f"{base}/api/vision/model-info"
         logger.info(f"[VisionGateway] Fetching model info: {target_url}")
 
         try:
@@ -422,7 +461,8 @@ class VisionGatewayService:
         Streams file bytes in-memory; never writes to disk or database.
         Retries once on transient connection errors, then normalizes output.
         """
-        target_url = f"{self.base_url}/api/vision/analyze"
+        base = await self.get_active_base_url()
+        target_url = f"{base}/api/vision/analyze"
         logger.info(
             f"[VisionGateway] Forwarding screenshot analysis: {filename} ({len(file_bytes)} bytes) -> {target_url}"
         )
@@ -431,8 +471,14 @@ class VisionGatewayService:
         for attempt in range(2):
             try:
                 files = {"image": (filename, file_bytes, content_type)}
+                headers = {}
+                qwen_key = getattr(settings, "QWEN_API_KEY", None) or getattr(settings, "DASHSCOPE_API_KEY", None)
+                if qwen_key:
+                    headers["Authorization"] = f"Bearer {qwen_key}"
+                    headers["X-API-Key"] = qwen_key
+
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.post(target_url, files=files)
+                    response = await client.post(target_url, files=files, headers=headers)
                     if response.status_code == 200:
                         raw = response.json()
                         return self.normalize_vision_response(raw)
@@ -476,6 +522,43 @@ class VisionGatewayService:
             res = await self.analyze_image(file_bytes=data, filename=filename)
             results.append(res)
         return results
+
+
+    async def chat(
+        self,
+        prompt: Optional[str] = None,
+        content: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ) -> Dict[str, Any]:
+        """
+        Proxies conversational memory question to Local Vision AI Server on RTX 4050.
+        Zero image upload; purely processes structured context & grounded metadata.
+        """
+        base = await self.get_active_base_url()
+        target_url = f"{base}/api/vision/chat"
+        logger.info(f"[VisionGateway] Forwarding chat query to {target_url}")
+
+        payload = {
+            "prompt": prompt,
+            "content": content,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                res = await client.post(target_url, json=payload)
+                if res.status_code == 200:
+                    return res.json()
+                else:
+                    logger.warning(f"[VisionGateway] Chat HTTP {res.status_code}: {res.text}")
+                    return {"content": "Unable to generate answer from local AI server.", "error": res.text}
+        except Exception as e:
+            logger.error(f"[VisionGateway] Chat proxy error: {e}")
+            return {"content": f"Vision AI server connection error: {e}", "error": str(e)}
 
 
 vision_gateway_service = VisionGatewayService()
