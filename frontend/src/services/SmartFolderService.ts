@@ -117,13 +117,25 @@ export class SmartFolderService {
   }
 
   /**
-   * Reorganizes all currently unsorted screenshots locally.
+   * Reorganizes all currently unsorted screenshots locally using on-device Google ML Kit OCR.
+   * Handles large photo libraries (e.g. 1,400+ screenshots).
    */
   async organizeAllUnsorted(): Promise<number> {
-    const unsorted = await screenshotRepository.getAllScreenshots({ categoryId: 'unsorted' });
-    console.log(`[SmartFolderService] Batch organizing ${unsorted.length} unsorted screenshots...`);
-    const result = await smartFolderClassificationService.classifyBatch(unsorted);
-    return result.processed;
+    const unsortedList = await screenshotRepository.getAllScreenshots({ categoryId: 'unsorted', limit: 10000 });
+    const reviewList = await screenshotRepository.getAllScreenshots({ needsReview: true, limit: 10000 });
+
+    // Deduplicate screenshots by ID
+    const map = new Map<string, ScreenshotModel>();
+    for (const sc of [...unsortedList, ...reviewList]) {
+      if (!map.has(sc.id)) {
+        map.set(sc.id, sc);
+      }
+    }
+    const toOrganize = Array.from(map.values());
+
+    console.log(`[SmartFolderService] Batch organizing ${toOrganize.length} unsorted/unclassified screenshots...`);
+    const result = await smartFolderClassificationService.classifyBatch(toOrganize);
+    return result.moved;
   }
 
   /**

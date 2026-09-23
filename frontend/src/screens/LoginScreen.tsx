@@ -287,7 +287,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
             </View>
 
-            {/* Continue as Guest Button (Sprint P0) */}
+            {/* Login as a Guest Button */}
             <TouchableOpacity
               style={[
                 styles.guestButton,
@@ -299,11 +299,11 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               onPress={handleContinueAsGuest}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="Continue as Guest without creating an account"
+              accessibilityLabel="Login as a Guest without creating an account"
             >
               <Icon name="person-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
               <Text style={[styles.guestButtonText, { color: theme.colors.textPrimary }]}>
-                Continue as Guest
+                Login as a Guest
               </Text>
             </TouchableOpacity>
 
@@ -364,6 +364,22 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
             <View style={styles.m3ActionRow}>
               <TouchableOpacity
+                style={[
+                  styles.m3PrimaryBtn,
+                  { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                ]}
+                onPress={() => {
+                  setShowHealthDialog(false);
+                  handleContinueAsGuest();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Login as a Guest"
+              >
+                <Icon name="person-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.m3PrimaryBtnText}>Login as a Guest</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
                 onPress={() => {
                   setShowHealthDialog(false);
@@ -378,7 +394,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.m3PrimaryBtn, { backgroundColor: theme.colors.primary }]}
+                style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
                 onPress={() => {
                   setShowHealthDialog(false);
                   handleLogin();
@@ -386,7 +402,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
                 accessibilityRole="button"
                 accessibilityLabel="Retry Connection"
               >
-                <Text style={styles.m3PrimaryBtnText}>Retry</Text>
+                <Text style={[styles.m3TonalBtnText, { color: theme.colors.textPrimary }]}>Retry</Text>
               </TouchableOpacity>
             </View>
           </View>

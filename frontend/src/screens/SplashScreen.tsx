@@ -184,6 +184,23 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
 
             <View style={styles.m3ActionRow}>
               <TouchableOpacity
+                style={[
+                  styles.m3PrimaryBtn,
+                  { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                ]}
+                onPress={() => {
+                  setShowOfflineDialog(false);
+                  useAuthStore.getState().loginAsGuest();
+                  navigation.replace('MainTabs', { screen: 'Home' });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Login as a Guest"
+              >
+                <Icon name="person-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.m3PrimaryBtnText}>Login as a Guest</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
                 onPress={() => {
                   setShowOfflineDialog(false);
@@ -198,12 +215,12 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.m3PrimaryBtn, { backgroundColor: theme.colors.primary }]}
+                style={[styles.m3TonalBtn, { borderColor: theme.colors.border }]}
                 onPress={runStartupSequence}
                 accessibilityRole="button"
                 accessibilityLabel="Retry Connection"
               >
-                <Text style={styles.m3PrimaryBtnText}>Retry</Text>
+                <Text style={[styles.m3TonalBtnText, { color: theme.colors.textPrimary }]}>Retry</Text>
               </TouchableOpacity>
             </View>
           </View>

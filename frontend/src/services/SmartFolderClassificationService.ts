@@ -21,6 +21,7 @@ import {
   dailyDigestService,
   memoryInsightsService,
 } from './memory';
+import { mediaObserverService } from './backgroundDetection/mediaObserver';
 
 export type SmartFolderCategory =
   | 'Finance'
@@ -397,6 +398,21 @@ export class SmartFolderClassificationService {
         continue;
       }
 
+      let ocrText = sc.ocrText;
+      if (!ocrText || ocrText.trim().length === 0) {
+        const path = sc.localPath || sc.filePath;
+        if (path) {
+          try {
+            const ocrRes = await mediaObserverService.recognizeText(path);
+            if (ocrRes && ocrRes.text && ocrRes.text.trim().length > 0) {
+              ocrText = ocrRes.text.trim();
+            }
+          } catch (err) {
+            console.warn(`[SmartFolderClassification] Failed to OCR screenshot ${sc.id}:`, err);
+          }
+        }
+      }
+
       const beforeFolder = sc.categoryId;
       const updated = await this.assignScreenshotToSmartFolder({
         screenshotId: sc.id,
@@ -405,9 +421,10 @@ export class SmartFolderClassificationService {
         localPath: sc.localPath,
         contentUri: sc.contentUri,
         thumbnailUri: sc.thumbnailUri,
-        ocrText: sc.ocrText,
+        ocrText,
         fileSize: sc.fileSize,
         deviceFolder: sc.sourceApp,
+        forceRefresh: true,
       });
 
       if (updated.categoryId !== beforeFolder) {

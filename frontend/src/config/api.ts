@@ -10,7 +10,7 @@ export const STORAGE_KEY_BACKEND_URL = '@contextvault_backend_url';
 /**
  * Hardcoded Default Fallback URL (Priority 3)
  */
-export const DEFAULT_FALLBACK_URL = 'http://10.33.95.152:8000';
+export const DEFAULT_FALLBACK_URL = 'http://10.187.86.152:8000';
 
 /**
  * Health Check Result Contract

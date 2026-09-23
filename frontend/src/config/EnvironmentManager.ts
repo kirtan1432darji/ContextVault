@@ -11,6 +11,8 @@ export interface EnvironmentConfig {
   appVersion: string;
   buildNumber: number;
   apiBaseUrl: string;
+  openAiApiKey?: string;
+  qwenApiKey?: string;
   debugFlags: {
     enableDeveloperMode: boolean;
     enableDemoMode: boolean;
@@ -74,6 +76,8 @@ let generatedEnv: {
   visionProvider?: string;
   visionServerUrl?: string;
   visionTimeout?: number;
+  openAiApiKey?: string;
+  qwenApiKey?: string;
 } = {};
 try {
   generatedEnv = require('./env.generated.json');
@@ -197,11 +201,25 @@ class EnvironmentManagerClass {
     return (generatedEnv.visionTimeout || 120) * 1000;
   }
 
+  public getOpenAiApiKey(): string {
+    return '';
+  }
+
+  public getQwenApiKey(): string {
+    return (
+      generatedEnv.qwenApiKey ||
+      (typeof process !== 'undefined' && (process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY)) ||
+      ''
+    );
+  }
+
   public getConfig(): EnvironmentConfig {
     const currentBaseUrl = this.getApiBaseUrl();
     return {
       ...this.baseConfig,
       apiBaseUrl: currentBaseUrl,
+      openAiApiKey: this.getOpenAiApiKey(),
+      qwenApiKey: this.getQwenApiKey(),
       debugFlags: {
         ...this.baseConfig.debugFlags,
       },

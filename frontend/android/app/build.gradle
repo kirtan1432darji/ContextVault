@@ -137,6 +137,9 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Google ML Kit Text Recognition (On-device OCR)
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.0'
 }
 
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

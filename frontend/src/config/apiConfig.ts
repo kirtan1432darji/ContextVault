@@ -69,6 +69,25 @@ export const API_ENDPOINTS = {
 
 export { getApiBaseUrl, setApiBaseUrl };
 
+/**
+ * Returns the configured OpenAI API Key
+ */
+export function getOpenAiApiKey(): string {
+  return '';
+}
+
+export const OPEN_AI_API_KEY = '';
+
+/**
+ * Returns the configured Qwen API Key from local environment
+ */
+export function getQwenApiKey(): string {
+  const { EnvironmentManager } = require('./EnvironmentManager');
+  return EnvironmentManager.getQwenApiKey();
+}
+
+export const QWEN_API_KEY = getQwenApiKey();
+
 export default {
   API_BASE_URL,
   REQUEST_TIMEOUT_MS,
@@ -76,5 +95,9 @@ export default {
   getEndpointUrl,
   getApiBaseUrl,
   setApiBaseUrl,
+  getOpenAiApiKey,
+  OPEN_AI_API_KEY,
+  getQwenApiKey,
+  QWEN_API_KEY,
   API_ENDPOINTS,
 };

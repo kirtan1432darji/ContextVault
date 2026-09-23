@@ -6,6 +6,7 @@ import { notificationService } from './notificationService';
 import { useScreenshotStore } from '../store/screenshot.store';
 import { screenshotRepository } from '../database/repositories/screenshotRepository';
 import { smartFolderClassificationService } from './SmartFolderClassificationService';
+import { mediaObserverService } from './backgroundDetection/mediaObserver';
 
 export interface DiscoveredMediaAsset {
   id: string;
@@ -35,8 +36,11 @@ export class ScreenshotScannerService {
   }
 
   /**
-   * Processes a discovered screenshot asset directly through the Vision AI Pipeline (Sprint P2-C).
-   * Completely bypasses legacy OCR, streaming straight to Vision AI for full multimodal understanding.
+   * Offline-First Hybrid Pipeline:
+   * 1. On-device Google ML Kit OCR extracts text directly on phone (~150ms, 100% offline, free).
+   * 2. 5-Tier Rule Engine immediately classifies screenshot into Smart Folder (Finance, Travel, Food Delivery, etc.).
+   * 3. Record is saved into SQLite with matched category (confidence >= 0.85).
+   * 4. Asynchronous Local Qwen2.5-VL-3B enrichment (if server connected) for summaries and entity extraction.
    */
   async processScreenshotAsset(asset: DiscoveredMediaAsset): Promise<ScreenshotModel | null> {
     const timestamp = new Date(asset.createdAt).getTime() || Date.now();
@@ -69,7 +73,7 @@ export class ScreenshotScannerService {
       isSynced: false,
       ocrStatus: 'processing',
       analysisStatus: 'Processing',
-      classificationSource: 'vision_ai',
+      classificationSource: 'local',
       tags: [],
       lastScannedAt: new Date().toISOString(),
     };
@@ -79,17 +83,18 @@ export class ScreenshotScannerService {
     } catch {}
     useScreenshotStore.getState().addOrUpdateScreenshot(initialScreenshot);
 
-    // 2. Vision AI Processing
+    // 2. On-Device Google ML Kit OCR (100% Offline, ~150ms)
     let ocrText = '';
-    const visionRes = await visionAIService.analyzeScreenshot({
-      screenshotId,
-      filePath: asset.filePath,
-      fileName: asset.fileName,
-      imageDimensions: { width: asset.width, height: asset.height },
-    });
-
-    if (visionRes.isSuccess && visionRes.data) {
-      ocrText = visionRes.data.ocr_text;
+    try {
+      const ocrResult = await mediaObserverService.recognizeText(asset.filePath);
+      if (ocrResult && ocrResult.text && ocrResult.text.trim().length > 0) {
+        ocrText = ocrResult.text.trim();
+        console.log(
+          `[ScreenshotScannerService] On-device ML Kit OCR extracted ${ocrText.length} chars (${ocrResult.blockCount} blocks) for ${asset.fileName}`
+        );
+      }
+    } catch (ocrErr: any) {
+      console.warn('[ScreenshotScannerService] On-device OCR error:', ocrErr?.message || ocrErr);
     }
 
     // 3. Smart Folder 5-Tier Classification & Auto-Organization
@@ -103,12 +108,45 @@ export class ScreenshotScannerService {
       forceRefresh: true,
     });
 
+    console.log(
+      `[ScreenshotScannerService] Screenshot ${asset.fileName} organized into "${organizedScreenshot.categoryName}" (confidence: ${organizedScreenshot.confidence})`
+    );
+
     // 4. Notification
     await notificationService.showScreenshotOrganizedNotification({
       categoryName: organizedScreenshot.categoryName,
       subcategory: organizedScreenshot.subcategory || 'General',
       fileName: asset.fileName,
     });
+
+    // 5. Asynchronous Local AI Qwen Enrichment (non-blocking)
+    visionAIService
+      .analyzeScreenshot({
+        screenshotId,
+        filePath: asset.filePath,
+        fileName: asset.fileName,
+        imageDimensions: { width: asset.width, height: asset.height },
+      })
+      .then(async (visionRes) => {
+        if (visionRes.isSuccess && visionRes.data) {
+          console.log(
+            `[ScreenshotScannerService] Local Qwen enrichment complete for ${asset.fileName}: ${visionRes.data.summary}`
+          );
+          await smartFolderClassificationService.assignScreenshotToSmartFolder({
+            screenshotId,
+            fileName: asset.fileName,
+            filePath: asset.filePath,
+            localPath: asset.filePath,
+            ocrText: visionRes.data.ocr_text || ocrText,
+            fileSize: asset.fileSize,
+            forceRefresh: false, // Respect manual or confident classification
+          });
+        }
+      })
+      .catch((err) => {
+        // Safe to ignore if local vision server is offline
+        console.log('[ScreenshotScannerService] Local Qwen enrichment skipped (offline or busy):', err?.message);
+      });
 
     return organizedScreenshot;
   }

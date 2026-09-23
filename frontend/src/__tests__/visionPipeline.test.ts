@@ -47,9 +47,12 @@ jest.mock('../database', () => ({
   },
 }));
 
+import { openAIVisionService } from '../services/OpenAIVisionService';
+
 describe('Vision AI Pipeline Integration (Phase 13)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(openAIVisionService, 'isAvailable').mockReturnValue(false);
   });
 
   it('runs full vision analysis pipeline and updates sqlite cache and screenshots', async () => {

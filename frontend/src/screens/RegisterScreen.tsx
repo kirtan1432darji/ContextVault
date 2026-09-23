@@ -278,6 +278,37 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+              <Text style={[styles.dividerText, { color: theme.colors.textMuted }]}>OR</Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+            </View>
+
+            {/* Login as a Guest Button */}
+            <TouchableOpacity
+              style={[
+                styles.guestButton,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? '#1F293750' : '#F8FAFC',
+                },
+              ]}
+              onPress={() => {
+                clearError();
+                useAuthStore.getState().loginAsGuest();
+                navigation.replace('MainTabs', { screen: 'Home' });
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Login as a Guest without creating an account"
+            >
+              <Icon name="person-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.guestButtonText, { color: theme.colors.textPrimary }]}>
+                Login as a Guest
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Footer - Login Navigation */}
@@ -404,6 +435,33 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  guestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  guestButtonText: {
+    fontSize: 15,
     fontWeight: '600',
   },
 });

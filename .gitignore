@@ -74,13 +74,19 @@ wheels/
 # Environment variables & secrets
 .env
 .env.*
+.env*.local
+*.env
+*.env.*
+frontend/.env*
+backend/.env*
+web-client/.env*
 !.env.example
-!.env.development
-!.env.production
-!frontend/.env.development
-!frontend/.env.production
-.env.local
-.env.*.local
+!frontend/.env.example
+!backend/.env.example
+!web-client/.env.example
+
+# Local generated environment files containing secrets/IPs
+frontend/src/config/env.generated.json
 
 # Logs
 *.log
@@ -96,3 +102,7 @@ backend/logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Screenshots & temporary test media
+frontend/screen*.png
+*.png.tmp

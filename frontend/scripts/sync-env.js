@@ -32,13 +32,19 @@ function syncEnv() {
     selectedFile = '.env.production.local';
   }
 
-  const envData = parseEnv(path.resolve(rootDir, selectedFile));
+  const dotEnvData = parseEnv(path.resolve(rootDir, '.env'));
+  const fileEnvData = parseEnv(path.resolve(rootDir, selectedFile));
+  const localEnvData = parseEnv(path.resolve(rootDir, '.env.local'));
+  const envData = { ...dotEnvData, ...fileEnvData, ...localEnvData };
+  const qwenApiKey = envData.QWEN_API_KEY || envData.DASHSCOPE_API_KEY || '';
+
   const output = {
-    apiBaseUrl: envData.API_BASE_URL || 'http://10.33.95.152:8000',
+    apiBaseUrl: envData.API_BASE_URL || 'http://10.187.86.152:8000',
     environment: envData.ENVIRONMENT || (isProdTarget ? 'production' : 'local_release'),
-    visionProvider: envData.VISION_PROVIDER || 'local',
-    visionServerUrl: envData.VISION_SERVER_URL || 'http://10.33.95.152:8000/api/vision',
+    visionProvider: 'local',
+    visionServerUrl: envData.VISION_SERVER_URL || `${envData.API_BASE_URL || 'http://10.187.86.152:8000'}/api/vision`,
     visionTimeout: parseInt(envData.VISION_TIMEOUT || '120', 10),
+    qwenApiKey: qwenApiKey,
     resolvedFrom: selectedFile,
     updatedAt: new Date().toISOString(),
   };
@@ -53,6 +59,7 @@ function syncEnv() {
         existing.visionProvider === output.visionProvider &&
         existing.visionServerUrl === output.visionServerUrl &&
         existing.visionTimeout === output.visionTimeout &&
+        existing.openAiApiKey === output.openAiApiKey &&
         existing.resolvedFrom === output.resolvedFrom
       ) {
         return existing;

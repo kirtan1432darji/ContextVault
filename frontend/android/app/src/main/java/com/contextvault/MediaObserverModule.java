@@ -22,12 +22,20 @@ import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.util.Base64;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.Locale;
@@ -646,5 +654,157 @@ public class MediaObserverModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             promise.reject("DELETE_ERROR", e.getMessage(), e);
         }
+    }
+
+    @ReactMethod
+    public void getBase64Image(String uriOrPath, int maxDimension, Promise promise) {
+        new Thread(() -> {
+            try {
+                if (uriOrPath == null || uriOrPath.trim().isEmpty()) {
+                    promise.reject("INVALID_URI", "URI or path cannot be empty");
+                    return;
+                }
+
+                int size = maxDimension > 0 ? maxDimension : 1024;
+                String cleanInput = uriOrPath.trim();
+                Uri sourceUri;
+                if (cleanInput.startsWith("content://") || cleanInput.startsWith("file://")) {
+                    sourceUri = Uri.parse(cleanInput);
+                } else {
+                    sourceUri = Uri.fromFile(new File(cleanInput));
+                }
+
+                // 1. Decode bounds to determine sample size
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+
+                InputStream is = null;
+                try {
+                    if ("content".equals(sourceUri.getScheme())) {
+                        is = reactContext.getContentResolver().openInputStream(sourceUri);
+                    } else {
+                        String filePath = sourceUri.getPath();
+                        if (filePath != null) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                is = new FileInputStream(f);
+                            }
+                        }
+                    }
+                    if (is != null) {
+                        BitmapFactory.decodeStream(is, null, options);
+                    }
+                } finally {
+                    if (is != null) {
+                        try { is.close(); } catch (Exception ignored) {}
+                    }
+                }
+
+                if (options.outWidth <= 0 || options.outHeight <= 0) {
+                    promise.reject("DECODE_ERROR", "Could not decode image bounds");
+                    return;
+                }
+
+                // 2. Calculate inSampleSize
+                int inSampleSize = 1;
+                int maxDim = Math.max(options.outWidth, options.outHeight);
+                while (maxDim / (inSampleSize * 2) >= size) {
+                    inSampleSize *= 2;
+                }
+
+                options.inJustDecodeBounds = false;
+                options.inSampleSize = inSampleSize;
+                options.inPreferredConfig = Bitmap.Config.RGB_565;
+
+                Bitmap bitmap = null;
+                try {
+                    if ("content".equals(sourceUri.getScheme())) {
+                        is = reactContext.getContentResolver().openInputStream(sourceUri);
+                    } else {
+                        String filePath = sourceUri.getPath();
+                        if (filePath != null) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                is = new FileInputStream(f);
+                            }
+                        }
+                    }
+                    if (is != null) {
+                        bitmap = BitmapFactory.decodeStream(is, null, options);
+                    }
+                } finally {
+                    if (is != null) {
+                        try { is.close(); } catch (Exception ignored) {}
+                    }
+                }
+
+                if (bitmap == null) {
+                    promise.reject("DECODE_ERROR", "Could not decode image bitmap");
+                    return;
+                }
+
+                // 3. Compress to JPEG and convert to Base64
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+                bitmap.recycle();
+
+                byte[] bytes = baos.toByteArray();
+                String base64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+                promise.resolve(base64);
+            } catch (Exception e) {
+                promise.reject("BASE64_ERROR", e.getMessage(), e);
+            }
+        }).start();
+    }
+
+    /**
+     * Extracts optical text directly from screenshot pixels on-device using Google ML Kit.
+     * Fully offline, fast (~150ms), and private.
+     */
+    @ReactMethod
+    public void recognizeText(String uriOrPath, Promise promise) {
+        new Thread(() -> {
+            try {
+                if (uriOrPath == null || uriOrPath.trim().isEmpty()) {
+                    promise.reject("INVALID_URI", "URI or path cannot be empty");
+                    return;
+                }
+
+                String cleanInput = uriOrPath.trim();
+                InputImage image;
+
+                if (cleanInput.startsWith("content://")) {
+                    Uri contentUri = Uri.parse(cleanInput);
+                    image = InputImage.fromFilePath(reactContext, contentUri);
+                } else if (cleanInput.startsWith("file://")) {
+                    Uri fileUri = Uri.parse(cleanInput);
+                    image = InputImage.fromFilePath(reactContext, fileUri);
+                } else {
+                    File file = new File(cleanInput);
+                    if (!file.exists()) {
+                        promise.reject("FILE_NOT_FOUND", "File does not exist: " + cleanInput);
+                        return;
+                    }
+                    image = InputImage.fromFilePath(reactContext, Uri.fromFile(file));
+                }
+
+                TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+                recognizer.process(image)
+                        .addOnSuccessListener(visionText -> {
+                            WritableMap result = Arguments.createMap();
+                            String text = visionText.getText();
+                            result.putString("text", text != null ? text : "");
+                            result.putInt("blockCount", visionText.getTextBlocks().size());
+                            promise.resolve(result);
+                        })
+                        .addOnFailureListener(e -> {
+                            Log.w(MODULE_NAME, "ML Kit text recognition failed: " + e.getMessage());
+                            promise.reject("OCR_FAILED", e.getMessage(), e);
+                        });
+            } catch (Exception e) {
+                Log.e(MODULE_NAME, "recognizeText error: " + e.getMessage(), e);
+                promise.reject("OCR_ERROR", e.getMessage(), e);
+            }
+        }).start();
     }
 }

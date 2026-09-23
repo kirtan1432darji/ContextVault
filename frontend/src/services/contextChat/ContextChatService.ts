@@ -187,19 +187,22 @@ export class ContextChatService {
       try {
         const ping = await visionAIService.pingVisionServer();
         if (ping.online) {
-          // Attempt chat endpoint on local server or backend proxy
-          const chatUrl = `${BackendConnectionManager.getApiUrl()}/chat/message`;
+          // Attempt chat endpoint on Vision AI gateway proxy (Qwen on RTX 4050)
+          const visionChatUrl = `${BackendConnectionManager.getApiUrl()}/vision/chat`;
           const response = await axios.post(
-            chatUrl,
+            visionChatUrl,
             {
               sessionId,
               content: trimmed,
               prompt,
             },
-            { timeout: 8000 }
+            { timeout: 30000 }
           );
 
-          if (response.data && response.data.data && response.data.data.content) {
+          if (response.data && response.data.content) {
+            answer = response.data.content;
+            isOffline = false;
+          } else if (response.data && response.data.data && response.data.data.content) {
             answer = response.data.data.content;
             isOffline = false;
           }

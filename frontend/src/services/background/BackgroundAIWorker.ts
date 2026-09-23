@@ -202,11 +202,29 @@ export class BackgroundAIWorker {
         }
       } else {
         const errMsg = visionResult.error || 'Vision AI analysis failed';
-        loggerService.error('AIQueue', `Vision AI failed for ${fileName}: ${errMsg}`);
-        if (visionResult.rawError === 'VISION_SERVER_OFFLINE' || errMsg.toLowerCase().includes('offline') || errMsg.toLowerCase().includes('unreachable') || errMsg.toLowerCase().includes('refused')) {
-          throw new Error(`Local Vision AI Server is offline: ${errMsg}`);
+        loggerService.warn('AIQueue', `Local Vision AI unavailable for ${fileName} (${errMsg}), falling back to on-device Google ML Kit OCR...`);
+        try {
+          const { mediaObserverService } = await import('../backgroundDetection/mediaObserver');
+          const mlKitResult = await mediaObserverService.recognizeText(filePath);
+          if (mlKitResult && mlKitResult.text) {
+            ocrText = mlKitResult.text.trim();
+            loggerService.info('AIQueue', `On-device ML Kit OCR extracted ${ocrText.length} chars for ${fileName}`);
+          }
+        } catch (ocrErr: any) {
+          loggerService.warn('AIQueue', `On-device OCR fallback error for ${fileName}:`, ocrErr);
         }
-        throw new Error(`Local Vision AI Server error: ${errMsg}`);
+
+        // Update pending table with fallback OCR
+        if (pendingScreenshot && ocrText) {
+          try {
+            await pendingScreenshotRepository.updateOCRResult(
+              item.screenshotId,
+              'Completed',
+              ocrText,
+              Date.now() - startTime
+            );
+          } catch {}
+        }
       }
 
       // 4. Step: Smart Folder 5-Tier Classification & Auto-Organize

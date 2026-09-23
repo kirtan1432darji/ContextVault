@@ -223,7 +223,7 @@ export const BackendConnectionScreen: React.FC = () => {
             <TextInput
               value={urlInput}
               onChangeText={setUrlInput}
-              placeholder={defaultUrl || 'http://10.33.95.152:8000'}
+              placeholder={defaultUrl || 'http://10.187.86.152:8000'}
               placeholderTextColor={theme.colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}

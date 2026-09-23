@@ -570,6 +570,8 @@ export class SmartFolderRules {
     // -------------------------------------------------------------------------
     // Tier 2: Entity Matching (Merchants, Platforms, Banks, Airlines, Govt Docs)
     // -------------------------------------------------------------------------
+    const matchedEntityResults: ClassificationRuleResult[] = [];
+
     for (const [catId, cfg] of Object.entries(CANONICAL_CATEGORIES) as [CanonicalCategoryId, CategoryRuleConfig][]) {
       if (catId === 'other') continue;
       for (const ent of cfg.entities) {
@@ -591,7 +593,7 @@ export class SmartFolderRules {
         const inOcr = rawOcr.length > 0 && wordRegex.test(rawOcr);
 
         if (inVisionEntities || inAppName || inOcr) {
-          return {
+          matchedEntityResults.push({
             categoryId: catId,
             categoryName: cfg.name,
             subcategory: ent,
@@ -601,9 +603,36 @@ export class SmartFolderRules {
             matchedRuleOrEntity: ent,
             suggestedIcon: cfg.icon,
             suggestedColor: cfg.color,
-          };
+          });
+          break; // Move to next category once an entity matches
         }
       }
+    }
+
+    if (matchedEntityResults.length === 1) {
+      return matchedEntityResults[0];
+    }
+
+    if (matchedEntityResults.length > 1) {
+      // Multiple categories matched entities (e.g. Amazon Shopping paid via ICICI Bank).
+      // Disambiguate using OCR keyword score weighting for each matched category.
+      let bestResult = matchedEntityResults[0];
+      let bestScore = -1;
+
+      for (const res of matchedEntityResults) {
+        const cfg = CANONICAL_CATEGORIES[res.categoryId];
+        let score = 0;
+        for (const kw of cfg.keywords) {
+          if (rawOcr.includes(kw.word)) {
+            score += kw.weight;
+          }
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestResult = res;
+        }
+      }
+      return bestResult;
     }
 
     // -------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme';
 import { StorageService, StorageKeys } from '../utils/storage';
+import { useAuthStore } from '../store/auth.store';
 
 const { width } = Dimensions.get('window');
 
@@ -75,6 +76,12 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
   const handleFinishOnboarding = () => {
     StorageService.setBoolean(StorageKeys.IS_ONBOARDED, true);
     navigation.replace('Login');
+  };
+
+  const handleLoginAsGuest = () => {
+    StorageService.setBoolean(StorageKeys.IS_ONBOARDED, true);
+    useAuthStore.getState().loginAsGuest();
+    navigation.replace('MainTabs', { screen: 'Home' });
   };
 
   const handleNext = () => {
@@ -183,6 +190,18 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
             style={{ marginLeft: 8 }}
           />
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.guestLink}
+          onPress={handleLoginAsGuest}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Login as a Guest"
+        >
+          <Text style={[styles.guestLinkText, { color: theme.colors.textSecondary }]}>
+            or <Text style={{ color: theme.colors.primary, fontWeight: '700' }}>Login as a Guest</Text>
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -285,5 +304,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  guestLink: {
+    marginTop: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  guestLinkText: {
+    fontSize: 14,
   },
 });

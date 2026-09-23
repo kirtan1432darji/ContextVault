@@ -9,6 +9,7 @@ import { smartFolderClassificationService } from './SmartFolderClassificationSer
 import { useScreenshotStore } from '../store/screenshot.store';
 import { useCategoryStore } from '../store/category.store';
 import { databaseService } from '../database';
+import { EnvironmentManager } from '../config/EnvironmentManager';
 import {
   VisionStructuredOutput,
   VisionServerHealth,
@@ -275,47 +276,63 @@ export class VisionAIService {
         }
       }
 
-      // 2. Health check before upload
-      const health = await this.pingVisionServer();
-      if (!health.online) {
-        console.warn(`[VisionAIService] Vision server is offline: ${health.error}`);
-        return Result.failure(
-          health.error || 'Vision Server Offline',
-          'VISION_SERVER_OFFLINE'
+      let analysisResult: ScreenshotAnalysisResult | null = null;
+      let modelVersionUsed = 'local:Qwen2.5-VL-3B-Instruct';
+      let preprocessedUri = filePath;
+
+      // 2. Multimodal Vision Analysis via Local Qwen2.5-VL-3B Gateway
+      if (!analysisResult) {
+        // Health check before upload
+        const health = await this.pingVisionServer();
+        if (!health.online) {
+          console.warn(`[VisionAIService] Vision server is offline: ${health.error}`);
+          return Result.failure(
+            health.error || 'Vision Server Offline',
+            'VISION_SERVER_OFFLINE'
+          );
+        }
+
+        // Image Preprocessing (max 1024px longest edge, maintain aspect ratio)
+        const preprocessed = await visionImagePreprocessor.preprocess(
+          filePath,
+          params.imageDimensions
         );
-      }
+        preprocessedUri = preprocessed.uri;
 
-      // 3. Image Preprocessing (max 1024px longest edge, maintain aspect ratio)
-      const preprocessed = await visionImagePreprocessor.preprocess(
-        filePath,
-        params.imageDimensions
-      );
+        // Send multipart request to Ubuntu FastAPI Gateway
+        const endpoint = `${BackendConnectionManager.getApiUrl()}/vision/analyze`;
+        const formData = new FormData();
+        const uploadName = fileName || `screenshot_${Date.now()}.jpg`;
 
-      // 4. Send multipart request to Ubuntu FastAPI Gateway
-      const endpoint = `${BackendConnectionManager.getApiUrl()}/vision/analyze`;
-      const formData = new FormData();
-      const uploadName = fileName || `screenshot_${Date.now()}.jpg`;
+        formData.append('image', {
+          uri: preprocessed.uri,
+          type: 'image/jpeg',
+          name: uploadName,
+        } as any);
 
-      formData.append('image', {
-        uri: preprocessed.uri,
-        type: 'image/jpeg',
-        name: uploadName,
-      } as any);
-
-      const response = await axios.post(endpoint, formData, {
-        headers: {
+        const headers: Record<string, string> = {
           'Content-Type': 'multipart/form-data',
-        },
-        timeout: 120000,
-      });
+        };
+        const qwenKey = EnvironmentManager.getQwenApiKey();
+        if (qwenKey) {
+          headers['Authorization'] = `Bearer ${qwenKey}`;
+          headers['X-API-Key'] = qwenKey;
+        }
 
-      const raw = response.data;
-      if (!raw) {
-        return Result.failure('Invalid Vision Response: Empty data returned', 'INVALID_RESPONSE');
+        const response = await axios.post(endpoint, formData, {
+          headers,
+          timeout: 120000,
+        });
+
+        const raw = response.data;
+        if (!raw) {
+          return Result.failure('Invalid Vision Response: Empty data returned', 'INVALID_RESPONSE');
+        }
+
+        analysisResult = extractMetadataFromVisionResponse(raw);
+        modelVersionUsed = 'local:Qwen2.5-VL-3B-Instruct';
       }
 
-      // 5. Normalize metadata using helper
-      const analysisResult = extractMetadataFromVisionResponse(raw);
       const processingTimeMs = Date.now() - startTime;
       analysisResult.cached = false;
       analysisResult.processingTimeMs = processingTimeMs;
@@ -331,7 +348,7 @@ export class VisionAIService {
           tags: analysisResult.tags,
           entities: analysisResult.entities,
         },
-        modelVersion: 'local:Qwen2.5-VL-3B-Instruct',
+        modelVersion: modelVersionUsed,
       });
 
       // 7. Save to SQLite classification_cache
@@ -350,7 +367,7 @@ export class VisionAIService {
             analysisResult.confidence,
             analysisResult.summary,
             'vision_ai',
-            'local:Qwen2.5-VL-3B-Instruct',
+            modelVersionUsed,
             new Date().toISOString(),
           ]
         );
@@ -374,7 +391,7 @@ export class VisionAIService {
       }
 
       // 9. Automatic Smart Folder Integration
-      await this.updateSmartFolderForScreenshot(screenshotId, analysisResult, preprocessed.uri);
+      await this.updateSmartFolderForScreenshot(screenshotId, analysisResult, preprocessedUri);
 
       return Result.success(analysisResult);
     } catch (err: any) {
