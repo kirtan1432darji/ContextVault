@@ -8,6 +8,7 @@ import {
   Modal,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -126,16 +127,12 @@ export const SplashScreen: React.FC<Props> = ({ navigation }) => {
           },
         ]}
       >
-        <View
-          style={[
-            styles.logoContainer,
-            {
-              backgroundColor: theme.isDark ? '#1E1E1E' : '#E8F0FE',
-              borderColor: theme.isDark ? '#2E2E2E' : '#D2E3FC',
-            },
-          ]}
-        >
-          <Icon name="albums-outline" size={48} color={theme.colors.primary} />
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
           {AppInfo.appName}
@@ -242,13 +239,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoContainer: {
-    width: 88,
-    height: 88,
-    borderRadius: 24,
-    borderWidth: 1,
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
+  },
+  logoImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 22,
   },
   title: {
     fontSize: 32,

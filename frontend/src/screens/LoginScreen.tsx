@@ -12,6 +12,7 @@ import {
   Switch,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -128,16 +129,12 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
         >
           {/* Header Brand */}
           <View style={styles.header}>
-            <View
-              style={[
-                styles.logoBadge,
-                {
-                  backgroundColor: theme.isDark ? '#1E1E1E' : '#E8F0FE',
-                  borderColor: theme.isDark ? '#2E2E2E' : '#D2E3FC',
-                },
-              ]}
-            >
-              <Icon name="albums-outline" size={34} color={theme.colors.primary} />
+            <View style={styles.logoBadge}>
+              <Image
+                source={require('../assets/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.welcomeTitle, { color: theme.colors.textPrimary }]}>
               Welcome Back
@@ -426,13 +423,16 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    borderWidth: 1,
+    width: 72,
+    height: 72,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  logoImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
   },
   welcomeTitle: {
     fontSize: 24,
