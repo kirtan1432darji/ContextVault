@@ -37,11 +37,15 @@ export const ReclassifyModal: React.FC<ReclassifyModalProps> = ({
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(screenshot.categoryId);
   const [subcategory, setSubcategory] = useState<string>(screenshot.subcategory || '');
-  const [tags, setTags] = useState<string[]>(
-    screenshot.keywords && screenshot.keywords.length > 0
-      ? [...screenshot.keywords]
-      : screenshot.tags?.map((t) => t.name) || []
-  );
+  const [tags, setTags] = useState<string[]>(() => {
+    if (Array.isArray(screenshot?.keywords) && screenshot.keywords.length > 0) {
+      return [...screenshot.keywords];
+    }
+    if (Array.isArray(screenshot?.tags)) {
+      return screenshot.tags.map((t: any) => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean);
+    }
+    return [];
+  });
   const [tagInput, setTagInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -50,11 +54,13 @@ export const ReclassifyModal: React.FC<ReclassifyModalProps> = ({
     if (visible && screenshot) {
       setSelectedCategoryId(screenshot.categoryId);
       setSubcategory(screenshot.subcategory || '');
-      setTags(
-        screenshot.keywords && screenshot.keywords.length > 0
-          ? [...screenshot.keywords]
-          : screenshot.tags?.map((t) => t.name) || []
-      );
+      if (Array.isArray(screenshot.keywords) && screenshot.keywords.length > 0) {
+        setTags([...screenshot.keywords]);
+      } else if (Array.isArray(screenshot.tags)) {
+        setTags(screenshot.tags.map((t: any) => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean));
+      } else {
+        setTags([]);
+      }
       setTagInput('');
       setIsSubmitting(false);
     }

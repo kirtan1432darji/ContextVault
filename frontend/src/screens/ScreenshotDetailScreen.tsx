@@ -220,7 +220,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const activeUri = candidateUris[candidateIndex] || '';
 
   const handleImageError = () => {
-    if (candidateIndex + 1 < candidateUris.length) {
+    if (candidateIndex + 1 < (candidateUris?.length || 0)) {
       setCandidateIndex((prev) => prev + 1);
       setIsImageLoading(true);
     } else {
@@ -239,7 +239,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   const allScreenshots = useScreenshotStore((s) => s.screenshots) || [];
   const currentIndex = Array.isArray(allScreenshots) ? allScreenshots.findIndex((item) => item?.id === id) : -1;
   const hasPrevious = currentIndex > 0;
-  const hasNext = currentIndex >= 0 && currentIndex < allScreenshots.length - 1;
+  const hasNext = currentIndex >= 0 && currentIndex < (allScreenshots?.length || 0) - 1;
 
   const navigateToPrevious = () => {
     if (hasPrevious) {
@@ -521,7 +521,11 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           <View style={[styles.breadcrumbBox, { backgroundColor: theme.isDark ? '#1E293B60' : '#F1F5F9' }]}>
             <Icon name="folder-open-outline" size={14} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
             <Text numberOfLines={1} style={[styles.breadcrumbText, { color: theme.colors.textSecondary }]}>
-              {screenshot.folderPath ? screenshot.folderPath.join(' › ') : `${screenshot.categoryName} › ${screenshot.subcategory || 'General'}`}
+              {Array.isArray(screenshot.folderPath)
+                ? screenshot.folderPath.join(' › ')
+                : typeof screenshot.folderPath === 'string'
+                ? screenshot.folderPath
+                : `${screenshot.categoryName} › ${screenshot.subcategory || 'General'}`}
             </Text>
           </View>
 
@@ -691,7 +695,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
                 ) : null}
 
                 {/* Key Bullet Points */}
-                {visionPoints.length > 0 && (
+                {Array.isArray(visionPoints) && visionPoints.length > 0 && (
                   <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: theme.isDark ? '#1E293B80' : '#F8FAFC' }}>
                     <Text style={{ fontSize: 11, fontWeight: '700', color: '#8B5CF6', marginBottom: 6 }}>
                       Bullet Points
@@ -730,7 +734,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
                 )}
 
                 {/* Tags */}
-                {visionTags.length > 0 && (
+                {Array.isArray(visionTags) && visionTags.length > 0 && (
                   <View style={{ marginBottom: 10 }}>
                     <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary, marginBottom: 6 }}>
                       Tags
@@ -790,11 +794,11 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         </ModernCard>
 
         {/* 2. Extracted Entities Card */}
-        {((extractedEntities.amounts?.length || 0) > 0 ||
-          (extractedEntities.merchants?.length || 0) > 0 ||
-          (extractedEntities.urls?.length || 0) > 0 ||
-          (extractedEntities.dates?.length || 0) > 0 ||
-          (extractedEntities.emails?.length || 0) > 0) && (
+        {((Array.isArray(extractedEntities?.amounts) && extractedEntities.amounts.length > 0) ||
+          (Array.isArray(extractedEntities?.merchants) && extractedEntities.merchants.length > 0) ||
+          (Array.isArray(extractedEntities?.urls) && extractedEntities.urls.length > 0) ||
+          (Array.isArray(extractedEntities?.dates) && extractedEntities.dates.length > 0) ||
+          (Array.isArray(extractedEntities?.emails) && extractedEntities.emails.length > 0)) && (
           <ModernCard style={styles.card}>
             <View style={styles.cardHeader}>
               <Icon name="cube-outline" size={18} color={theme.colors.primary} />
@@ -803,7 +807,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </Text>
             </View>
 
-            {(extractedEntities.merchants?.length || 0) > 0 && (
+            {Array.isArray(extractedEntities?.merchants) && extractedEntities.merchants.length > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Merchants & Organizations
@@ -816,7 +820,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {(extractedEntities.amounts?.length || 0) > 0 && (
+            {Array.isArray(extractedEntities?.amounts) && extractedEntities.amounts.length > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Financial Amounts
@@ -829,7 +833,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {(extractedEntities.dates?.length || 0) > 0 && (
+            {Array.isArray(extractedEntities?.dates) && extractedEntities.dates.length > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Dates
@@ -842,7 +846,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {(extractedEntities.urls?.length || 0) > 0 && (
+            {Array.isArray(extractedEntities?.urls) && extractedEntities.urls.length > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Web Links
@@ -855,7 +859,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {(extractedEntities.emails?.length || 0) > 0 && (
+            {Array.isArray(extractedEntities?.emails) && extractedEntities.emails.length > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Emails
@@ -947,7 +951,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         ) : null}
 
         {/* 4. AI Tags */}
-        {uniqueTags.length > 0 && (
+        {Array.isArray(uniqueTags) && uniqueTags.length > 0 && (
           <ModernCard style={styles.card}>
             <View style={styles.cardHeader}>
               <Icon name="pricetags-outline" size={18} color={theme.colors.secondary} />
