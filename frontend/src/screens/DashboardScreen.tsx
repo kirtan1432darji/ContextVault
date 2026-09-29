@@ -354,9 +354,10 @@ export const DashboardScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView
-      style={{ backgroundColor: theme.colors.background }}
-      contentContainerStyle={styles.container}
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.container}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -377,6 +378,22 @@ export const DashboardScreen: React.FC = () => {
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
+            style={[
+              styles.iconButton,
+              {
+                backgroundColor: `${theme.colors.primary}18`,
+                borderColor: theme.colors.primary,
+                marginRight: 8,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Open Context AI Chat"
+          >
+            <Icon name="chatbubble-ellipses" size={18} color={theme.colors.primary} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => navigation.navigate('NotificationCenter')}
             style={[
@@ -616,6 +633,20 @@ export const DashboardScreen: React.FC = () => {
       <View style={styles.quickActionsRow}>
         <TouchableOpacity
           style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
+          activeOpacity={0.7}
+          accessibilityLabel="Open Context AI Chat"
+        >
+          <View style={[styles.quickActionIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+            <Icon name="chatbubble-ellipses" size={22} color={theme.colors.primary} />
+          </View>
+          <Text style={[styles.quickActionLabel, { color: theme.colors.primary, fontWeight: '700' }]}>
+            AI Chat
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickActionButton, { backgroundColor: theme.colors.surface }]}
           onPress={() => navigation.navigate('ScannerStatus')}
           activeOpacity={0.7}
         >
@@ -666,6 +697,143 @@ export const DashboardScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Prominent Hero Context AI Chat Card */}
+      <ModernCard style={styles.heroChatCard}>
+        <View style={styles.heroChatHeaderRow}>
+          <View style={styles.heroChatTitleLeft}>
+            <View style={[styles.heroChatAvatarWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Icon name="sparkles" size={18} color={theme.colors.primary} />
+            </View>
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={[styles.heroChatHeading, { color: theme.colors.textPrimary }]}>
+                Ask ContextVault AI
+              </Text>
+              <Text style={[styles.heroChatSubheading, { color: theme.colors.textSecondary }]}>
+                Ask anything across receipts, travel, chats & tickets
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.heroChatLiveBadge, { backgroundColor: '#10B98118' }]}>
+            <View style={[styles.heroChatLiveDot, { backgroundColor: '#10B981' }]} />
+            <Text style={styles.heroChatLiveText}>Local AI</Text>
+          </View>
+        </View>
+
+        {/* Big Full-Width Hero Chat CTA Button */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
+          style={[styles.heroChatMainButton, { backgroundColor: theme.colors.primary }]}
+          accessibilityRole="button"
+          accessibilityLabel="Start Context AI Chat"
+        >
+          <View style={styles.heroChatBtnContent}>
+            <Icon name="chatbubbles" size={19} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.heroChatBtnTitle}>Start Context AI Chat</Text>
+          </View>
+          <View style={styles.heroChatBtnIconCircle}>
+            <Icon name="arrow-forward" size={16} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
+
+        {/* Quick Suggestion Prompts */}
+        <View style={styles.quickPromptContainer}>
+          {[
+            { label: "Today's summary", icon: 'sunny-outline', query: "Summarize today's screenshots" },
+            { label: 'Weekly spending', icon: 'card-outline', query: 'How much did I spend this week?' },
+            { label: 'Travel tickets', icon: 'airplane-outline', query: 'Show my flight and travel tickets' },
+            { label: 'Shopping receipts', icon: 'cart-outline', query: 'Find my Amazon and shopping orders' },
+          ].map((prompt, idx) => (
+            <TouchableOpacity
+              key={idx}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('ContextChat', { initialQuery: prompt.query })}
+              style={[
+                styles.quickPromptChip,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <Icon name={prompt.icon as any} size={13} color={theme.colors.primary} style={{ marginRight: 5 }} />
+              <Text style={[styles.quickPromptText, { color: theme.colors.textPrimary }]}>
+                {prompt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Recent Conversations Resume Box (if active chats exist) */}
+        {recentChats.length > 0 && (
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('ContextAIChat', {
+                categoryId: recentChats[0].folderId,
+                categoryName: recentChats[0].folderName,
+              })
+            }
+            style={[
+              styles.chatPrimaryBox,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.border,
+                marginTop: 10,
+              },
+            ]}
+          >
+            <View style={styles.chatFolderRow}>
+              <View style={styles.rowCenter}>
+                <Icon
+                  name={recentChats[0].iconName || 'folder'}
+                  size={15}
+                  color={recentChats[0].colorHex || theme.colors.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.chatFolderName, { color: theme.colors.textPrimary }]}>
+                  {recentChats[0].folderName}
+                </Text>
+              </View>
+              {recentChats[0].lastUpdated && (
+                <Text style={[styles.chatTimestamp, { color: theme.colors.textSecondary }]}>
+                  {new Date(recentChats[0].lastUpdated).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.chatMessageSnippetRow}>
+              <Icon
+                name={recentChats[0].lastMessageRole === 'user' ? 'person-outline' : 'chatbox-ellipses'}
+                size={13}
+                color={theme.colors.textSecondary}
+                style={{ marginRight: 6, marginTop: 2 }}
+              />
+              <Text
+                numberOfLines={2}
+                style={[styles.chatSnippetText, { color: theme.colors.textPrimary }]}
+              >
+                {recentChats[0].lastMessage}
+              </Text>
+            </View>
+
+            <View style={styles.chatResumeActionRow}>
+              <Text style={[styles.chatCountBadge, { color: theme.colors.textSecondary }]}>
+                {recentChats[0].messageCount} message{recentChats[0].messageCount > 1 ? 's' : ''}
+              </Text>
+              <View style={styles.rowCenter}>
+                <Text style={[styles.chatResumeBtnText, { color: theme.colors.primary }]}>
+                  Resume
+                </Text>
+                <Icon name="chevron-forward" size={13} color={theme.colors.primary} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
+      </ModernCard>
 
       {/* 2.5 AI Memory Timeline Preview Card (Sprint P3-A) */}
       <ModernCard style={styles.memoryTimelinePreviewCard}>
@@ -1295,128 +1463,7 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </ModernCard>
 
-      {/* 6. Sprint RN-07 / Sprint P3-B: Context AI Chat Engine (Unlocked for All / Guest Mode Offline) */}
-      <ModernCard style={styles.chatResumeCard}>
-        <View style={styles.chatResumeHeader}>
-          <View style={styles.rowCenter}>
-            <View style={[styles.chatAvatarIcon, { backgroundColor: `${theme.colors.primary}20` }]}>
-              <Icon name="sparkles" size={16} color={theme.colors.primary} />
-            </View>
-            <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text style={[styles.chatResumeHeading, { color: theme.colors.textPrimary }]}>
-                Ask ContextVault AI
-              </Text>
-              <Text style={[styles.chatResumeSubheading, { color: theme.colors.textSecondary }]}>
-                Conversational memory assistant over your screenshots
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
-            style={[styles.chatActivePill, { backgroundColor: `${theme.colors.primary}15` }]}
-          >
-            <Icon name="chatbubble-ellipses-outline" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
-            <Text style={[styles.chatActiveText, { color: theme.colors.primary }]}>Open Chat</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Quick Executable Prompt Chips */}
-        <View style={styles.quickPromptContainer}>
-          {[
-            { label: "Today's summary", icon: 'sunny-outline', query: "Summarize today's screenshots" },
-            { label: 'Spending this week', icon: 'card-outline', query: 'How much did I spend this week?' },
-            { label: 'Travel memories', icon: 'airplane-outline', query: 'Show my flight and travel tickets' },
-            { label: 'Shopping receipts', icon: 'cart-outline', query: 'Find my Amazon and shopping orders' },
-          ].map((prompt, idx) => (
-            <TouchableOpacity
-              key={idx}
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('ContextChat', { initialQuery: prompt.query })}
-              style={[
-                styles.quickPromptChip,
-                {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  borderColor: theme.colors.border,
-                },
-              ]}
-            >
-              <Icon name={prompt.icon as any} size={13} color={theme.colors.primary} style={{ marginRight: 5 }} />
-              <Text style={[styles.quickPromptText, { color: theme.colors.textPrimary }]}>
-                {prompt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Recent Conversations Resume Box (if active chats exist) */}
-        {recentChats.length > 0 && (
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate('ContextAIChat', {
-                categoryId: recentChats[0].folderId,
-                categoryName: recentChats[0].folderName,
-              })
-            }
-            style={[
-              styles.chatPrimaryBox,
-              {
-                backgroundColor: theme.colors.surfaceVariant,
-                borderColor: theme.colors.border,
-                marginTop: 12,
-              },
-            ]}
-          >
-            <View style={styles.chatFolderRow}>
-              <View style={styles.rowCenter}>
-                <Icon
-                  name={recentChats[0].iconName || 'folder'}
-                  size={16}
-                  color={recentChats[0].colorHex || theme.colors.primary}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[styles.chatFolderName, { color: theme.colors.textPrimary }]}>
-                  {recentChats[0].folderName}
-                </Text>
-              </View>
-              {recentChats[0].lastUpdated && (
-                <Text style={[styles.chatTimestamp, { color: theme.colors.textSecondary }]}>
-                  {new Date(recentChats[0].lastUpdated).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.chatMessageSnippetRow}>
-              <Icon
-                name={recentChats[0].lastMessageRole === 'user' ? 'person-outline' : 'chatbox-ellipses'}
-                size={14}
-                color={theme.colors.textSecondary}
-                style={{ marginRight: 6, marginTop: 2 }}
-              />
-              <Text
-                numberOfLines={2}
-                style={[styles.chatSnippetText, { color: theme.colors.textPrimary }]}
-              >
-                {recentChats[0].lastMessage}
-              </Text>
-            </View>
-
-            <View style={styles.chatResumeActionRow}>
-              <Text style={[styles.chatCountBadge, { color: theme.colors.textSecondary }]}>
-                {recentChats[0].messageCount} message{recentChats[0].messageCount > 1 ? 's' : ''}
-              </Text>
-              <View style={styles.rowCenter}>
-                <Text style={[styles.chatResumeBtnText, { color: theme.colors.primary }]}>
-                  Resume Chat
-                </Text>
-                <Icon name="chevron-forward" size={14} color={theme.colors.primary} />
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-      </ModernCard>
 
       {/* 7. Sprint RN-06: Recently Updated Contexts */}
       {recentlyUpdatedContexts.length > 0 && (
@@ -1881,6 +1928,19 @@ export const DashboardScreen: React.FC = () => {
         featureName={lockedFeatureName}
       />
     </ScrollView>
+
+    {/* Floating Action Button for AI Chat */}
+    <TouchableOpacity
+      style={[styles.floatingChatFab, { backgroundColor: theme.colors.primary }]}
+      onPress={() => navigation.navigate('ContextChat', { initialQuery: '' })}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel="Chat with ContextVault AI"
+    >
+      <Icon name="chatbubbles" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+      <Text style={styles.floatingChatFabText}>Ask AI</Text>
+    </TouchableOpacity>
+  </View>
   );
 };
 
@@ -2491,6 +2551,111 @@ const styles = StyleSheet.create({
   recentContextTime: {
     fontSize: 10,
     fontWeight: '500',
+  },
+  heroChatCard: {
+    padding: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+  },
+  heroChatHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  heroChatTitleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  heroChatAvatarWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroChatHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  heroChatSubheading: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  heroChatLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  heroChatLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  heroChatLiveText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  heroChatMainButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  heroChatBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroChatBtnTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  heroChatBtnIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingChatFab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 28,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    zIndex: 999,
+  },
+  floatingChatFabText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   chatResumeCard: {
     padding: 16,
