@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     QWEN_API_KEY: Optional[str] = None
     DASHSCOPE_API_KEY: Optional[str] = None
 
+    # Florence-2 Local Vision AI Gateway (RTX 4050 / Standalone Server)
+    FLORENCE_SERVER_URL: str = "http://localhost:8002"
+    FLORENCE_TIMEOUT: int = 30
+    FLORENCE_HEALTH_TIMEOUT: int = 5
+    FLORENCE_MODEL: str = "Florence-2-base"
+    FLORENCE_ENABLED: bool = True
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/contextvault.log"

@@ -467,6 +467,21 @@ class VisionGatewayService:
             f"[VisionGateway] Forwarding screenshot analysis: {filename} ({len(file_bytes)} bytes) -> {target_url}"
         )
 
+        # 1. Check Florence-2 for specialist visual evidence extraction (Option B & D)
+        florence_evidence = None
+        if getattr(settings, "FLORENCE_ENABLED", True):
+            try:
+                from app.services.florence_gateway_service import florence_gateway_service
+                flor_res = await florence_gateway_service.extract_visual_evidence(
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+                if flor_res.get("success"):
+                    florence_evidence = flor_res.get("visual_evidence")
+            except Exception as e:
+                logger.warning(f"[VisionGateway] Florence extraction skipped: {e}")
+
         last_err: Optional[Exception] = None
         for attempt in range(2):
             try:
@@ -481,7 +496,13 @@ class VisionGatewayService:
                     response = await client.post(target_url, files=files, headers=headers)
                     if response.status_code == 200:
                         raw = response.json()
-                        return self.normalize_vision_response(raw)
+                        normalized = self.normalize_vision_response(raw)
+                        if florence_evidence:
+                            normalized["florence_evidence"] = florence_evidence
+                            # Enrich OCR if Florence found more detail
+                            if len(florence_evidence.get("ocrText", "")) > len(normalized.get("ocr_text", "")):
+                                normalized["ocr_text"] = florence_evidence["ocrText"]
+                        return normalized
                     else:
                         logger.warning(f"[VisionGateway] Server HTTP {response.status_code}: {response.text}")
             except (httpx.ConnectError, httpx.ConnectTimeout) as err:
@@ -495,8 +516,35 @@ class VisionGatewayService:
                 last_err = err
                 logger.error(f"[VisionGateway] Analysis forward error: {err}")
 
-        # If external server is offline or errored, generate structured heuristic scene
-        # rather than completely failing, so mobile queue can make progress
+        # If Qwen server is offline or timed out, use Florence-2 real visual extraction
+        if florence_evidence:
+            logger.info(f"[VisionGateway] Qwen offline/timeout; using Florence-2 visual extraction for {filename}")
+            ocr_text = florence_evidence.get("ocrText") or ""
+            detailed_desc = florence_evidence.get("detailedDescription") or ""
+            caption = florence_evidence.get("caption") or ""
+            amount = self.extract_amount(ocr_text)
+            currency = self.normalize_currency(ocr_text)
+            date_str = self.extract_date(ocr_text)
+            merchant = self.extract_merchant_candidate(ocr_text)
+
+            florence_raw = {
+                "title": caption[:60] if caption else filename,
+                "summary": detailed_desc or caption or f"Screenshot {filename} analyzed by Florence-2 Vision AI.",
+                "screen_type": "screenshot",
+                "category": "other",
+                "confidence": 0.92,
+                "merchant": merchant,
+                "amount": amount,
+                "currency": currency,
+                "date": date_str,
+                "tags": ["florence-2", "visual-evidence"],
+                "ocr_text": ocr_text,
+                "bullet_points": [f"Visual extraction via Florence-2 ({len(florence_evidence.get('textRegions', []))} text regions)"],
+                "florence_evidence": florence_evidence,
+            }
+            return self.normalize_vision_response(florence_raw)
+
+        # Ultimate fallback if both vision models are unavailable
         logger.info(f"[VisionGateway] Generating local normalized metadata for {filename}")
         fallback_raw = {
             "title": filename.replace("_", " ").replace(".jpg", "").replace(".png", ""),

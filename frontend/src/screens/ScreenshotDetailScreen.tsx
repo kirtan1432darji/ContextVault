@@ -236,8 +236,8 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   };
 
   // Swipe previous / next navigation across gallery
-  const allScreenshots = useScreenshotStore((s) => s.screenshots);
-  const currentIndex = allScreenshots.findIndex((item) => item.id === id);
+  const allScreenshots = useScreenshotStore((s) => s.screenshots) || [];
+  const currentIndex = Array.isArray(allScreenshots) ? allScreenshots.findIndex((item) => item?.id === id) : -1;
   const hasPrevious = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < allScreenshots.length - 1;
 
@@ -306,12 +306,28 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
   };
   if (cacheRecord?.entitiesJson) {
     try {
-      extractedEntities = JSON.parse(cacheRecord.entitiesJson);
+      const parsed = typeof cacheRecord.entitiesJson === 'string'
+        ? JSON.parse(cacheRecord.entitiesJson)
+        : cacheRecord.entitiesJson;
+      if (parsed && typeof parsed === 'object') {
+        extractedEntities = {
+          amounts: Array.isArray(parsed.amounts) ? parsed.amounts : [],
+          urls: Array.isArray(parsed.urls) ? parsed.urls : [],
+          emails: Array.isArray(parsed.emails) ? parsed.emails : [],
+          phoneNumbers: Array.isArray(parsed.phoneNumbers) ? parsed.phoneNumbers : [],
+          merchants: Array.isArray(parsed.merchants) ? parsed.merchants : [],
+          projectNames: Array.isArray(parsed.projectNames) ? parsed.projectNames : [],
+          dates: Array.isArray(parsed.dates) ? parsed.dates : [],
+        };
+      }
     } catch {}
   }
 
   // Tags list
-  const displayTags = screenshot.tags.map((t) => t.name).concat(screenshot.keywords || []);
+  const rawTags = Array.isArray(screenshot.tags) ? screenshot.tags : [];
+  const displayTags = rawTags
+    .map((t) => (typeof t === 'string' ? t : t?.name || ''))
+    .concat(Array.isArray(screenshot.keywords) ? screenshot.keywords : []);
   const uniqueTags = Array.from(new Set(displayTags)).filter(Boolean);
 
   return (
@@ -625,13 +641,17 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
           {visionRecord ? (() => {
             let visionEntities: Record<string, any> = {};
             try {
-              visionEntities = JSON.parse(visionRecord.detected_entities || '{}');
+              const parsedEnt = JSON.parse(visionRecord.detected_entities || '{}');
+              visionEntities = (parsedEnt && typeof parsedEnt === 'object') ? parsedEnt : {};
             } catch {}
 
             let visionTags: string[] = [];
             try {
-              visionTags = JSON.parse(visionRecord.detected_objects || '[]');
-            } catch {}
+              const parsedTags = JSON.parse(visionRecord.detected_objects || '[]');
+              visionTags = Array.isArray(parsedTags) ? parsedTags : [];
+            } catch {
+              visionTags = [];
+            }
 
             const visionTitle = visionRecord.application_name || visionEntities.title || screenshot.fileName;
             const visionConfidence =
@@ -770,11 +790,11 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
         </ModernCard>
 
         {/* 2. Extracted Entities Card */}
-        {(extractedEntities.amounts.length > 0 ||
-          extractedEntities.merchants.length > 0 ||
-          extractedEntities.urls.length > 0 ||
-          extractedEntities.dates.length > 0 ||
-          extractedEntities.emails.length > 0) && (
+        {((extractedEntities.amounts?.length || 0) > 0 ||
+          (extractedEntities.merchants?.length || 0) > 0 ||
+          (extractedEntities.urls?.length || 0) > 0 ||
+          (extractedEntities.dates?.length || 0) > 0 ||
+          (extractedEntities.emails?.length || 0) > 0) && (
           <ModernCard style={styles.card}>
             <View style={styles.cardHeader}>
               <Icon name="cube-outline" size={18} color={theme.colors.primary} />
@@ -783,7 +803,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </Text>
             </View>
 
-            {extractedEntities.merchants.length > 0 && (
+            {(extractedEntities.merchants?.length || 0) > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Merchants & Organizations
@@ -796,7 +816,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {extractedEntities.amounts.length > 0 && (
+            {(extractedEntities.amounts?.length || 0) > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Financial Amounts
@@ -809,7 +829,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {extractedEntities.dates.length > 0 && (
+            {(extractedEntities.dates?.length || 0) > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Dates
@@ -822,7 +842,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {extractedEntities.urls.length > 0 && (
+            {(extractedEntities.urls?.length || 0) > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Web Links
@@ -835,7 +855,7 @@ export const ScreenshotDetailScreen: React.FC<Props> = ({ route, navigation }) =
               </View>
             )}
 
-            {extractedEntities.emails.length > 0 && (
+            {(extractedEntities.emails?.length || 0) > 0 && (
               <View style={styles.entitySection}>
                 <Text style={[styles.entitySectionTitle, { color: theme.colors.textSecondary }]}>
                   Emails

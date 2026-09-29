@@ -22,6 +22,7 @@ import {
   memoryInsightsService,
 } from './memory';
 import { mediaObserverService } from './backgroundDetection/mediaObserver';
+import { FlorenceVisualEvidence } from './FlorenceVisionService';
 
 export type SmartFolderCategory =
   | 'Finance'
@@ -64,6 +65,7 @@ export interface ScreenshotClassificationInput {
   sourceApp?: string;
   detectedApp?: string;
   forceRefresh?: boolean;
+  florenceEvidence?: FlorenceVisualEvidence;
 }
 
 export interface BatchClassifyOptions {
@@ -86,7 +88,7 @@ export class SmartFolderClassificationService {
    * 5-Tier Hybrid Classification Engine:
    * 1. Vision AI category
    * 2. Extracted entities
-   * 3. OCR keywords
+   * 3. OCR keywords (enriched by Florence-2 specialist extraction)
    * 4. App signatures
    * 5. Filename heuristics
    */
@@ -97,6 +99,7 @@ export class SmartFolderClassificationService {
     sourceApp?: string;
     detectedApp?: string;
     deviceFolder?: string;
+    florenceEvidence?: FlorenceVisualEvidence;
   }): Promise<SmartFolderClassificationResult> {
     // 1. Fetch cached Vision AI metadata if available in SQLite
     let visionMetadata: any = undefined;
@@ -126,11 +129,26 @@ export class SmartFolderClassificationService {
       console.warn('[SmartFolderClassificationService] Error loading vision cache:', err);
     }
 
+    // 1b. Enrich with Florence-2 Visual Evidence if available
+    const effectiveOcr = [
+      input.ocrText,
+      input.florenceEvidence?.ocrText,
+    ].filter(Boolean).join('\n');
+
+    if (input.florenceEvidence) {
+      const florTags = input.florenceEvidence.detectedElements?.map(e => e.label.toLowerCase()) || [];
+      visionMetadata = {
+        ...visionMetadata,
+        summary: input.florenceEvidence.detailedDescription || input.florenceEvidence.caption || visionMetadata?.summary,
+        tags: Array.from(new Set([...(visionMetadata?.tags || []), ...florTags])),
+      };
+    }
+
     // 2. Evaluate 5-Tier Deterministic Rules
     const ruleResult: ClassificationRuleResult = SmartFolderRules.evaluateRules({
       screenshotId: input.screenshotId,
       fileName: input.fileName,
-      ocrText: input.ocrText,
+      ocrText: effectiveOcr,
       sourceApp: input.sourceApp,
       detectedApp: input.detectedApp,
       deviceFolder: input.deviceFolder,

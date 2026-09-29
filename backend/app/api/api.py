@@ -7,6 +7,7 @@ from app.api.v1.screenshots import router as screenshots_router
 from app.api.v1.context import router as context_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.vision import router as vision_router
+from app.api.v1.florence import router as florence_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -17,5 +18,6 @@ api_router.include_router(screenshots_router)
 api_router.include_router(context_router)
 api_router.include_router(chat_router)
 api_router.include_router(vision_router, tags=["Vision AI"])
+api_router.include_router(florence_router, tags=["Florence-2 Visual Extraction"])
 
 __all__ = ["api_router"]
