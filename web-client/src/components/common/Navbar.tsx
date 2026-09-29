@@ -23,8 +23,8 @@ export const Navbar: React.FC = () => {
       {/* Brand */}
       <div className="flex items-center gap-3">
         <Link to={ROUTES.DASHBOARD} className="flex items-center gap-2.5 group">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 group-hover:bg-indigo-600/30 transition-colors">
-            <Shield className="w-5 h-5 text-indigo-400" />
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 overflow-hidden group-hover:bg-indigo-600/30 transition-colors">
+            <img src="/logo.png" alt="ContextVault Logo" className="w-8 h-8 rounded object-contain" />
           </div>
           <div>
             <span className="text-base font-bold tracking-tight text-white group-hover:text-indigo-300 transition-colors">
