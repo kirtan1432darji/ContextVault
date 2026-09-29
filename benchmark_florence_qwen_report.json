@@ -1,0 +1,574 @@
+{
+  "timestamp": "2026-09-30 00:22:33",
+  "total_test_cases": 21,
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "total_vram_mb": 6144,
+    "qwen_vram_mb": 2472.4,
+    "florence_vram_mb": 461.6,
+    "total_coexisting_vram_mb": 2934.0
+  },
+  "latency": {
+    "florence_cold_ms": 2123.6,
+    "florence_warm_avg_ms": 2175.6,
+    "florence_p50_ms": 2050.2,
+    "florence_p95_ms": 3768.2,
+    "qwen_cold_ms": 27645.1,
+    "qwen_warm_avg_ms": 35523.1,
+    "qwen_p50_ms": 35250.4,
+    "qwen_p95_ms": 51129.7
+  },
+  "accuracy": {
+    "category_classification_rate_pct": 52.4,
+    "financial_amount_extraction_rate_pct": 83.3,
+    "total_regions_detected_by_florence": 187
+  },
+  "detailed_results": [
+    {
+      "id": "tc_01_gpay_upi",
+      "title": "Google Pay UPI Payment",
+      "category": "Financial",
+      "florence": {
+        "latency_ms": 2123.6,
+        "ocr_length": 193,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying text that reads \"Google Pay Payment",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 27645.1,
+        "category": "Financial",
+        "category_correct": true,
+        "merchant": "Starbucks Coffee India",
+        "amount": 450.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial",
+        "correct": true,
+        "total_evidence_tokens": 481
+      }
+    },
+    {
+      "id": "tc_02_phonepe_recharge",
+      "title": "PhonePe Mobile Recharge",
+      "category": "Bills & Utilities",
+      "florence": {
+        "latency_ms": 1525.8,
+        "ocr_length": 201,
+        "region_count": 9,
+        "caption": "a screenshot of a cell phone with a purple screen",
+        "detailed": "The image shows a screenshot of a computer screen with a purple background, displaying text and numbers that reads \"How ",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 35398.0,
+        "category": "Financial",
+        "category_correct": false,
+        "merchant": "PhonePe",
+        "amount": 299.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial",
+        "correct": false,
+        "total_evidence_tokens": 366
+      }
+    },
+    {
+      "id": "tc_03_amazon_order",
+      "title": "Amazon India Order Details",
+      "category": "Shopping",
+      "florence": {
+        "latency_ms": 1854.7,
+        "ocr_length": 232,
+        "region_count": 9,
+        "caption": "a screen shot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue box containing text that reads \"Sony WH-1000XM5 Wireless H",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 37023.3,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": true,
+        "merchant": "Amazon",
+        "amount": 26990,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": true,
+        "total_evidence_tokens": 527
+      }
+    },
+    {
+      "id": "tc_04_swiggy_delivery",
+      "title": "Swiggy Food Order",
+      "category": "Food & Dining",
+      "florence": {
+        "latency_ms": 3768.2,
+        "ocr_length": 200,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a menu on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue and orange background, displaying text that reads \"Swiggy ",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 50099.2,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": false,
+        "merchant": "Swiggy",
+        "amount": 64.0,
+        "amount_detected": false
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": false,
+        "total_evidence_tokens": 500
+      }
+    },
+    {
+      "id": "tc_05_irctc_ticket",
+      "title": "IRCTC E-Ticket Confirmation",
+      "category": "Travel",
+      "florence": {
+        "latency_ms": 1956.2,
+        "ocr_length": 250,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a blue background",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying text that reads \"IRCTC Electronic R",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 37390.4,
+        "category": "Travel",
+        "category_correct": true,
+        "merchant": "IRCTC",
+        "amount": 1485,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Travel",
+        "correct": true,
+        "total_evidence_tokens": 542
+      }
+    },
+    {
+      "id": "tc_06_indigo_boarding_pass",
+      "title": "IndiGo Mobile Boarding Pass",
+      "category": "Travel",
+      "florence": {
+        "latency_ms": 1756.0,
+        "ocr_length": 251,
+        "region_count": 10,
+        "caption": "A screen shot of a flight schedule on a computer screen.",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying text that reads \"Indigo 6E 204 Boar",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 50213.3,
+        "category": "Travel",
+        "category_correct": true,
+        "merchant": "IndiGo Airlines",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Travel",
+        "correct": true,
+        "total_evidence_tokens": 382
+      }
+    },
+    {
+      "id": "tc_07_whatsapp_chat",
+      "title": "WhatsApp Chat Discussion",
+      "category": "Personal",
+      "florence": {
+        "latency_ms": 3588.1,
+        "ocr_length": 310,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a message on it",
+        "detailed": "The image shows a screenshot of a computer screen with a message that reads \"WhatsApp - Tech Lead Discussion\". The messa",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 35250.4,
+        "category": "Work",
+        "category_correct": false,
+        "merchant": "WhatsApp",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Work",
+        "correct": false,
+        "total_evidence_tokens": 604
+      }
+    },
+    {
+      "id": "tc_08_slack_work",
+      "title": "Slack Sprint Standup",
+      "category": "Work",
+      "florence": {
+        "latency_ms": 2394.9,
+        "ocr_length": 284,
+        "region_count": 8,
+        "caption": "a screenshot of a computer screen with a purple background",
+        "detailed": "The image shows a screenshot of a computer screen with a purple background and a blue box, displaying the text \"How to i",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 22760.3,
+        "category": "Work",
+        "category_correct": true,
+        "merchant": "null",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Work",
+        "correct": true,
+        "total_evidence_tokens": 434
+      }
+    },
+    {
+      "id": "tc_09_netflix_subscription",
+      "title": "Netflix Monthly Subscription",
+      "category": "Entertainment",
+      "florence": {
+        "latency_ms": 1566.9,
+        "ocr_length": 220,
+        "region_count": 9,
+        "caption": "a screen shot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying the Netflix payment receipt. The te",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 30719.9,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": true,
+        "merchant": "Netflix",
+        "amount": 64.9,
+        "amount_detected": false
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": true,
+        "total_evidence_tokens": 439
+      }
+    },
+    {
+      "id": "tc_10_bookmyshow_ticket",
+      "title": "BookMyShow Movie Tickets",
+      "category": "Entertainment",
+      "florence": {
+        "latency_ms": 2050.2,
+        "ocr_length": 245,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a red background",
+        "detailed": "The image shows a screenshot of a computer screen with a red background and a blue box, displaying text that reads \"Book",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 32853.7,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": true,
+        "merchant": "Oppenheimer 70mm IMAX",
+        "amount": 1180,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": true,
+        "total_evidence_tokens": 590
+      }
+    },
+    {
+      "id": "tc_11_electricity_bill",
+      "title": "Torrent Power Electricity Bill",
+      "category": "Bills & Utilities",
+      "florence": {
+        "latency_ms": 2231.7,
+        "ocr_length": 223,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue box containing text that reads \"torrent power ltd electric",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 34789.7,
+        "category": "Financial",
+        "category_correct": false,
+        "merchant": "Torrent Power Ltd",
+        "amount": 2340.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial",
+        "correct": false,
+        "total_evidence_tokens": 517
+      }
+    },
+    {
+      "id": "tc_12_medical_prescription",
+      "title": "Apollo Pharmacy Prescription",
+      "category": "Health",
+      "florence": {
+        "latency_ms": 2237.5,
+        "ocr_length": 277,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a number of items on it, including text and numbers. At the botto",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 43801.1,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": false,
+        "merchant": "Apollo Hospitals & Pharmacy",
+        "amount": 580.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": false,
+        "total_evidence_tokens": 437
+      }
+    },
+    {
+      "id": "tc_13_blood_test_report",
+      "title": "Thyrocare Diagnostic Report",
+      "category": "Health",
+      "florence": {
+        "latency_ms": 2265.2,
+        "ocr_length": 302,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue box containing text that reads \"thyrocare aaroyam complete",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 37826.3,
+        "category": "Health",
+        "category_correct": true,
+        "merchant": "Thyrocare Arogyam",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Health",
+        "correct": true,
+        "total_evidence_tokens": 596
+      }
+    },
+    {
+      "id": "tc_14_aadhaar_card_doc",
+      "title": "Govt Identity Card Mockup",
+      "category": "Documents",
+      "florence": {
+        "latency_ms": 1908.7,
+        "ocr_length": 238,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a number of items on it, including text and a pop-up box. The tex",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 32417.6,
+        "category": "Personal",
+        "category_correct": false,
+        "merchant": "Government of India - Unique Identification Authority",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Personal",
+        "correct": false,
+        "total_evidence_tokens": 450
+      }
+    },
+    {
+      "id": "tc_15_university_certificate",
+      "title": "University Degree Certificate",
+      "category": "Education",
+      "florence": {
+        "latency_ms": 1938.6,
+        "ocr_length": 266,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying a certificate of graduation and exc",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 30265.1,
+        "category": "Personal",
+        "category_correct": false,
+        "merchant": "Gujarat Technological University",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Personal",
+        "correct": false,
+        "total_evidence_tokens": 579
+      }
+    },
+    {
+      "id": "tc_16_github_pull_request",
+      "title": "GitHub Pull Request Discussion",
+      "category": "Work",
+      "florence": {
+        "latency_ms": 2062.7,
+        "ocr_length": 341,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a blue screen",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background and text that reads \"GitHub for Windows 10\". Th",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 24281.1,
+        "category": "Work",
+        "category_correct": true,
+        "merchant": "GitHub",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Work",
+        "correct": true,
+        "total_evidence_tokens": 637
+      }
+    },
+    {
+      "id": "tc_17_instagram_post",
+      "title": "Instagram Photo Post",
+      "category": "Personal",
+      "florence": {
+        "latency_ms": 1705.9,
+        "ocr_length": 197,
+        "region_count": 8,
+        "caption": "a screenshot of a computer screen with a blue screen",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background and text that reads \"Instagram Travel Diaries\".",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 22031.3,
+        "category": "Personal",
+        "category_correct": true,
+        "merchant": "Instagram",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Personal",
+        "correct": true,
+        "total_evidence_tokens": 480
+      }
+    },
+    {
+      "id": "tc_18_twitter_tech_news",
+      "title": "Twitter / X AI Tech Announcement",
+      "category": "News & Articles",
+      "florence": {
+        "latency_ms": 1609.4,
+        "ocr_length": 284,
+        "region_count": 8,
+        "caption": "a screenshot of a computer screen with a blue screen",
+        "detailed": "The image shows a screenshot of the Windows 10 start screen with the start menu highlighted. The text on the screen read",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 25155.6,
+        "category": "Other",
+        "category_correct": false,
+        "merchant": "Microsoft",
+        "amount": null,
+        "amount_detected": null
+      },
+      "hybrid": {
+        "category": "Other",
+        "correct": false,
+        "total_evidence_tokens": 460
+      }
+    },
+    {
+      "id": "tc_19_bank_statement_hdfc",
+      "title": "HDFC Bank Account Statement",
+      "category": "Financial",
+      "florence": {
+        "latency_ms": 1846.8,
+        "ocr_length": 232,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying text and numbers. The text reads \"H",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 43595.7,
+        "category": "Financial",
+        "category_correct": true,
+        "merchant": "HDFC Bank",
+        "amount": 75000.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial",
+        "correct": true,
+        "total_evidence_tokens": 444
+      }
+    },
+    {
+      "id": "tc_20_zomato_pro_receipt",
+      "title": "Zomato Gold Order Confirmation",
+      "category": "Food & Dining",
+      "florence": {
+        "latency_ms": 3053.6,
+        "ocr_length": 270,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a red and blue background, displaying text that reads \"Zomato - O",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 51129.7,
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "category_correct": false,
+        "merchant": "Zomato",
+        "amount": 520.0,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial|Personal|Travel|Work|Entertainment|Shopping|Other",
+        "correct": false,
+        "total_evidence_tokens": 418
+      }
+    },
+    {
+      "id": "tc_21_flipkart_electronics",
+      "title": "Flipkart Invoice Summary",
+      "category": "Shopping",
+      "florence": {
+        "latency_ms": 2190.8,
+        "ocr_length": 214,
+        "region_count": 9,
+        "caption": "a screenshot of a computer screen with a number of items on it",
+        "detailed": "The image shows a screenshot of a computer screen with a blue background, displaying text that reads \"How to Install Fli",
+        "objects_count": 1
+      },
+      "qwen": {
+        "latency_ms": 33459.3,
+        "category": "Financial",
+        "category_correct": false,
+        "merchant": "Flipkart",
+        "amount": 22499,
+        "amount_detected": true
+      },
+      "hybrid": {
+        "category": "Financial",
+        "correct": false,
+        "total_evidence_tokens": 355
+      }
+    }
+  ]
+}
